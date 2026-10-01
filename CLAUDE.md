@@ -94,7 +94,7 @@ Generador sintético ──► BD estilo «legacy» (SQLite) ──► Adaptador
 |---|---|---|
 | F1 | Generador sintético: BD estilo legacy + escenarios con verdad de referencia | ✅ Cerrada el 2026-10-01. Formato de escenarios en `docs/scenario-format.md` |
 | F2 | Adaptador legacy + **resolución de identidad** con tests | ✅ Cerrada el 2026-10-01. 0 identificaciones falsas en 174.549 llamadas simuladas. Detalle en `docs/identity-resolution.md` |
-| F3 | Agente con herramientas + base de conocimiento + agenda mock, por texto (CLI) | 🟡 Construida el 2026-10-01 y probada con un modelo simulado; **falta ejecutarla contra un LLM real** (no había clave de API). Detalle en `docs/agent.md` |
+| F3 | Agente con herramientas + base de conocimiento + agenda mock, por texto (CLI) | ✅ Cerrada el 2026-10-01: probada con un modelo simulado y con una primera llamada real correcta. Falta medirla (F4). Detalle en `docs/agent.md` |
 | F4 | **Harness de evaluación** con clientes simulados | ⚠️ **Antes que la interfaz, a propósito** |
 | F5 | **Capa de voz**: STT/TTS en tiempo real, latencia, interrupciones, castellano y catalán | El canal de verdad |
 | F6 | Demo pública: llamada desde el navegador (y número SIP opcional) | La pieza que se enseña |

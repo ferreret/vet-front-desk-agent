@@ -21,7 +21,7 @@ threshold the agent asks instead of guessing; and the metric that matters most i
 |---|---|---|
 | F1 | Synthetic generator: legacy-style database + call scenarios with ground truth | **Done** (2026-10-01) |
 | F2 | Legacy adapter + identity resolution, with tests | **Done** (2026-10-01): 0 false identifications in 174,567 simulated calls |
-| F3 | Agent with tools, knowledge base and mock agenda, over text | **Built** (2026-10-01), tested on a scripted model; not yet run against a real one |
+| F3 | Agent with tools, knowledge base and mock agenda, over text | **Done** (2026-10-01): tested on a scripted model, and a first real call works end to end |
 | F4 | Evaluation harness with simulated callers | Next |
 | F5 | Voice layer: real-time STT/TTS, latency budget, barge-in, Spanish and Catalan | |
 | F6 | Public demo: a call from the browser | |
@@ -131,9 +131,10 @@ A language model with eight tools, talking in text for now (`vetdesk chat`).
 - **Any provider.** The agent talks to a small interface; each provider is one adapter.
   Claude is the adapter that exists today.
 
-This phase has been tested without a model: tools, barrier, agenda, knowledge base and the
-agent loop on a scripted model. It has **not** yet been run against a real model; that is
-what the evaluation harness (F4) is for. More in [docs/agent.md](docs/agent.md).
+Tools, barrier, agenda, knowledge base and the agent loop are tested without a model. With
+a real model it has been tried by hand, not measured: one call so far, which went as it
+should. Measuring it over all the scenarios is what the evaluation harness (F4) is for.
+More in [docs/agent.md](docs/agent.md).
 
 ## Rules of the house
 

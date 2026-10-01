@@ -81,7 +81,16 @@ Verified, by tests that run without any model: the tools, the privacy barrier, t
 the knowledge base validation, the agent loop (on the scripted model) and the shape of the
 requests the Anthropic adapter builds.
 
-**Not yet verified: a conversation with a real model.** No API key was available when this
-phase was built, so the prompt has not been exercised and the adapter has not been run
-against the live API. How well the agent actually converses is what the evaluation harness
-(F4) measures.
+Tried by hand, once: a real call with `claude-opus-5-5` on 2026-10-01. A client phoning
+from another client's number asked for an appointment. The agent offered times, asked for
+the name, asked for it to be spelled when it was mistyped, asked for the town, and booked
+on the right record once the resolver confirmed the caller. Before that it said nothing
+from the records.
+
+**Not measured yet.** One good call proves the plumbing, not the behaviour. How often the
+agent asks one question too many, promises something it cannot do or answers beyond the
+knowledge base is what the evaluation harness (F4) measures, over every scenario.
+
+Known gap for the voice layer: the waiting phrase ("Un momento, lo miro") is returned
+together with the answer that follows the tool call. On the phone it has to be spoken
+before the tool runs, which needs streaming (F5).
