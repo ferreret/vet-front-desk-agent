@@ -1,0 +1,128 @@
+# Planeta Animal: everything the front desk may tell a caller.
+#
+# This file is the ONLY source of clinic facts. The agent's prompt is built from it and the
+# agenda takes its opening hours from it; nothing here is repeated anywhere else by hand.
+# It is validated when loaded (see vetdesk/kb/model.py): placeholders, gaps in the opening
+# hours and malformed phone numbers are rejected.
+#
+# The clinic, its address and its phone numbers are fictional.
+
+[clinic]
+name = "Planeta Animal"
+address = "Carrer Major, 12, Vallserena"
+phone = "+34971555010"
+languages = ["es", "ca"]
+
+[emergency]
+phone = "+34600555020"
+description = "Urgencias veterinarias las 24 horas, todos los días del año. Fuera del horario de la clínica atiende el veterinario de guardia en este teléfono."
+
+[appointments]
+slot_minutes = 30
+notes = [
+    "Las visitas son con cita previa. Las urgencias se atienden sin cita.",
+    "Para cancelar o cambiar una cita se agradece avisar con 24 horas de antelación.",
+    "En la primera visita conviene traer la cartilla o el pasaporte del animal.",
+]
+
+[[hours]]
+season = "invierno"
+starts = "10-01"
+ends = "05-31"
+monday = ["09:30-13:30", "16:30-20:00"]
+tuesday = ["09:30-13:30", "16:30-20:00"]
+wednesday = ["09:30-13:30", "16:30-20:00"]
+thursday = ["09:30-13:30", "16:30-20:00"]
+friday = ["09:30-13:30", "16:30-20:00"]
+saturday = ["10:00-13:00"]
+sunday = []
+
+[[hours]]
+season = "verano"
+starts = "06-01"
+ends = "09-30"
+monday = ["09:00-14:00", "17:00-20:30"]
+tuesday = ["09:00-14:00", "17:00-20:30"]
+wednesday = ["09:00-14:00", "17:00-20:30"]
+thursday = ["09:00-14:00", "17:00-20:30"]
+friday = ["09:00-14:00", "17:00-20:30"]
+saturday = ["10:00-13:00"]
+sunday = []
+
+[[services]]
+name = "Consulta general"
+description = "Revisión, diagnóstico y tratamiento de perros, gatos y animales exóticos."
+price_from_eur = 35
+
+[[services]]
+name = "Vacunación anual"
+description = "Incluye una revisión general. El precio depende de la especie y de las vacunas que toquen."
+price_from_eur = 40
+
+[[services]]
+name = "Desparasitación"
+description = "Interna y externa. Se recomienda cada tres meses."
+price_from_eur = 15
+
+[[services]]
+name = "Microchip e identificación"
+description = "Implantación del microchip y alta en el registro."
+price_from_eur = 40
+
+[[services]]
+name = "Esterilización"
+description = "Con analítica previa. El precio depende de la especie, el sexo y el peso."
+price_from_eur = 150
+
+[[services]]
+name = "Limpieza dental"
+description = "Con anestesia general y revisión de la boca."
+price_from_eur = 120
+
+[[services]]
+name = "Análisis de sangre"
+description = "Laboratorio propio; resultados el mismo día en la mayoría de los casos."
+price_from_eur = 50
+
+[[services]]
+name = "Radiografía"
+description = "Radiología digital."
+price_from_eur = 60
+
+[[services]]
+name = "Ecografía"
+description = "Abdominal y de gestación."
+price_from_eur = 70
+
+[[services]]
+name = "Corte de uñas"
+description = "Sin cita si hay hueco; mejor llamar antes."
+price_from_eur = 10
+
+[species]
+treated = ["perros", "gatos", "conejos", "hurones", "cobayas", "aves", "tortugas"]
+not_treated = ["caballos", "animales de granja", "reptiles venenosos"]
+
+[[faq]]
+question = "¿Los precios son definitivos?"
+answer = "No. Son precios orientativos, desde el importe indicado. El precio final lo da el veterinario tras ver al animal."
+
+[[faq]]
+question = "¿Cómo se puede pagar?"
+answer = "En efectivo, con tarjeta o por Bizum."
+
+[[faq]]
+question = "¿Hay aparcamiento?"
+answer = "Hay zona azul en la misma calle y un aparcamiento público a dos minutos a pie."
+
+[[faq]]
+question = "¿Hacen visitas a domicilio?"
+answer = "No. Todas las visitas son en la clínica."
+
+[[faq]]
+question = "¿Tienen peluquería?"
+answer = "No. La clínica no ofrece peluquería, solo corte de uñas."
+
+[[faq]]
+question = "¿Qué hago si es urgente y la clínica está abierta?"
+answer = "Venir directamente a la clínica o llamar al teléfono de urgencias para avisar de que se viene de camino."
