@@ -4,13 +4,14 @@ from datetime import date
 
 import pytest
 
-from vetdesk.synth.oracle import FileView, SaidName, decide
+from vetdesk.synth.oracle import FileView, SaidName, decide, trace
 from vetdesk.synth.world import Client, GeneratorConfig, Pet, PhoneOnFile, World
 
 LANDLINE = "+34971000001"
 MARGA_MOBILE = "+34600000001"
 ANTONIO_MOBILE = "+34600000002"
 OLD_NUMBER = "+34600000009"
+FAMILY_NUMBER = "+34971000002"
 
 
 def _client(world, client_id, given, surname1, surname2, phones=(), surname2_on_file=True):
@@ -43,6 +44,9 @@ def view():
     # Stored with one surname, a stale number on file, and a pet called Luna.
     _client(world, "PERE", "Pere", "Mas", "Coll", [OLD_NUMBER], surname2_on_file=False)
     _pet(world, "P5", "Luna", ["PERE"])
+    # A family number shared by two people stored with a single surname.
+    _client(world, "BIEL", "Biel", "Roca", "Pons", [FAMILY_NUMBER], surname2_on_file=False)
+    _client(world, "MARC", "Marc", "Roca", "Mir", [FAMILY_NUMBER], surname2_on_file=False)
     return FileView(world)
 
 
@@ -105,3 +109,32 @@ def test_second_surname_cannot_rule_out_a_record_that_lacks_it(view):
     assert decide(view, None, lookalike, None).consistent_with == ("PERE",)
     stranger = SaidName("Margalida", "Ferrer", "Riera")
     assert decide(view, None, stranger, None).decision == "not_found"
+
+
+def test_one_surname_is_never_enough_when_the_record_has_two(view):
+    partial = SaidName("Margalida", "Ferrer")
+    assert decide(view, MARGA_MOBILE, partial, None).decision == "ask"
+    assert decide(view, None, partial, "Xispa").decision == "ask"
+    assert decide(view, MARGA_MOBILE, MARGA, None).decision == "resolved"
+
+
+def test_record_with_a_single_surname_is_confirmed_by_its_own_phone_only(view):
+    pere = SaidName("Pere", "Mas", "Coll")
+    assert decide(view, OLD_NUMBER, pere, None).client_id == "PERE"
+    assert decide(view, None, pere, "Luna").decision == "ask"
+
+
+def test_family_number_cannot_confirm_half_a_name(view):
+    """Two Rocas stored with one surname share a number: a third Roca could be calling."""
+    marc = SaidName("Marc", "Roca", "Mir")
+    assert view.by_name(marc) == {"MARC"}
+    assert decide(view, FAMILY_NUMBER, marc, None).decision == "ask"
+
+
+def test_trace_asks_for_both_surnames_before_the_pet(view):
+    steps = trace(view, None, SaidName("Margalida", "Ferrer"), "Xispa", MARGA)
+    assert [(kind, value, d.decision) for kind, value, d in steps] == [
+        ("client_name", "Margalida Ferrer", "ask"),
+        ("client_name", "Margalida Ferrer Oliver", "ask"),
+        ("pet_name", "Xispa", "resolved"),
+    ]

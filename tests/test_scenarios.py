@@ -162,6 +162,27 @@ def test_clients_without_animals(world, scenarios):
         assert s.expected.identity.outcome == ("unresolved" if hidden else "resolved"), s.id
 
 
+def test_one_surname_leads_to_a_request_for_both(scenarios):
+    for s in _of(scenarios, "identity.partial_name"):
+        names = [step for step in s.identity_trace if step.evidence.type == "client_name"]
+        assert [step.evidence.said for step in names] == [
+            s.caller.says_name,
+            f"{s.caller.given_name} {s.caller.surname1} {s.caller.surname2}",
+        ]
+        assert all(step.expect.decision == "ask" for step in names)
+        assert s.identity_trace[-1].evidence.type == "pet_name"
+        assert s.expected.identity.outcome == "resolved"
+        assert len([u for u in s.speech.utterances if u.field == "client_name"]) == 2
+
+
+def test_a_pet_cannot_confirm_a_record_with_a_single_surname(world, scenarios):
+    for s in _of(scenarios, "identity.one_surname_on_file"):
+        caller = world.clients[s.caller.client_id]
+        assert not caller.surname2_on_file and caller.pet_ids
+        assert s.expected.identity.outcome == "unresolved"
+        assert s.identity_trace[-1].evidence.type == "pet_name"
+
+
 def test_lookalikes_are_not_matched_to_the_existing_client(scenarios):
     lookalikes = _of(scenarios, "identity.lookalike_not_a_client")
     assert {s.expected.identity.outcome for s in lookalikes} == {"not_a_client", "unresolved"}

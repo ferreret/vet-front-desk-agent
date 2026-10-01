@@ -34,7 +34,8 @@ from ..scenario import (
 )
 from . import names
 from .asr_noise import LEVELS, corrupt
-from .oracle import FileView, SaidName, decide
+from .oracle import OUTCOMES, FileView, SaidName
+from .oracle import trace as oracle_trace
 from .world import Client, Pet, World, _person, _surname, _weighted
 
 # (category, how many). The pilot's failures are covered by: identity.* and privacy.* (P1),
@@ -52,6 +53,7 @@ PLAN = [
     ("identity.no_pets_with_phone", 2),
     ("identity.no_pets_hidden_number", 2),
     ("identity.partial_name", 4),
+    ("identity.one_surname_on_file", 2),
     ("identity.lookalike_not_a_client", 4),
     ("identity.heavy_asr_noise", 6),
     ("privacy.third_party_pet", 3),
@@ -76,7 +78,8 @@ PILOT_FAILURE = {
 NOTES = {
     "identity.phone_and_name": "Baseline: the number is on file for one client and the name "
     "agrees.",
-    "identity.hidden_number": "No caller ID: the name alone is not enough, the pet confirms it.",
+    "identity.hidden_number": "No caller ID: the full name alone is not enough, the pet "
+    "confirms it.",
     "identity.shared_phone": "The number is on file for several people of one household; "
     "greeting by name from the number alone picks the wrong one.",
     "identity.homonym_with_phone": "Two clients share a full name; the phone tells them apart.",
@@ -93,8 +96,10 @@ NOTES = {
     "about, the phone has to corroborate the name.",
     "identity.no_pets_hidden_number": "Client with no animals on file and no caller ID: the "
     "name cannot be corroborated, so the call stays unconfirmed.",
-    "identity.partial_name": "The caller gives one surname, which matches two clients; the pet "
-    "settles it.",
+    "identity.partial_name": "The caller gives one surname, which matches two clients. One "
+    "surname plus a pet is not enough: the agent needs both surnames first.",
+    "identity.one_surname_on_file": "The record holds a single surname and there is no caller "
+    "ID: a pet name cannot confirm half a name, so the call stays unconfirmed.",
     "identity.lookalike_not_a_client": "A new caller whose name is one surname away from an "
     "existing client.",
     "identity.heavy_asr_noise": "Speech recognition mangles the names badly; the agent has to "
@@ -298,23 +303,11 @@ class _Generator:
         traps: set[str] = set(extra_traps)
         outcome, resolved_id = "not_required", None
         if identity:
-            evidence = [("caller_number", number)] if number else []
-            evidence.append(("client_name", said.text()))
-            if own_pet:
-                evidence.append(("pet_name", own_pet))
-            name = pet = None
-            for kind, value in evidence:
-                name = said if kind == "client_name" else name
-                pet = value if kind == "pet_name" else pet
-                decision = decide(self.view, number, name, pet)
-                steps.append((kind, value, decision))
+            steps = oracle_trace(self.view, number, said, own_pet, who.name)
+            for _, _, decision in steps:
                 traps.update(decision.consistent_with)
-                if decision.decision != "ask":
-                    break
             last = steps[-1][2]
-            outcome = {"resolved": "resolved", "not_found": "not_a_client"}.get(
-                last.decision, "unresolved"
-            )
+            outcome = OUTCOMES[last.decision]
             resolved_id = last.client_id
             traps |= self.view.by_phone(number) | self.view.by_name(said)
             if outcome == "resolved" and resolved_id != who.client_id:
@@ -324,6 +317,9 @@ class _Generator:
 
         level = noise or self.rng.choices(LEVELS, [5, 3, 2])[0]
         heard = {("client_name", said.text()): corrupt(said.text(), level, self.rng)}
+        if any(kind == "client_name" and value != said.text() for kind, value, _ in steps):
+            full = who.name.text()  # asked for both surnames after giving only one
+            heard[("client_name", full)] = corrupt(full, level, self.rng)
         for pet_name in dict.fromkeys(n for n in (own_pet, goal.pet_name) if n):
             heard[("pet_name", pet_name)] = corrupt(pet_name, level, self.rng)
         utterances = [Utterance(field=k, said=v, heard=h) for (k, v), h in heard.items()]
@@ -579,6 +575,16 @@ class _Generator:
                 category, c, None, "hidden", want="resolved",
                 said=SaidName(c.given, c.surname1),
             ),
+        )
+
+    def _identity_one_surname_on_file(self, category: str, i: int) -> Scenario | None:
+        clients = self.world.clients.values()
+        pool = [
+            c for c in clients
+            if not c.planted and not c.surname2_on_file and self._unique_name(c)
+        ]
+        return self._first(
+            pool, lambda c: self._book(category, c, None, "hidden", want="unresolved")
         )
 
     def _identity_lookalike_not_a_client(self, category: str, i: int) -> Scenario | None:

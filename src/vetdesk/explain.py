@@ -71,7 +71,7 @@ def _goal(goal: Goal, labels: Labels) -> str:
     return f"{goal.topic}.{about}" if goal.topic else goal.type
 
 
-def _step(number: int, step: TraceStep, labels: Labels) -> list[str]:
+def _step(number: int, step: TraceStep, labels: Labels, repeated: bool) -> list[str]:
     evidence, expect = step.evidence, step.expect
     said = f'"{evidence.said}"'
     if evidence.heard != evidence.said:
@@ -84,7 +84,8 @@ def _step(number: int, step: TraceStep, labels: Labels) -> list[str]:
         verdict = f"keep asking. Could still be: {labels.clients(expect.consistent_with)}"
     else:
         verdict = "keep asking. Nobody on file matches so far"
-    return [f"  {number}. {EVIDENCE[evidence.type]}: {said}", f"     -> {verdict}"]
+    what = "The caller gives both surnames" if repeated else EVIDENCE[evidence.type]
+    return [f"  {number}. {what}: {said}", f"     -> {verdict}"]
 
 
 def _action(action: ExpectedAction, labels: Labels) -> str:
@@ -166,8 +167,10 @@ def explain(scenario: Scenario, labels: Labels | None = None) -> str:
 
     lines += ["", "IDENTIFICATION, STEP BY STEP"]
     if s.identity_trace:
+        seen: set[str] = set()
         for number, step in enumerate(s.identity_trace, start=1):
-            lines += _step(number, step, labels)
+            lines += _step(number, step, labels, step.evidence.type in seen)
+            seen.add(step.evidence.type)
     else:
         lines.append("  Not needed: this call can be handled without knowing who is calling.")
 
