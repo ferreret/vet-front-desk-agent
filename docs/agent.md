@@ -91,6 +91,32 @@ from the records.
 agent asks one question too many, promises something it cannot do or answers beyond the
 knowledge base is what the evaluation harness (F4) measures, over every scenario.
 
+## How long callers wait
+
+`uv run vetdesk latency` plays one fixed six-line call against several models. One run on
+2026-10-01, so these are single samples, not statistics:
+
+| Model | Median wait per answer | Slowest answer | Per request | Requests | Cost of the call |
+|---|---|---|---|---|---|
+| `claude-opus-5-5` | 4.5 s | 7.5 s | 2.4 s | 11 | $0.072 |
+| `claude-sonnet-5-5` | 3.0 s | 6.4 s | 1.6 s | 11 | $0.036 |
+| `claude-haiku-4-5` | 2.6 s | 40.3 s | 1.2 s | 10 | $0.034 |
+
+All three confirmed the caller and booked the appointment. None is close to the 1.5 s the
+phone needs, and the model alone will not get there:
+
+- An answer that needs tools is two or three requests in a row. Identifying the caller and
+  offering times took 6 to 7 seconds on the two larger models.
+- The answer is shown only when complete. Streaming it would let the first words out as
+  soon as they exist, and let the waiting phrase be spoken before a tool runs.
+- Haiku's 40-second first answer is one unexplained outlier (most likely a retried
+  request). Its other answers took 0.8 to 4 seconds.
+
+Two side notes from the same run. Haiku cost about as much as Sonnet despite half the
+price per token, which suggests the prompt is too short to be cached on that model; not
+yet checked. And Haiku drifted from the brief: it addressed the caller as "tú", added line
+breaks and repeated the waiting phrase.
+
 Known gap for the voice layer: the waiting phrase ("Un momento, lo miro") is returned
 together with the answer that follows the tool call. On the phone it has to be spoken
 before the tool runs, which needs streaming (F5).
