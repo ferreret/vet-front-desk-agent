@@ -1,10 +1,13 @@
 """Adapter for Claude models, through the official Anthropic SDK.
 
 Credentials come from the environment (ANTHROPIC_API_KEY, or a profile created with
-`ant auth login`); nothing is read or stored here.
+`ant auth login`); nothing is stored here. An API key that is not tied to a workspace also
+needs ANTHROPIC_WORKSPACE_ID, which is sent as the `anthropic-workspace-id` header.
 """
 
 from __future__ import annotations
+
+import os
 
 import anthropic
 
@@ -37,10 +40,15 @@ class AnthropicClient:
         self.effort = None if model.startswith(_NO_EFFORT) else effort
         self.max_tokens = max_tokens
         self.fallbacks = fallbacks and model.startswith(_SUPPORTS_FALLBACK)
-        self._client = client or anthropic.Anthropic()
+        self._client = client or anthropic.Anthropic(default_headers=_workspace_header())
 
     def start(self, system: str, context: str, tools: list[ToolSpec]) -> _Conversation:
         return _Conversation(self, system, context, tools)
+
+
+def _workspace_header() -> dict[str, str] | None:
+    workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip()
+    return {"anthropic-workspace-id": workspace} if workspace else None
 
 
 class _Conversation:

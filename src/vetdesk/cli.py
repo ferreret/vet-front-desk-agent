@@ -229,7 +229,11 @@ def _chat(args: argparse.Namespace) -> int:
             print(f"agent > {turn.text}")
     except (LLMError, anthropic.AnthropicError) as error:
         print(f"error: {error}", file=sys.stderr)
-        print("Set ANTHROPIC_API_KEY in .env to talk to the agent.", file=sys.stderr)
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            print("Set ANTHROPIC_API_KEY in .env to talk to the agent.", file=sys.stderr)
+        elif "workspace" in str(error) and not os.environ.get("ANTHROPIC_WORKSPACE_ID"):
+            print("This key is not tied to a workspace: set ANTHROPIC_WORKSPACE_ID in .env, "
+                  "or use a key created inside a workspace.", file=sys.stderr)
         return 1
     session = call.session
     confirmed = f"client {session.client.code}" if session.client else "not confirmed"

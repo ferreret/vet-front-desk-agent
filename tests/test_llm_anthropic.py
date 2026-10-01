@@ -172,3 +172,12 @@ def test_a_dropped_connection_is_retryable():
 def test_unknown_providers_are_named_as_such():
     with pytest.raises(LLMError, match="unknown provider 'acme'; available: anthropic"):
         create_client("acme")
+
+
+def test_a_key_without_a_workspace_sends_the_workspace_header(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "not-a-real-key")
+    monkeypatch.delenv("ANTHROPIC_WORKSPACE_ID", raising=False)
+    assert "anthropic-workspace-id" not in AnthropicClient()._client.default_headers
+    monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", " wrkspc_example ")
+    headers = AnthropicClient()._client.default_headers
+    assert headers["anthropic-workspace-id"] == "wrkspc_example"
