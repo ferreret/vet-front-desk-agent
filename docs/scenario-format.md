@@ -2,7 +2,8 @@
 
 One scenario is one phone call with its ground truth. The Pydantic models in
 [`src/vetdesk/scenario.py`](../src/vetdesk/scenario.py) are the single source of the
-format; `uv run vetdesk scenarios schema` prints the JSON Schema.
+format; `uv run vetdesk scenarios schema` prints the JSON Schema, and
+`uv run vetdesk scenarios explain S-031` tells any scenario as a story in plain text.
 
 Scenarios are generated from the seed into `data/scenarios.jsonl` (one JSON object per line)
 and are never committed. IDs such as `C-0042` (client), `A-0101` (animal) and `AP-0007`

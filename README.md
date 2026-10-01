@@ -37,7 +37,8 @@ Requires [uv](https://docs.astral.sh/uv/) and Python 3.12.
 uv sync
 uv run vetdesk generate --seed 42
 uv run vetdesk scenarios list --category identity
-uv run vetdesk scenarios show S-031
+uv run vetdesk scenarios explain S-031   # the call told as a story
+uv run vetdesk scenarios show S-031      # the same call as JSON
 uv run pytest
 ```
 

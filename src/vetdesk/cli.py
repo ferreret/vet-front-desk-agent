@@ -8,6 +8,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from .explain import Labels, explain
 from .scenario import Scenario, dump_jsonl, load_jsonl
 from .synth import GeneratorConfig, generate_world
 from .synth.legacy_db import ForeignDatabaseError, defect_counts, export_truth, write_legacy_db
@@ -76,6 +77,21 @@ def _show(args: argparse.Namespace) -> int:
     return 1
 
 
+def _explain(args: argparse.Namespace) -> int:
+    scenarios = _load(args.file)
+    if scenarios is None:
+        return 1
+    # With truth.json next to the scenarios, ids are shown with the person's name.
+    truth_path = args.file.parent / TRUTH_NAME
+    truth = json.loads(truth_path.read_text(encoding="utf-8")) if truth_path.exists() else None
+    for s in scenarios:
+        if s.id == args.id:
+            print(explain(s, Labels(truth)))
+            return 0
+    print(f"error: no scenario {args.id}", file=sys.stderr)
+    return 1
+
+
 def _schema(args: argparse.Namespace) -> int:
     print(json.dumps(Scenario.model_json_schema(), ensure_ascii=False, indent=2))
     return 0
@@ -102,6 +118,10 @@ def main(argv: list[str] | None = None) -> int:
     show.add_argument("id")
     show.add_argument("--file", type=Path, default=default_file)
     show.set_defaults(run=_show)
+    explained = actions.add_parser("explain", help="tell one scenario as a story")
+    explained.add_argument("id")
+    explained.add_argument("--file", type=Path, default=default_file)
+    explained.set_defaults(run=_explain)
     schema = actions.add_parser("schema", help="print the scenario JSON Schema")
     schema.set_defaults(run=_schema)
 
