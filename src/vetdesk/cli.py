@@ -21,7 +21,7 @@ from .explain import Labels, explain
 from .identity import Evidence, IdentityResolver
 from .kb import load_kb
 from .legacy import LegacySqliteSource
-from .llm import LLMError, Usage, create_client
+from .llm import PROVIDERS, LLMError, Usage, create_client, provider_of
 from .scenario import Scenario, dump_jsonl, load_jsonl
 from .scheduling import SqliteAgenda
 from .synth import GeneratorConfig, generate_world
@@ -194,6 +194,17 @@ def _load_env(path: Path = Path(".env")) -> None:
             os.environ.setdefault(key.strip(), value.strip().strip("'\""))
 
 
+def _explain_llm_error(error: Exception, provider: str | None, model: str | None) -> None:
+    """Say what to do about the usual credential problems."""
+    if (provider or provider_of(model) or "anthropic") != "anthropic":
+        return
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        print("Set ANTHROPIC_API_KEY in .env to talk to the agent.", file=sys.stderr)
+    elif "workspace" in str(error) and not os.environ.get("ANTHROPIC_WORKSPACE_ID"):
+        print("This key is not tied to a workspace: set ANTHROPIC_WORKSPACE_ID in .env, "
+              "or use a key created inside a workspace.", file=sys.stderr)
+
+
 def _chat(args: argparse.Namespace) -> int:
     clinic = _clinic(args.data / DB_NAME)
     if clinic is None:
@@ -233,11 +244,7 @@ def _chat(args: argparse.Namespace) -> int:
                 print(f"        ({turn.seconds:.1f} s waiting for the model: {steps})")
     except (LLMError, anthropic.AnthropicError) as error:
         print(f"error: {error}", file=sys.stderr)
-        if not os.environ.get("ANTHROPIC_API_KEY"):
-            print("Set ANTHROPIC_API_KEY in .env to talk to the agent.", file=sys.stderr)
-        elif "workspace" in str(error) and not os.environ.get("ANTHROPIC_WORKSPACE_ID"):
-            print("This key is not tied to a workspace: set ANTHROPIC_WORKSPACE_ID in .env, "
-                  "or use a key created inside a workspace.", file=sys.stderr)
+        _explain_llm_error(error, args.provider, args.model)
         return 1
     session = call.session
     confirmed = f"client {session.client.code}" if session.client else "not confirmed"
@@ -330,8 +337,9 @@ def main(argv: list[str] | None = None) -> int:
     chat.add_argument("--number", help="calling number in E.164; leave out for a hidden number")
     chat.add_argument("--now", type=datetime.fromisoformat,
                       help="when the call happens, e.g. 2026-11-03T10:15 (default: now)")
-    chat.add_argument("--provider", help="LLM provider (default: anthropic)")
-    chat.add_argument("--model", help="model id (default: the provider's default)")
+    chat.add_argument("--provider", choices=PROVIDERS,
+                      help="LLM provider (default: the model's, else anthropic)")
+    chat.add_argument("--model", help="model id, e.g. claude-sonnet-5-5 or gemini-flash-latest")
     chat.add_argument("--verbose", action="store_true", help="show the tool calls")
     chat.set_defaults(run=_chat)
 
@@ -339,9 +347,10 @@ def main(argv: list[str] | None = None) -> int:
         "latency", help="play one fixed call against several models and time the answers"
     )
     latency.add_argument("--data", type=Path, default=Path("data"))
-    latency.add_argument("--provider", help="LLM provider (default: anthropic)")
+    latency.add_argument("--provider", choices=PROVIDERS,
+                         help="LLM provider (default: each model's own)")
     latency.add_argument("--models", default=",".join(PRICES),
-                         help="comma-separated model ids")
+                         help="comma-separated model ids, from any provider")
     latency.set_defaults(run=_latency)
 
     args = parser.parse_args(argv)

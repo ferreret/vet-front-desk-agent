@@ -8,6 +8,7 @@ license = "MIT"
 authors = [{ name = "Nicolás Barceló" }]
 dependencies = [
     "anthropic>=1.11.0",
+    "google-genai>=2.26.0",
     "pydantic>=2.7",
 ]
 

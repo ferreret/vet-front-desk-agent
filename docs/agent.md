@@ -57,12 +57,16 @@ or what the tools returned, get back text and tool calls. Each provider is one a
 and the conversation object keeps the provider's own message history, so reasoning blocks
 and cache markers never leak into the agent.
 
-- `AnthropicClient` is the adapter that exists today. Default model `claude-opus-5-5` at
-  low effort; `VETDESK_LLM_MODEL` and `VETDESK_LLM_EFFORT` change that.
+- `AnthropicClient`: Claude models. Default model `claude-opus-5-5` at low effort;
+  `VETDESK_LLM_MODEL` and `VETDESK_LLM_EFFORT` change that.
+- `GeminiClient`: Gemini models, with thinking kept to the minimum each model allows.
+  Written from the SDK's documentation and tested against a stand-in; **not yet run against
+  the live API**.
 - `ScriptedClient` is a model that follows a script. The agent's tests run on it: no
   network, no cost, repeatable.
 
-Adding a provider means writing one adapter and registering it in `create_client`.
+Adding a provider means writing one adapter and registering it in `create_client`. The
+model id picks the provider: `--model gemini-flash-latest` needs nothing else.
 
 ## Trying it
 

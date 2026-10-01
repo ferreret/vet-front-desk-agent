@@ -129,7 +129,7 @@ A language model with eight tools, talking in text for now (`vetdesk chat`).
   and prices live in a single file that refuses to load with a placeholder, a malformed
   phone number or a gap in the opening hours. The prompt and the agenda are built from it.
 - **Any provider.** The agent talks to a small interface; each provider is one adapter.
-  Claude is the adapter that exists today.
+  There are two: Claude and Gemini.
 
 Tools, barrier, agenda, knowledge base and the agent loop are tested without a model. With
 a real model it has been tried by hand, not measured: one call so far, which went as it
