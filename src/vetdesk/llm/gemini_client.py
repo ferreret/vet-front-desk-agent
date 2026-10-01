@@ -12,7 +12,7 @@ import httpx
 from google import genai
 from google.genai import errors, types
 
-from .base import LLMError, Reply, ToolCall, ToolResult, ToolSpec, Usage
+from .base import LLMError, OnText, Reply, ToolCall, ToolResult, ToolSpec, Usage
 
 DEFAULT_MODEL = "gemini-flash-latest"
 
@@ -70,10 +70,20 @@ class _Conversation:
         self._contents: list[types.Content] = []  # append-only
         self._calls: dict[str, types.FunctionCall] = {}
 
-    def send_user(self, text: str) -> Reply:
-        return self._complete(types.Content(role="user", parts=[types.Part.from_text(text=text)]))
+    def send_user(self, text: str, on_text: OnText | None = None) -> Reply:
+        content = types.Content(role="user", parts=[types.Part.from_text(text=text)])
+        return self._spoken(self._complete(content), on_text)
 
-    def send_tool_results(self, results: list[ToolResult]) -> Reply:
+    @staticmethod
+    def _spoken(reply: Reply, on_text: OnText | None) -> Reply:
+        # Not streamed yet: the text is handed over whole, once the reply is complete.
+        if reply.text and on_text:
+            on_text(reply.text)
+        return reply
+
+    def send_tool_results(
+        self, results: list[ToolResult], on_text: OnText | None = None
+    ) -> Reply:
         parts = []
         for result in results:
             call = self._calls[result.call_id]
@@ -81,7 +91,7 @@ class _Conversation:
                 id=call.id, name=call.name, response=json.loads(result.content)
             )
             parts.append(types.Part(function_response=answer))
-        return self._complete(types.Content(role="tool", parts=parts))
+        return self._spoken(self._complete(types.Content(role="tool", parts=parts)), on_text)
 
     def _complete(self, content: types.Content) -> Reply:
         self._contents.append(content)

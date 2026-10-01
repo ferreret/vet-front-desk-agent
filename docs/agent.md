@@ -57,8 +57,9 @@ or what the tools returned, get back text and tool calls. Each provider is one a
 and the conversation object keeps the provider's own message history, so reasoning blocks
 and cache markers never leak into the agent.
 
-- `AnthropicClient`: Claude models. Default model `claude-opus-5-5` at low effort;
-  `VETDESK_LLM_MODEL` and `VETDESK_LLM_EFFORT` change that.
+- `AnthropicClient`: Claude models. Default `claude-sonnet-5-5`, low effort, thinking off,
+  answers streamed; `VETDESK_LLM_MODEL`, `VETDESK_LLM_EFFORT` and `VETDESK_LLM_THINKING`
+  change that.
 - `GeminiClient`: Gemini models, with thinking kept to the minimum each model allows.
   Written from the SDK's documentation and tested against a stand-in; **not yet run against
   the live API**.
@@ -97,30 +98,43 @@ knowledge base is what the evaluation harness (F4) measures, over every scenario
 
 ## How long callers wait
 
-`uv run vetdesk latency` plays one fixed six-line call against several models. One run on
-2026-10-01, so these are single samples, not statistics:
+On the phone, the time the model takes is silence. `uv run vetdesk latency` plays one fixed
+six-line call and reports how long the caller waits. Every figure below is a single run on
+2026-10-01: samples, not statistics.
 
-| Model | Median wait per answer | Slowest answer | Per request | Requests | Cost of the call |
-|---|---|---|---|---|---|
-| `claude-opus-5-5` | 4.5 s | 7.5 s | 2.4 s | 11 | $0.072 |
-| `claude-sonnet-5-5` | 3.0 s | 6.4 s | 1.6 s | 11 | $0.036 |
-| `claude-haiku-4-5` | 2.6 s | 40.3 s | 1.2 s | 10 | $0.034 |
+First, three models, each answer shown only when complete:
 
-All three confirmed the caller and booked the appointment. None is close to the 1.5 s the
-phone needs, and the model alone will not get there:
+| Model | Median wait per answer | Slowest answer | Cost of the call |
+|---|---|---|---|
+| `claude-opus-5-5` | 4.5 s | 7.5 s | $0.072 |
+| `claude-sonnet-5-5` | 3.0 s | 6.4 s | $0.036 |
+| `claude-haiku-4-5` | 2.6 s | 40.3 s | $0.034 |
 
-- An answer that needs tools is two or three requests in a row. Identifying the caller and
-  offering times took 6 to 7 seconds on the two larger models.
-- The answer is shown only when complete. Streaming it would let the first words out as
-  soon as they exist, and let the waiting phrase be spoken before a tool runs.
-- Haiku's 40-second first answer is one unexplained outlier (most likely a retried
-  request). Its other answers took 0.8 to 4 seconds.
+All three confirmed the caller and booked. Haiku drifted from the brief (it addressed the
+caller as "tú", added line breaks, repeated the waiting phrase) and cost about as much as
+Sonnet despite half the price per token, which suggests its prompt is not being cached;
+not checked.
 
-Two side notes from the same run. Haiku cost about as much as Sonnet despite half the
-price per token, which suggests the prompt is too short to be cached on that model; not
-yet checked. And Haiku drifted from the brief: it addressed the caller as "tú", added line
-breaks and repeated the waiting phrase.
+Then two changes, measured on Sonnet 5.5:
 
-Known gap for the voice layer: the waiting phrase ("Un momento, lo miro") is returned
-together with the answer that follows the tool call. On the phone it has to be spoken
-before the tool runs, which needs streaming (F5).
+| Sonnet 5.5, answers streamed | First words: median | First words: slowest | Complete: median |
+|---|---|---|---|
+| Thinking on, low effort | 2.2 s | 4.9 s | 2.2 s |
+| Thinking off (`between_tools`) | 1.8 s | 1.8 s, plus one 16.9 s outlier | 4.6 s |
+
+- **Streaming alone changed little.** With thinking on, the model stays silent until it
+  has finished thinking and running its tools, then says everything at once.
+- **Without thinking, the model speaks first and works after.** It says a short line
+  ("Un momento, lo miro"), then calls its tools. The caller hears something within about
+  1.8 seconds on every turn, although the whole answer takes longer and is wordier.
+
+So the defaults are now Sonnet 5.5, thinking off, answers streamed. The 1.5 s target is not
+met yet, and two things are open:
+
+- **Outliers.** One first request took 16.9 s and another, on Haiku, 40.3 s. Cause not
+  established (possibly a retried request). On a phone call that is a dead line, so the
+  voice layer needs a time limit per request and something to say when it is exceeded.
+- **Quality without thinking is unmeasured.** One call went well. Whether the agent is as
+  careful across all the scenarios is for the evaluation harness (F4); the privacy barrier
+  does not depend on it, because it is code.
+

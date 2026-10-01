@@ -4,7 +4,17 @@ from __future__ import annotations
 
 import os
 
-from .base import Conversation, LLMClient, LLMError, Reply, ToolCall, ToolResult, ToolSpec, Usage
+from .base import (
+    Conversation,
+    LLMClient,
+    LLMError,
+    OnText,
+    Reply,
+    ToolCall,
+    ToolResult,
+    ToolSpec,
+    Usage,
+)
 
 PROVIDERS = ("anthropic", "gemini")
 
@@ -21,7 +31,8 @@ def provider_of(model: str | None) -> str | None:
 def create_client(provider: str | None = None, model: str | None = None) -> LLMClient:
     """Build the client for a provider. Adding a provider means adding one adapter here.
 
-    Defaults come from VETDESK_LLM_PROVIDER, VETDESK_LLM_MODEL and VETDESK_LLM_EFFORT. A
+    Defaults come from VETDESK_LLM_PROVIDER, VETDESK_LLM_MODEL, VETDESK_LLM_EFFORT and
+    VETDESK_LLM_THINKING (off by default, on the models that allow switching it off). A
     model id that names its provider (claude-..., gemini-...) needs no provider.
     """
     model = model or os.environ.get("VETDESK_LLM_MODEL")
@@ -31,7 +42,8 @@ def create_client(provider: str | None = None, model: str | None = None) -> LLMC
         from .anthropic_client import DEFAULT_EFFORT, DEFAULT_MODEL, AnthropicClient
 
         effort = os.environ.get("VETDESK_LLM_EFFORT", DEFAULT_EFFORT)
-        return AnthropicClient(model or DEFAULT_MODEL, effort=effort)
+        thinking = os.environ.get("VETDESK_LLM_THINKING", "off").lower() == "on"
+        return AnthropicClient(model or DEFAULT_MODEL, effort=effort, thinking=thinking)
     if provider == "gemini":
         from .gemini_client import DEFAULT_MODEL, GeminiClient
 
@@ -40,6 +52,6 @@ def create_client(provider: str | None = None, model: str | None = None) -> LLMC
 
 
 __all__ = [
-    "PROVIDERS", "Conversation", "LLMClient", "LLMError", "Reply", "ToolCall", "ToolResult",
-    "ToolSpec", "Usage", "create_client", "provider_of",
+    "PROVIDERS", "Conversation", "LLMClient", "LLMError", "OnText", "Reply", "ToolCall",
+    "ToolResult", "ToolSpec", "Usage", "create_client", "provider_of",
 ]

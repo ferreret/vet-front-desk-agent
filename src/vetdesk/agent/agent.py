@@ -9,7 +9,7 @@ from datetime import datetime
 
 from ..kb import KnowledgeBase
 from ..legacy.models import Clinic
-from ..llm import Conversation, LLMClient, LLMError, ToolResult, Usage
+from ..llm import Conversation, LLMClient, LLMError, OnText, ToolResult, Usage
 from ..scheduling import Agenda
 from .prompt import call_context, greeting, system_prompt
 from .tools import SPECS, CallSession, Toolbox, ToolEvent
@@ -34,6 +34,8 @@ class Turn:
     # Seconds the model took on each request of this turn. On the phone their sum is the
     # silence the caller hears, so it is measured from the start.
     latencies: tuple[float, ...] = ()
+    # Seconds until the agent's first words were available: what the caller perceives.
+    first_words: float | None = None
 
     @property
     def seconds(self) -> float:
@@ -50,14 +52,32 @@ class Call:
     def session(self) -> CallSession:
         return self._toolbox.session
 
-    def say(self, text: str) -> Turn:
-        """The caller says something; the agent answers, using its tools as needed."""
+    def say(self, text: str, on_text: OnText | None = None) -> Turn:
+        """The caller says something; the agent answers, using its tools as needed.
+
+        `on_text` receives the answer piece by piece as the model writes it, so what the
+        agent says before running a tool ("un momento, lo miro") is heard before the tool
+        runs, not after.
+        """
         events_before = len(self.session.events)
         latencies: list[float] = []
+        turn_started = time.perf_counter()
+        first_words: float | None = None
+        said_something = new_request = False
+
+        def heard(piece: str) -> None:
+            nonlocal first_words, said_something, new_request
+            if first_words is None:
+                first_words = time.perf_counter() - turn_started
+            if on_text:
+                on_text(" " + piece if said_something and new_request else piece)
+            said_something, new_request = True, False
 
         def timed(send, payload):
+            nonlocal new_request
+            new_request = True
             started = time.perf_counter()
-            answer = send(payload)
+            answer = send(payload, heard)
             latencies.append(time.perf_counter() - started)
             return answer
 
@@ -77,13 +97,13 @@ class Call:
             usage, requests = usage + reply.usage, requests + 1
 
         answer = " ".join(part for part in spoken if part)
-        if reply.stop == "refusal":
-            answer = CANNOT_HELP
-        elif reply.stop != "end" or not answer:
-            # Cut off, or still asking for tools after too many rounds: never go silent.
-            answer = answer or DID_NOT_FOLLOW
+        fallback = CANNOT_HELP if reply.stop == "refusal" else "" if answer else DID_NOT_FOLLOW
+        if fallback:  # refused, cut off or empty: never go silent
+            new_request = True
+            heard(fallback)
+            answer = fallback
         events = tuple(self.session.events[events_before:])
-        return Turn(answer, events, usage, requests, tuple(latencies))
+        return Turn(answer, events, usage, requests, tuple(latencies), first_words)
 
 
 class FrontDeskAgent:

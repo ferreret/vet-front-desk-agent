@@ -231,17 +231,18 @@ def _chat(args: argparse.Namespace) -> int:
                 break
             if not said:
                 break
-            turn = call.say(said)
+            print("agent > ", end="", flush=True)
+            turn = call.say(said, lambda piece: print(piece, end="", flush=True))
+            print()
             total += turn.usage
             if args.verbose:
                 for event in turn.events:
                     arguments = json.dumps(event.arguments, ensure_ascii=False)
                     result = json.dumps(event.result, ensure_ascii=False)
                     print(f"        [{event.name} {arguments} -> {result}]")
-            print(f"agent > {turn.text}")
-            if args.verbose:
                 steps = " + ".join(f"{seconds:.1f}" for seconds in turn.latencies)
-                print(f"        ({turn.seconds:.1f} s waiting for the model: {steps})")
+                print(f"        (first words after {turn.first_words or 0:.1f} s; "
+                      f"model time {turn.seconds:.1f} s: {steps})")
     except (LLMError, anthropic.AnthropicError) as error:
         print(f"error: {error}", file=sys.stderr)
         _explain_llm_error(error, args.provider, args.model)

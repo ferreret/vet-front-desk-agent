@@ -161,3 +161,31 @@ def test_the_latency_benchmark_plays_a_whole_call(clinic, kb, scenarios):
     assert scenario.caller.town in lines[3] and not timing.booked and not timing.confirmed
     assert timing.cost == pytest.approx((6000 * 1.0 + 60 * 5.0) / 1_000_000)
     assert "claude-haiku-4-5" in format_timings([timing])
+
+
+def test_what_the_agent_says_before_a_tool_is_heard_before_the_tool_runs(clinic, kb):
+    heard = []
+
+    def second_step(transcript):
+        # By the time the tool has run, the waiting phrase has already been spoken.
+        heard.append("<tool ran>")
+        return Reply("Tengo hueco el lunes.")
+
+    model = ScriptedClient([
+        Reply("Un momento, lo miro.",
+              (ToolCall("c1", "get_availability",
+                        {"date_from": "2026-11-09", "date_to": "2026-11-13",
+                         "part_of_day": "any"}),),
+              "tool_calls"),
+        second_step,
+    ])
+    turn = _call(model, clinic, kb).say("Quiero una cita", heard.append)
+    assert heard == ["Un momento, lo miro.", "<tool ran>", " Tengo hueco el lunes."]
+    assert turn.text == "".join(piece for piece in heard if piece != "<tool ran>")
+    assert turn.first_words is not None and turn.first_words <= turn.seconds + 1
+
+
+def test_fallback_lines_are_spoken_too(clinic, kb):
+    heard = []
+    _call(ScriptedClient([Reply("", stop="refusal")]), clinic, kb).say("x", heard.append)
+    assert heard == [CANNOT_HELP]

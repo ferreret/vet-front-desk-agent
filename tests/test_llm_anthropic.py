@@ -32,26 +32,51 @@ def _tool_use(call_id, name, **arguments):
 THINKING = SimpleNamespace(type="thinking", thinking="", signature="opaque")
 
 
+class _Stream:
+    """Stands in for the SDK's stream: text arrives in pieces, then the whole message."""
+
+    def __init__(self, response):
+        self._response = response
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def __iter__(self):
+        for block in self._response.content:
+            if block.type == "text":
+                middle = len(block.text) // 2
+                yield SimpleNamespace(type="text", text=block.text[:middle])
+                yield SimpleNamespace(type="text", text=block.text[middle:])
+            else:
+                yield SimpleNamespace(type="content_block_stop")
+
+    def get_final_message(self):
+        return self._response
+
+
 class _Sdk:
     """Records every request; answers with canned responses or raises a canned error."""
 
     def __init__(self, *responses):
         self._responses = list(responses)
         self.requests: list[tuple[str, dict]] = []
-        self.messages = SimpleNamespace(create=lambda **kw: self._create("messages", kw))
+        self.messages = SimpleNamespace(stream=lambda **kw: self._stream("messages", kw))
         self.beta = SimpleNamespace(
-            messages=SimpleNamespace(create=lambda **kw: self._create("beta", kw))
+            messages=SimpleNamespace(stream=lambda **kw: self._stream("beta", kw))
         )
 
-    def _create(self, endpoint, params):
+    def _stream(self, endpoint, params):
         self.requests.append((endpoint, {**params, "messages": list(params["messages"])}))
         response = self._responses.pop(0)
         if isinstance(response, Exception):
             raise response
-        return response
+        return _Stream(response)
 
 
-def _start(sdk, model="claude-opus-5-5", **options):
+def _start(sdk, model="claude-sonnet-5-5", **options):
     client = AnthropicClient(model, client=sdk, **options)
     return client.start("SYSTEM", "CONTEXT", SPECS)
 
@@ -62,9 +87,9 @@ def test_request_for_the_default_model():
     endpoint, request = sdk.requests[0]
     assert endpoint == "beta"
     assert request["betas"] == [FALLBACK_BETA] and request["fallbacks"] == "default"
-    assert request["model"] == "claude-opus-5-5"
+    assert request["model"] == "claude-sonnet-5-5" == AnthropicClient(client=sdk).model
     assert request["output_config"] == {"effort": "low"}
-    assert "thinking" not in request and "tool_choice" not in request
+    assert request["thinking"] == {"type": "between_tools"} and "tool_choice" not in request
     assert request["messages"] == [{"role": "user", "content": "Hola"}]
     assert (reply.text, reply.stop, reply.tool_calls) == ("Hola.", "end", ())
     assert (reply.usage.input_tokens, reply.usage.cache_read_tokens) == (1500, 1200)
@@ -181,3 +206,22 @@ def test_a_key_without_a_workspace_sends_the_workspace_header(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", " wrkspc_example ")
     headers = AnthropicClient()._client.default_headers
     assert headers["anthropic-workspace-id"] == "wrkspc_example"
+
+
+def test_text_is_handed_over_as_it_arrives():
+    sdk = _Sdk(_response(THINKING, _text("Un momento, lo miro."), _tool_use("t1", "get_pets"),
+                         stop_reason="tool_use"))
+    pieces = []
+    reply = _start(sdk).send_user("¿Qué animales tengo?", pieces.append)
+    assert len(pieces) == 2 and "".join(pieces) == "Un momento, lo miro." == reply.text
+    assert reply.stop == "tool_calls"
+
+
+def test_thinking_can_be_switched_off_where_the_model_allows_it():
+    sdk = _Sdk(_response(_text("Hola.")), _response(_text("Hola.")), _response(_text("Hola.")))
+    _start(sdk).send_user("Hola")
+    assert sdk.requests[0][1]["thinking"] == {"type": "between_tools"}
+    _start(sdk, thinking=True).send_user("Hola")
+    assert "thinking" not in sdk.requests[1][1]  # the model's own default: adaptive
+    _start(sdk, "claude-opus-5-5").send_user("Hola")
+    assert "thinking" not in sdk.requests[2][1]  # that model always thinks: not sent

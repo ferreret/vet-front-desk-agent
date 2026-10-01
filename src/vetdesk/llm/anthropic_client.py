@@ -11,9 +11,9 @@ import os
 
 import anthropic
 
-from .base import LLMError, Reply, ToolCall, ToolResult, ToolSpec, Usage
+from .base import LLMError, OnText, Reply, ToolCall, ToolResult, ToolSpec, Usage
 
-DEFAULT_MODEL = "claude-opus-5-5"
+DEFAULT_MODEL = "claude-sonnet-5-5"
 DEFAULT_EFFORT = "low"  # short spoken turns: favour latency over deliberation
 
 # Server-side refusal fallback: if the model's safety classifiers decline a request, the
@@ -21,6 +21,8 @@ DEFAULT_EFFORT = "low"  # short spoken turns: favour latency over deliberation
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 _SUPPORTS_FALLBACK = ("claude-opus-5", "claude-sonnet-5-5", "claude-fable-5-1")
 _NO_EFFORT = ("claude-haiku-4-5",)  # rejects output_config.effort
+# The only model whose thinking can be switched off, with its own setting for it.
+_THINKING_OFF = {"claude-sonnet-5-5": {"type": "between_tools"}}
 
 _STOP = {"end_turn": "end", "tool_use": "tool_calls", "max_tokens": "max_tokens",
          "refusal": "refusal"}
@@ -32,12 +34,17 @@ class AnthropicClient:
         model: str = DEFAULT_MODEL,
         *,
         effort: str | None = DEFAULT_EFFORT,
+        thinking: bool = False,
         max_tokens: int = 4096,
         fallbacks: bool = True,
         client: anthropic.Anthropic | None = None,
     ) -> None:
         self.model = model
         self.effort = None if model.startswith(_NO_EFFORT) else effort
+        # No thinking by default: measured on a phone-style call, the model then speaks
+        # before it reaches for a tool, so the caller hears something in under two seconds
+        # instead of waiting for the whole turn. Honoured where the model allows it.
+        self.thinking = None if thinking else _THINKING_OFF.get(model)
         self.max_tokens = max_tokens
         self.fallbacks = fallbacks and model.startswith(_SUPPORTS_FALLBACK)
         self._client = client or anthropic.Anthropic(default_headers=_workspace_header())
@@ -62,6 +69,8 @@ class _Conversation:
             {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}},
             {"type": "text", "text": context},
         ]
+        # Tool inputs here are a few short fields, so they are left to arrive whole and
+        # schema-checked by the API rather than streamed eagerly.
         self._tools = [
             {"name": t.name, "description": t.description, "input_schema": t.parameters,
              "strict": True}
@@ -69,17 +78,19 @@ class _Conversation:
         ]
         self._messages: list[dict] = []  # append-only: earlier turns are never edited
 
-    def send_user(self, text: str) -> Reply:
-        return self._complete({"role": "user", "content": text})
+    def send_user(self, text: str, on_text: OnText | None = None) -> Reply:
+        return self._complete({"role": "user", "content": text}, on_text)
 
-    def send_tool_results(self, results: list[ToolResult]) -> Reply:
+    def send_tool_results(
+        self, results: list[ToolResult], on_text: OnText | None = None
+    ) -> Reply:
         # All results of one turn go back together, in a single user message.
         content = [
             {"type": "tool_result", "tool_use_id": r.call_id, "content": r.content,
              "is_error": r.is_error}
             for r in results
         ]
-        return self._complete({"role": "user", "content": content})
+        return self._complete({"role": "user", "content": content}, on_text)
 
     def request(self) -> dict:
         owner = self._owner
@@ -93,12 +104,14 @@ class _Conversation:
         }
         if owner.effort:
             params["output_config"] = {"effort": owner.effort}
+        if owner.thinking:
+            params["thinking"] = owner.thinking
         return params
 
-    def _complete(self, message: dict) -> Reply:
+    def _complete(self, message: dict, on_text: OnText | None) -> Reply:
         self._messages.append(message)
         try:
-            response = self._call(self.request())
+            response = self._stream(self.request(), on_text)
         except anthropic.RateLimitError as error:
             raise self._failed("the provider is rate limiting requests", True) from error
         except anthropic.APIStatusError as error:
@@ -128,13 +141,20 @@ class _Conversation:
             ),
         )
 
-    def _call(self, params: dict):
+    def _stream(self, params: dict, on_text: OnText | None):
+        """Run the request as a stream, handing each piece of text over as it arrives."""
         client = self._owner._client
         if self._owner.fallbacks:
-            return client.beta.messages.create(
+            manager = client.beta.messages.stream(
                 **params, betas=[FALLBACK_BETA], fallbacks="default"
             )
-        return client.messages.create(**params)
+        else:
+            manager = client.messages.stream(**params)
+        with manager as stream:
+            for event in stream:
+                if event.type == "text" and on_text:
+                    on_text(event.text)
+            return stream.get_final_message()
 
     def _failed(self, message: str, retryable: bool) -> LLMError:
         self._messages.pop()  # leave the history as it was, so the turn can be retried

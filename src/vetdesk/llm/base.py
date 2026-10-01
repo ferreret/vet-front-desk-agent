@@ -9,6 +9,7 @@ into the agent.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
@@ -68,10 +69,17 @@ class LLMError(Exception):
         self.retryable = retryable
 
 
-class Conversation(Protocol):
-    def send_user(self, text: str) -> Reply: ...
+# Called with each piece of the model's text as soon as it exists. On the phone this is
+# what lets the caller hear the first words while the rest is still being written.
+OnText = Callable[[str], None]
 
-    def send_tool_results(self, results: list[ToolResult]) -> Reply: ...
+
+class Conversation(Protocol):
+    def send_user(self, text: str, on_text: OnText | None = None) -> Reply: ...
+
+    def send_tool_results(
+        self, results: list[ToolResult], on_text: OnText | None = None
+    ) -> Reply: ...
 
 
 class LLMClient(Protocol):

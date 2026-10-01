@@ -26,8 +26,8 @@ from ..scheduling import SqliteAgenda
 # US dollars per million tokens (input, output), first-party API prices as of 2026-09.
 # Cached input is billed at a tenth of the input price; writing the cache at 1.25 times.
 PRICES = {
-    "claude-opus-5-5": (4.0, 20.0),
     "claude-sonnet-5-5": (2.0, 10.0),
+    "claude-opus-5-5": (4.0, 20.0),
     "claude-haiku-4-5": (1.0, 5.0),
 }
 
@@ -35,7 +35,8 @@ PRICES = {
 @dataclass(frozen=True)
 class CallTiming:
     model: str
-    answers: tuple[float, ...]  # seconds the caller waited for each answer
+    answers: tuple[float, ...]  # seconds until each answer was complete
+    first_words: tuple[float, ...]  # seconds until the first words of each answer
     requests: tuple[float, ...]  # seconds each request to the model took
     usage: Usage
     confirmed: bool
@@ -78,29 +79,32 @@ def time_call(
 
     agent = FrontDeskAgent(llm, clinic, kb, SqliteAgenda(kb, now), now)
     call = agent.start_call(scenario.call.caller_number)
-    answers, requests, usage = [], [], Usage()
+    answers, first_words, requests, usage = [], [], [], Usage()
     for line in caller_lines(scenario):
         turn = call.say(line)
         answers.append(turn.seconds)
+        first_words.append(turn.first_words if turn.first_words is not None else turn.seconds)
         requests.extend(turn.latencies)
         usage += turn.usage
-        report(f"  caller > {line}\n  agent  > {turn.text}\n           ({turn.seconds:.1f} s)")
+        report(f"  caller > {line}\n  agent  > {turn.text}\n"
+               f"           (first words {first_words[-1]:.1f} s, complete {turn.seconds:.1f} s)")
     booked = any(e.name == "book_appointment" and not e.is_error for e in call.session.events)
-    return CallTiming(model, tuple(answers), tuple(requests), usage,
+    return CallTiming(model, tuple(answers), tuple(first_words), tuple(requests), usage,
                       call.session.client is not None, booked)
 
 
 def format_timings(timings: list[CallTiming]) -> str:
     lines = [
-        f"{'model':20} {'answer: median':>15} {'slowest':>8} {'per request':>12} "
-        f"{'requests':>9} {'cost':>8}  outcome",
+        f"{'model':20} {'first words: median':>20} {'slowest':>8} {'complete: median':>17} "
+        f"{'slowest':>8} {'requests':>9} {'cost':>8}  outcome",
     ]
     for t in timings:
         cost = f"${t.cost:.3f}" if t.cost is not None else "?"
         outcome = ("booked" if t.booked else "no booking") + \
             (", caller confirmed" if t.confirmed else ", caller not confirmed")
         lines.append(
-            f"{t.model:20} {statistics.median(t.answers):13.1f} s {max(t.answers):6.1f} s "
-            f"{statistics.median(t.requests):10.1f} s {len(t.requests):9d} {cost:>8}  {outcome}"
+            f"{t.model:20} {statistics.median(t.first_words):18.1f} s "
+            f"{max(t.first_words):6.1f} s {statistics.median(t.answers):15.1f} s "
+            f"{max(t.answers):6.1f} s {len(t.requests):9d} {cost:>8}  {outcome}"
         )
     return "\n".join(lines)

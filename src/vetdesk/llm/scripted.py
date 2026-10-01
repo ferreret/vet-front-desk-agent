@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from .base import LLMError, Reply, ToolResult, ToolSpec
+from .base import LLMError, OnText, Reply, ToolResult, ToolSpec
 
 # A step is a ready-made reply, or a function that builds one from what the model was sent.
 Step = Reply | Callable[["Transcript"], Reply]
@@ -38,10 +38,18 @@ class ScriptedClient:
         step = self._steps.pop(0)
         return step(self.transcript) if callable(step) else step
 
-    def send_user(self, text: str) -> Reply:
-        self.transcript.user_messages.append(text)
-        return self._next()
+    def _reply(self, on_text: OnText | None) -> Reply:
+        reply = self._next()
+        if reply.text and on_text:
+            on_text(reply.text)
+        return reply
 
-    def send_tool_results(self, results: list[ToolResult]) -> Reply:
+    def send_user(self, text: str, on_text: OnText | None = None) -> Reply:
+        self.transcript.user_messages.append(text)
+        return self._reply(on_text)
+
+    def send_tool_results(
+        self, results: list[ToolResult], on_text: OnText | None = None
+    ) -> Reply:
         self.transcript.tool_results.extend(results)
-        return self._next()
+        return self._reply(on_text)
