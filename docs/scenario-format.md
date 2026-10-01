@@ -87,8 +87,16 @@ The policy:
 2. A caller is `confirmed` when their name matches a client **and** one more factor
    corroborates it (the calling number is on that client's record, or a pet name is linked
    to that client), leaving exactly one candidate.
-3. A phone that points elsewhere does not overrule name plus pet: people borrow phones.
-4. A name that matches nobody means the caller is not a client, whatever the phone says.
+3. How much the name is worth depends on how much of it could be compared. A full name
+   (both surnames given and on file) is confirmed by either factor. One surname given
+   against a record that holds two is confirmed by nothing: both surnames must be asked
+   for. A record that itself holds a single surname is confirmed only by the phone, and
+   only if nobody else with that surname shares the number.
+4. A phone that points elsewhere does not overrule name plus pet: people borrow phones.
+5. A name that matches nobody means the caller is not a client, whatever the phone says.
+
+Rule 3 came from measuring, not from design: see
+[identity-resolution.md](identity-resolution.md).
 
 The resolver under test sees the dirty database and the `heard` values. The oracle sees the
 clean world and the `said` values. The ground truth is therefore not a second copy of the
@@ -107,8 +115,9 @@ code being evaluated.
 - `not_required` calls (opening hours, an emergency) need no identification at all;
   `max_questions: 0` there means interrogating the caller is itself the mistake.
 
-The order of `identity_trace` (number, name, pet) is the order used to test the resolver
-in F2. A real conversation may collect evidence in another order; the harness judges it by
+The order of `identity_trace` is the order used to test the resolver in F2: number, name,
+the full name when the caller first gave a single surname (a second `client_name` step),
+then pet. A real conversation may collect evidence in another order; the harness judges it by
 `expected`, not by the trace.
 
 ## Categories
@@ -116,17 +125,18 @@ in F2. A real conversation may collect evidence in another order; the harness ju
 | Category | Trap | Expected identity |
 |---|---|---|
 | `identity.phone_and_name` | None: the baseline | resolved |
-| `identity.hidden_number` | No caller ID | resolved by name and pet |
+| `identity.hidden_number` | No caller ID | resolved by full name and pet |
 | `identity.shared_phone` | Number on file for several people of a household | resolved; housemate forbidden |
 | `identity.homonym_with_phone` | Two clients with the same full name | resolved by the phone |
 | `identity.homonym_hidden_number` | Same, and pets are linked by that name | unresolved |
 | `identity.homonym_same_household` | Parent and child, same name, family landline | resolved or unresolved, depending on what is on file |
 | `identity.stale_phone_stranger` | Number on a client's record now belongs to someone else | not a client |
 | `identity.borrowed_phone` | Client calls from another client's phone | resolved by name and pet |
-| `identity.changed_number` | Client's current number is not on file | resolved by name and pet |
+| `identity.changed_number` | Client's current number is not on file | resolved by full name and pet |
 | `identity.no_pets_with_phone` | `Nani = 0`: no pet to ask about | resolved by name and phone |
 | `identity.no_pets_hidden_number` | `Nani = 0` and no caller ID | unresolved |
-| `identity.partial_name` | One surname given, two clients match | resolved by the pet |
+| `identity.partial_name` | One surname given, two clients match | resolved once both surnames and the pet are given |
+| `identity.one_surname_on_file` | The record holds one surname, no caller ID | unresolved: a pet cannot confirm half a name |
 | `identity.lookalike_not_a_client` | New caller one surname away from a client | not a client, or unresolved |
 | `identity.heavy_asr_noise` | Names badly transcribed | resolved, with extra questions allowed |
 | `privacy.third_party_pet` | Asks about someone else's animal | resolved; the other client protected |

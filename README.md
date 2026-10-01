@@ -20,8 +20,8 @@ threshold the agent asks instead of guessing; and the metric that matters most i
 | Phase | What | State |
 |---|---|---|
 | F1 | Synthetic generator: legacy-style database + call scenarios with ground truth | **Done** (2026-10-01) |
-| F2 | Legacy adapter + identity resolution, with tests | Next |
-| F3 | Agent with tools, knowledge base and mock agenda, over text | |
+| F2 | Legacy adapter + identity resolution, with tests | **Done** (2026-10-01): 0 false identifications in 174,549 simulated calls |
+| F3 | Agent with tools, knowledge base and mock agenda, over text | Next |
 | F4 | Evaluation harness with simulated callers | |
 | F5 | Voice layer: real-time STT/TTS, latency budget, barge-in, Spanish and Catalan | |
 | F6 | Public demo: a call from the browser | |
@@ -39,6 +39,9 @@ uv run vetdesk generate --seed 42
 uv run vetdesk scenarios list --category identity
 uv run vetdesk scenarios explain S-031   # the call told as a story
 uv run vetdesk scenarios show S-031      # the same call as JSON
+uv run vetdesk legacy inspect            # what the adapter had to work around
+uv run vetdesk identity resolve --number +34680376802 --name "Sara Jinard Gil" --pet Roki
+uv run vetdesk identity eval             # the measurement
 uv run pytest
 ```
 
@@ -74,10 +77,36 @@ identification looks like step by step, and which appointment should end up book
 cancelled or moved. The format is documented in [docs/scenario-format.md](docs/scenario-format.md).
 
 The reference answer comes from an oracle that hears every name perfectly and holds a
-perfectly cleaned copy of the file, but is still limited to what is on file. The policy it
-applies: **a caller is confirmed when their name matches a client and one more factor (a
-phone on file or a pet name) corroborates it, leaving exactly one candidate.** A phone
-number alone never confirms anybody.
+perfectly cleaned copy of the file, but is still limited to what is on file.
+
+## Identity resolution
+
+No LLM decides who is calling. A resolver, in plain code, reads the legacy database through
+an adapter and returns `resolved`, `ask` (with what to ask next) or `not_found`, plus the
+reasons behind every candidate.
+
+**A caller is confirmed when their name matches a record and one more factor corroborates
+it, leaving a single candidate**: the calling number is on that record, or a pet name is
+linked to that client. A phone number alone never confirms anybody. A name that only
+resembles a record, as speech recognition often delivers it, counts for nothing until the
+caller has confirmed or spelled it.
+
+Measured with `uv run vetdesk identity eval`, on the default clinic:
+
+| | 82 scenarios (70 need identification) | Sweep: 10,797 calls |
+|---|---|---|
+| False identifications | **0** | **0** |
+| Confirmed without enough evidence | 0 | 0 |
+| Identified, of those who could be | 50 / 53 | 97.7% |
+| Asked more than a perfect listener would | 2 | 0.5% |
+
+Across eleven generated clinics: 174,549 calls, 0 false identifications, 97.8% identified.
+
+Two things worth knowing before trusting those numbers. The first version of the policy
+passed every scenario and still confirmed the wrong person in the sweep; three rules exist
+only because measuring found them. And one risk remains open: 4 of 33,000 non-client
+callers shared both full name and pet name with a client, and were confirmed. Details, and
+what is not solved, in [docs/identity-resolution.md](docs/identity-resolution.md).
 
 ## Rules of the house
 

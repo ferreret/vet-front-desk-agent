@@ -93,7 +93,7 @@ Generador sintético ──► BD estilo «legacy» (SQLite) ──► Adaptador
 | | Fase | Nota |
 |---|---|---|
 | F1 | Generador sintético: BD estilo legacy + escenarios con verdad de referencia | ✅ Cerrada el 2026-10-01. Formato de escenarios en `docs/scenario-format.md` |
-| F2 | Adaptador legacy + **resolución de identidad** con tests | El corazón, y se puede medir sin LLM |
+| F2 | Adaptador legacy + **resolución de identidad** con tests | ✅ Cerrada el 2026-10-01. 0 identificaciones falsas en 174.549 llamadas simuladas. Detalle en `docs/identity-resolution.md` |
 | F3 | Agente con herramientas + base de conocimiento + agenda mock, por texto (CLI) | El número que llama se simula como parámetro |
 | F4 | **Harness de evaluación** con clientes simulados | ⚠️ **Antes que la interfaz, a propósito** |
 | F5 | **Capa de voz**: STT/TTS en tiempo real, latencia, interrupciones, castellano y catalán | El canal de verdad |
@@ -106,6 +106,8 @@ Bloques de 90 minutos. Es mejor cerrar una fase entera que dejar tres a medias.
 
 - Tres niveles: `none` → `probable` → `confirmed`.
 - Se confirma con **el nombre más un factor que lo corrobore** (teléfono en ficha o nombre de mascota) y un único candidato. **El teléfono solo nunca confirma.**
+- El nombre vale según lo que se haya podido comparar (reglas salidas de medir, en `docs/identity-resolution.md`): nombre completo con los dos apellidos → vale cualquiera de los dos factores; un solo apellido dicho contra una ficha con dos → no confirma nada, hay que pedir los dos; ficha con un solo apellido → solo el teléfono, y solo si nadie más con ese apellido comparte el número.
+- Un nombre que solo se parece al de una ficha (error típico del reconocimiento de voz) no cuenta hasta que el cliente lo confirma o lo deletrea.
 - Un nombre que no coincide con nadie significa «no es cliente», diga lo que diga el teléfono.
 - Quien no queda confirmado puede reservar una cita «sin verificar», marcada para recepción, sin leer ni escribir datos de ningún cliente. Cancelar y cambiar exigen `confirmed`.
 
