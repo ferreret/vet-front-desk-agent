@@ -1,0 +1,32 @@
+[project]
+name = "vetdesk"
+version = "0.1.0"
+description = "AI phone front desk for veterinary clinics: identity resolution over a messy legacy database"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "Nicolás Barceló" }]
+dependencies = ["pydantic>=2.7"]
+
+[project.scripts]
+vetdesk = "vetdesk.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vetdesk"]
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
