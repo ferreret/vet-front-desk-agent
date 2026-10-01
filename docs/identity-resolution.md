@@ -7,7 +7,7 @@ against ground truth.
 - Code: [`src/vetdesk/identity/`](../src/vetdesk/identity/) (the resolver) and
   [`src/vetdesk/legacy/`](../src/vetdesk/legacy/) (the adapter it reads the clinic through).
 - Measurement: `uv run vetdesk identity eval`.
-- Try one call: `uv run vetdesk identity resolve --number +34600111222 --name "Sara Jinard Gil" --pet Roki`.
+- Try one call: `uv run vetdesk identity resolve --number +34618065507 --name "Lucía Bibiloni Bosch" --pet Koko --town "Cala Tramuntana"`.
 
 ## What the resolver returns
 
@@ -18,25 +18,24 @@ against ground truth.
 | `not_found` | The name matches nobody on file | Treat the caller as not a client |
 
 `ask_for` is one of `client_name`, `full_name` (both surnames), `confirm_name` (confirm or
-spell it), `pet_name`, `confirm_pet`. Every candidate carries the reasons it is a candidate,
-so the decision can be explained and logged.
+spell it), `pet_name`, `confirm_pet`, `town`. Every candidate carries the reasons it is a
+candidate, so the decision can be explained and logged.
 
 ## The policy
 
-A caller is confirmed when their **name** matches a record and **one more factor**
-corroborates it, leaving a single candidate. The factor is the calling number being on that
-record, or a pet name linked to that client. How much a name is worth depends on how much
-of it could be compared:
+A caller is confirmed when their **name** matches a record and something more corroborates
+it, leaving a single candidate. How much a name is worth depends on how much of it could be
+compared:
 
 | What could be compared | What confirms it |
 |---|---|
-| Full name: both surnames given, both on file | The phone, or a pet |
+| Full name: both surnames given, both on file | The phone on that record; or a pet name **and** the town on that record |
 | The caller gave one surname, the record holds two | Nothing. Ask for both surnames |
 | The record itself holds a single surname | Only the phone, and only if nobody else with that surname shares the number |
 
 The calling number alone never confirms anybody. A name that matches nobody means "not a
 client", whatever the phone says. A phone that points at somebody else does not overrule
-name plus pet: people borrow phones.
+name, pet and town: people borrow phones.
 
 ## Names arrive through speech recognition
 
@@ -53,6 +52,9 @@ Once a name has been spelled, only its written form counts, with room for one ty
 mistake in a surname on file (`Etseve` for Esteve). Given names get no such room: María and
 Marta, Joan and Joana are different people who often share surnames and a landline.
 
+Towns come from the short list of towns on file, so a badly heard one is still recognised
+as long as it is clearly closer to one town than to any other.
+
 ## What measuring changed
 
 The first version followed the obvious rule (name plus phone, or name plus pet) and passed
@@ -61,7 +63,7 @@ not. Each finding became a rule, and a scenario or test that pins it down:
 
 1. **One surname plus a pet is a coincidence waiting to happen.** Speech recognition drops
    a trailing surname; "Juan Martínez" with a dog called Chispa then matched a client who
-   was not the caller. Now a pet only confirms a full name.
+   was not the caller. Now a pet only supports a full name.
 2. **Relatives are namesakes and borrow phones.** Joan Lozano Ferrer called from the mobile
    stored on Joan Lozano Font's record; with the second surname lost, the phone picked the
    wrong Joan. Now a one-surname name confirms nothing when the record holds two.
@@ -69,31 +71,41 @@ not. Each finding became a rule, and a scenario or test that pins it down:
    stored as `García López, Juan` and `Juan García López` looked distinguishable by string;
    they are not, because names get retyped while animals keep the old spelling. The adapter
    now links through a person key, and treats such animals as belonging to either.
+4. **Two different people do share a full name and a pet name.** Of 220,000 simulated
+   callers who were not clients, 8 had the same full name and the same pet name as a
+   client. Asking for the town left 3. So a pet now confirms only together with the town.
 
 ## Results
 
 Default clinic (seed 42, 400 clients), `uv run vetdesk identity eval`:
 
-| | 82 scenarios (70 need identification) | Sweep: 10,797 calls |
+| | 82 scenarios (70 need identification) | Sweep: 10,800 calls |
 |---|---|---|
 | False identifications | **0** | **0** |
 | Confirmed without enough evidence | 0 | 0 |
-| Identified, of those who could be | 50 / 53 | 97.7% |
-| Asked more than a perfect listener would | 2 | 0.5% |
+| Identified, of those who could be | 51 / 53 | 97.6% |
+| Asked more than a perfect listener would | 2 | 0.6% |
 
 The sweep is every client calling four ways (own phone, hidden number, giving one surname,
 borrowed phone) at three levels of speech noise, plus 2,000 callers who are not clients.
 
-Across eleven generated clinics of 200 to 1,500 clients: **174,549 calls, 0 false
-identifications, 97.8% identified, 0.8% over-asked.**
+Across eleven generated clinics of 200 to 1,500 clients: **174,567 calls, 0 false
+identifications, 97.7% identified, 0.8% over-asked.**
+
+## What it costs
+
+Safety is paid for in questions. In the sweep, a client is asked 2.8 identity questions on
+average, up from 2.2 before the town was required. The extra question only falls on callers
+whose number is not on their record; a client calling from their own phone is confirmed as
+soon as they give their name.
 
 ## What is not solved
 
-- **Coincidences.** 4 of 33,000 non-client callers had the same full name *and* the same
-  pet name as a client, and were confirmed. A perfect listener following the policy would
-  do the same; the report counts them separately as `coincidences`. The synthetic name
-  lists are short, which inflates this, but the risk is real for common names. The way out
-  is a third factor when the number is not on file (the town, or the animal's species).
+- **Coincidences are rarer, not gone.** The town removed 5 of the 8 found in 220,000
+  non-client calls. It is only as discriminating as the clinic's catchment area is spread:
+  where nearly every client lives in the same town, the street on file is the factor to
+  ask for instead. The evaluation reports coincidences separately from resolver mistakes,
+  because no amount of careful listening avoids them; only more evidence does.
 - **Typos in a given name on file** (`Deigo`) are never matched: the caller is treated as
   not a client. That is the safe direction, and it accounts for nearly all the missed
   identifications. `uv run vetdesk legacy inspect` lists these records as

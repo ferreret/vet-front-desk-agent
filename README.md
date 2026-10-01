@@ -20,9 +20,9 @@ threshold the agent asks instead of guessing; and the metric that matters most i
 | Phase | What | State |
 |---|---|---|
 | F1 | Synthetic generator: legacy-style database + call scenarios with ground truth | **Done** (2026-10-01) |
-| F2 | Legacy adapter + identity resolution, with tests | **Done** (2026-10-01): 0 false identifications in 174,549 simulated calls |
-| F3 | Agent with tools, knowledge base and mock agenda, over text | Next |
-| F4 | Evaluation harness with simulated callers | |
+| F2 | Legacy adapter + identity resolution, with tests | **Done** (2026-10-01): 0 false identifications in 174,567 simulated calls |
+| F3 | Agent with tools, knowledge base and mock agenda, over text | **Built** (2026-10-01), tested on a scripted model; not yet run against a real one |
+| F4 | Evaluation harness with simulated callers | Next |
 | F5 | Voice layer: real-time STT/TTS, latency budget, barge-in, Spanish and Catalan | |
 | F6 | Public demo: a call from the browser | |
 | F7 | Metrics and case study | |
@@ -40,9 +40,16 @@ uv run vetdesk scenarios list --category identity
 uv run vetdesk scenarios explain S-031   # the call told as a story
 uv run vetdesk scenarios show S-031      # the same call as JSON
 uv run vetdesk legacy inspect            # what the adapter had to work around
-uv run vetdesk identity resolve --number +34680376802 --name "Sara Jinard Gil" --pet Roki
+uv run vetdesk identity resolve --number +34618065507 --name "Lucía Bibiloni Bosch" --pet Koko
 uv run vetdesk identity eval             # the measurement
 uv run pytest
+```
+
+To talk to the agent you need an API key for a language model:
+
+```bash
+cp .env.example .env                     # then put your key in it
+uv run vetdesk chat --number +34618065507 --now 2026-11-06T12:30 --verbose
 ```
 
 `generate` writes three files into `data/` (git-ignored, always rebuilt from the seed):
@@ -85,28 +92,48 @@ No LLM decides who is calling. A resolver, in plain code, reads the legacy datab
 an adapter and returns `resolved`, `ask` (with what to ask next) or `not_found`, plus the
 reasons behind every candidate.
 
-**A caller is confirmed when their name matches a record and one more factor corroborates
-it, leaving a single candidate**: the calling number is on that record, or a pet name is
-linked to that client. A phone number alone never confirms anybody. A name that only
+**A caller is confirmed when their name matches a record and something more corroborates
+it, leaving a single candidate**: the calling number is on that record, or a pet name and
+the town both match it. A phone number alone never confirms anybody. A name that only
 resembles a record, as speech recognition often delivers it, counts for nothing until the
 caller has confirmed or spelled it.
 
 Measured with `uv run vetdesk identity eval`, on the default clinic:
 
-| | 82 scenarios (70 need identification) | Sweep: 10,797 calls |
+| | 82 scenarios (70 need identification) | Sweep: 10,800 calls |
 |---|---|---|
 | False identifications | **0** | **0** |
 | Confirmed without enough evidence | 0 | 0 |
-| Identified, of those who could be | 50 / 53 | 97.7% |
-| Asked more than a perfect listener would | 2 | 0.5% |
+| Identified, of those who could be | 51 / 53 | 97.6% |
+| Asked more than a perfect listener would | 2 | 0.6% |
 
-Across eleven generated clinics: 174,549 calls, 0 false identifications, 97.8% identified.
+Across eleven generated clinics: 174,567 calls, 0 false identifications, 97.7% identified.
 
 Two things worth knowing before trusting those numbers. The first version of the policy
-passed every scenario and still confirmed the wrong person in the sweep; three rules exist
-only because measuring found them. And one risk remains open: 4 of 33,000 non-client
-callers shared both full name and pet name with a client, and were confirmed. Details, and
-what is not solved, in [docs/identity-resolution.md](docs/identity-resolution.md).
+passed every scenario and still confirmed the wrong person in the sweep; four rules exist
+only because measuring found them. And one risk is reduced, not closed: two different
+people can share a full name and a pet name. Of 220,000 simulated non-client callers, 8
+did; asking for the town left 3. Details, the cost in extra questions, and what is not
+solved, in [docs/identity-resolution.md](docs/identity-resolution.md).
+
+## The agent
+
+A language model with eight tools, talking in text for now (`vetdesk chat`).
+
+- **The privacy barrier is code, not prompt.** Tools that touch a client's data fail until
+  the resolver has confirmed the caller, and until then no tool answer contains a name, a
+  pet or an appointment from the records. The model decides what to say; it does not
+  decide what it may know.
+- **No tool transfers a call**, so the agent cannot promise to. It takes a message.
+- **One validated source for clinic facts.** Opening hours, the emergency number, services
+  and prices live in a single file that refuses to load with a placeholder, a malformed
+  phone number or a gap in the opening hours. The prompt and the agenda are built from it.
+- **Any provider.** The agent talks to a small interface; each provider is one adapter.
+  Claude is the adapter that exists today.
+
+This phase has been tested without a model: tools, barrier, agenda, knowledge base and the
+agent loop on a scripted model. It has **not** yet been run against a real model; that is
+what the evaluation harness (F4) is for. More in [docs/agent.md](docs/agent.md).
 
 ## Rules of the house
 
