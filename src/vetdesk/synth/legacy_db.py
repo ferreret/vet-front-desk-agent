@@ -11,11 +11,8 @@ from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 
+from ..dbguard import APPLICATION_ID, ForeignDatabaseError, is_generated_db
 from .world import REFERENCE_DATE, World
-
-# Stamped into the SQLite header so we can recognise our own files without opening them.
-APPLICATION_ID = 0x56445431  # "VDT1"
-_SQLITE_MAGIC = b"SQLite format 3\x00"
 
 SCHEMA = """
 CREATE TABLE Clientes (
@@ -46,19 +43,6 @@ CREATE TABLE Animales (
     Observaciones TEXT
 );
 """
-
-
-class ForeignDatabaseError(RuntimeError):
-    """The target path holds a database this project did not generate."""
-
-
-def is_generated_db(path: Path) -> bool:
-    """True only for files written by this generator. Reads the 72-byte header, no data."""
-    with open(path, "rb") as handle:
-        header = handle.read(72)
-    if len(header) < 72 or header[:16] != _SQLITE_MAGIC:
-        return False
-    return int.from_bytes(header[68:72], "big") == APPLICATION_ID
 
 
 def _legacy_date(value) -> str:
