@@ -4,17 +4,25 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 
+import anthropic
+
+from .agent import FrontDeskAgent
 from .dbguard import ForeignDatabaseError
 from .evals.identity import Probe, format_report, probes_from_scenarios, run_probe, summarize
 from .evals.sweep import sweep_probes
 from .explain import Labels, explain
 from .identity import Evidence, IdentityResolver
+from .kb import load_kb
 from .legacy import LegacySqliteSource
+from .llm import LLMError, Usage, create_client
 from .scenario import Scenario, dump_jsonl, load_jsonl
+from .scheduling import SqliteAgenda
 from .synth import GeneratorConfig, generate_world
 from .synth.legacy_db import defect_counts, export_truth, write_legacy_db
 from .synth.scenarios import ScenarioError, generate_scenarios
@@ -175,6 +183,65 @@ def _identity_eval(args: argparse.Namespace) -> int:
     return 1 if failures else 0
 
 
+def _load_env(path: Path = Path(".env")) -> None:
+    """Read KEY=VALUE lines from .env into the environment, without overriding it."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        key, separator, value = line.strip().partition("=")
+        if separator and key and not key.startswith("#"):
+            os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+
+
+def _chat(args: argparse.Namespace) -> int:
+    clinic = _clinic(args.data / DB_NAME)
+    if clinic is None:
+        return 1
+    _load_env()
+    kb = load_kb()
+    started = datetime.now()
+    opened = args.now or started
+
+    def now() -> datetime:  # the call's clock: starts at --now and then runs normally
+        return opened + (datetime.now() - started)
+
+    try:
+        llm = create_client(args.provider, args.model)
+        agent = FrontDeskAgent(llm, clinic, kb, SqliteAgenda(kb, now), now)
+        call = agent.start_call(args.number)
+        print(f"(calling from {args.number or 'a hidden number'}; an empty line hangs up)\n")
+        print(f"agent > {call.greeting}")
+        total = Usage()
+        while True:
+            try:
+                said = input("you   > ").strip()
+            except EOFError:
+                break
+            if not said:
+                break
+            turn = call.say(said)
+            total += turn.usage
+            if args.verbose:
+                for event in turn.events:
+                    arguments = json.dumps(event.arguments, ensure_ascii=False)
+                    result = json.dumps(event.result, ensure_ascii=False)
+                    print(f"        [{event.name} {arguments} -> {result}]")
+            print(f"agent > {turn.text}")
+    except (LLMError, anthropic.AnthropicError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        print("Set ANTHROPIC_API_KEY in .env to talk to the agent.", file=sys.stderr)
+        return 1
+    session = call.session
+    confirmed = f"client {session.client.code}" if session.client else "not confirmed"
+    print(f"\ncaller: {confirmed}")
+    for message in session.messages:
+        print(f"message for reception: {message.text} ({message.contact_name}, "
+              f"{message.contact_phone})")
+    print(f"tokens: {total.input_tokens} in, {total.output_tokens} out, "
+          f"{total.cache_read_tokens} read from cache")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="vetdesk", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -226,6 +293,16 @@ def main(argv: list[str] | None = None) -> int:
     evaluate.add_argument("--strangers", type=int, default=2000,
                           help="non-client callers in the sweep; -1 skips the sweep")
     evaluate.set_defaults(run=_identity_eval)
+
+    chat = commands.add_parser("chat", help="talk to the agent in text, as if on the phone")
+    chat.add_argument("--data", type=Path, default=Path("data"))
+    chat.add_argument("--number", help="calling number in E.164; leave out for a hidden number")
+    chat.add_argument("--now", type=datetime.fromisoformat,
+                      help="when the call happens, e.g. 2026-11-03T10:15 (default: now)")
+    chat.add_argument("--provider", help="LLM provider (default: anthropic)")
+    chat.add_argument("--model", help="model id (default: the provider's default)")
+    chat.add_argument("--verbose", action="store_true", help="show the tool calls")
+    chat.set_defaults(run=_chat)
 
     args = parser.parse_args(argv)
     return args.run(args)

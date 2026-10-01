@@ -54,3 +54,14 @@ def test_identity_commands_refuse_a_foreign_database(tmp_path, capsys):
         db.execute("CREATE TABLE Clientes (Codigo INTEGER)")
     assert main(["legacy", "inspect", "--db", str(foreign)]) == 1
     assert "refusing to open" in capsys.readouterr().err
+
+
+def test_chat_picks_up_the_phone_and_hangs_up(tmp_path, capsys, monkeypatch):
+    main(["generate", "--out", str(tmp_path)])
+    capsys.readouterr()
+    monkeypatch.setattr("builtins.input", lambda prompt: "")  # the caller says nothing
+    arguments = ["chat", "--data", str(tmp_path), "--now", "2026-11-08T03:20"]
+    assert main(arguments) == 0
+    out = capsys.readouterr().out
+    assert "a hidden number" in out and "buenas noches" in out
+    assert "caller: not confirmed" in out
