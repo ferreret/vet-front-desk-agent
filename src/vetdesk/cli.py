@@ -8,10 +8,15 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from .dbguard import ForeignDatabaseError
+from .evals.identity import Probe, format_report, probes_from_scenarios, run_probe, summarize
+from .evals.sweep import sweep_probes
 from .explain import Labels, explain
+from .identity import Evidence, IdentityResolver
+from .legacy import LegacySqliteSource
 from .scenario import Scenario, dump_jsonl, load_jsonl
 from .synth import GeneratorConfig, generate_world
-from .synth.legacy_db import ForeignDatabaseError, defect_counts, export_truth, write_legacy_db
+from .synth.legacy_db import defect_counts, export_truth, write_legacy_db
 from .synth.scenarios import ScenarioError, generate_scenarios
 
 DB_NAME = "clinic.db"
@@ -97,6 +102,78 @@ def _schema(args: argparse.Namespace) -> int:
     return 0
 
 
+def _clinic(db: Path):
+    try:
+        return LegacySqliteSource(db).load()
+    except FileNotFoundError:
+        print(f"error: {db} not found; run `vetdesk generate` first", file=sys.stderr)
+    except ForeignDatabaseError as error:
+        print(f"error: {error}", file=sys.stderr)
+    return None
+
+
+def _legacy_inspect(args: argparse.Namespace) -> int:
+    clinic = _clinic(args.db)
+    if clinic is None:
+        return 1
+    print(f"{args.db}: {len(clinic.clients)} clients, {len(clinic.animals)} animals")
+    print("what the adapter found while cleaning up:")
+    kinds = Counter(issue.kind for issue in clinic.issues)
+    for kind, count in sorted(kinds.items()):
+        example = next(i for i in clinic.issues if i.kind == kind)
+        print(f"  {count:4d}  {kind:24} e.g. {example.table} {example.code}: {example.detail}")
+    return 0
+
+
+def _identity_resolve(args: argparse.Namespace) -> int:
+    clinic = _clinic(args.db)
+    if clinic is None:
+        return 1
+    evidence = Evidence(
+        caller_number=args.number,
+        client_name=args.name,
+        name_verified=args.name_verified,
+        pet_name=args.pet,
+        pet_verified=args.pet_verified,
+    )
+    resolution = IdentityResolver(clinic).resolve(evidence)
+    print(f"decision: {resolution.decision}   level: {resolution.level}")
+    print(f"why:      {resolution.why}")
+    if resolution.ask_for:
+        print(f"ask for:  {resolution.ask_for}")
+    for candidate in resolution.candidates[:10]:
+        reasons = "; ".join(candidate.reasons(args.name_verified)) or "calling number only"
+        print(f"  client {candidate.client.code}: {reasons}")
+    return 0
+
+
+def _identity_eval(args: argparse.Namespace) -> int:
+    scenarios = _load(args.data / SCENARIOS_NAME)
+    clinic = _clinic(args.data / DB_NAME)
+    if scenarios is None or clinic is None:
+        return 1
+    truth = json.loads((args.data / TRUTH_NAME).read_text(encoding="utf-8"))
+    client_ids = {c["legacy_codigo"]: c["client_id"] for c in truth["clients"]}
+    resolver = IdentityResolver(clinic)
+
+    def run(title: str, probes: list[Probe]) -> int:
+        summary = summarize([run_probe(resolver, probe, client_ids) for probe in probes])
+        print(format_report(title, summary))
+        return summary.false_identifications + summary.verdicts["unsupported_identification"]
+
+    failures = run(f"SCENARIOS ({args.data / SCENARIOS_NAME})", probes_from_scenarios(scenarios))
+    if args.strangers >= 0:
+        world = generate_world(GeneratorConfig(**truth["config"]))
+        if export_truth(world) != truth:
+            print("error: data is out of date; run `vetdesk generate` again", file=sys.stderr)
+            return 1
+        probes = sweep_probes(world, strangers=args.strangers)
+        print()
+        failures += run("SWEEP (every client, four ways of calling, three noise levels, "
+                        f"plus {args.strangers} callers who are not clients)", probes)
+    return 1 if failures else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="vetdesk", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -124,6 +201,29 @@ def main(argv: list[str] | None = None) -> int:
     explained.set_defaults(run=_explain)
     schema = actions.add_parser("schema", help="print the scenario JSON Schema")
     schema.set_defaults(run=_schema)
+
+    default_db = Path("data") / DB_NAME
+    legacy = commands.add_parser("legacy", help="look at the legacy database through the adapter")
+    legacy_actions = legacy.add_subparsers(dest="action", required=True)
+    inspect = legacy_actions.add_parser("inspect", help="summarise the data problems found")
+    inspect.add_argument("--db", type=Path, default=default_db)
+    inspect.set_defaults(run=_legacy_inspect)
+
+    identity = commands.add_parser("identity", help="identity resolution")
+    identity_actions = identity.add_subparsers(dest="action", required=True)
+    resolve = identity_actions.add_parser("resolve", help="who is calling, given some evidence")
+    resolve.add_argument("--db", type=Path, default=default_db)
+    resolve.add_argument("--number", help="calling number in E.164, e.g. +34600111222")
+    resolve.add_argument("--name", help="the caller's name as heard")
+    resolve.add_argument("--name-verified", action="store_true", help="the name was spelled")
+    resolve.add_argument("--pet", help="the pet's name as heard")
+    resolve.add_argument("--pet-verified", action="store_true", help="the pet name was confirmed")
+    resolve.set_defaults(run=_identity_resolve)
+    evaluate = identity_actions.add_parser("eval", help="measure the resolver against the truth")
+    evaluate.add_argument("--data", type=Path, default=Path("data"))
+    evaluate.add_argument("--strangers", type=int, default=2000,
+                          help="non-client callers in the sweep; -1 skips the sweep")
+    evaluate.set_defaults(run=_identity_eval)
 
     args = parser.parse_args(argv)
     return args.run(args)
