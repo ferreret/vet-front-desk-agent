@@ -140,3 +140,24 @@ def test_the_agent_never_goes_silent(clinic, kb):
     assert _call(ScriptedClient([Reply("")]), clinic, kb).say("x").text == DID_NOT_FOLLOW
     cut = _call(ScriptedClient([Reply("Le cuento que", stop="max_tokens")]), clinic, kb)
     assert cut.say("x").text == "Le cuento que"
+
+
+def test_every_turn_reports_how_long_the_model_took(clinic, kb):
+    model = ScriptedClient([_tool("get_pets"), Reply("¿Me dice su nombre?")])
+    turn = _call(model, clinic, kb).say("Hola")
+    assert len(turn.latencies) == turn.requests == 2
+    assert turn.seconds == sum(turn.latencies) >= 0
+
+
+def test_the_latency_benchmark_plays_a_whole_call(clinic, kb, scenarios):
+    from vetdesk.evals.latency import caller_lines, format_timings, time_call
+
+    scenario = next(s for s in scenarios if s.category == "identity.borrowed_phone")
+    lines = caller_lines(scenario)
+    model = ScriptedClient([Reply("De acuerdo.", usage=Usage(1000, 10)) for _ in lines])
+    timing = time_call("claude-haiku-4-5", model, clinic, kb, scenario)
+    assert len(timing.answers) == len(timing.requests) == len(lines)
+    assert model.transcript.user_messages == lines
+    assert scenario.caller.town in lines[3] and not timing.booked and not timing.confirmed
+    assert timing.cost == pytest.approx((6000 * 1.0 + 60 * 5.0) / 1_000_000)
+    assert "claude-haiku-4-5" in format_timings([timing])

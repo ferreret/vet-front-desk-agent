@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -30,6 +31,13 @@ class Turn:
     events: tuple[ToolEvent, ...] = ()
     usage: Usage = field(default_factory=Usage)
     requests: int = 0
+    # Seconds the model took on each request of this turn. On the phone their sum is the
+    # silence the caller hears, so it is measured from the start.
+    latencies: tuple[float, ...] = ()
+
+    @property
+    def seconds(self) -> float:
+        return sum(self.latencies)
 
 
 class Call:
@@ -45,7 +53,15 @@ class Call:
     def say(self, text: str) -> Turn:
         """The caller says something; the agent answers, using its tools as needed."""
         events_before = len(self.session.events)
-        reply = self._conversation.send_user(text)
+        latencies: list[float] = []
+
+        def timed(send, payload):
+            started = time.perf_counter()
+            answer = send(payload)
+            latencies.append(time.perf_counter() - started)
+            return answer
+
+        reply = timed(self._conversation.send_user, text)
         spoken, usage, requests = [reply.text], reply.usage, 1
         while reply.tool_calls:
             if requests <= MAX_TOOL_ROUNDS:
@@ -56,7 +72,7 @@ class Call:
                 results = [ToolResult(call.id, TOO_MANY_STEPS, True) for call in reply.tool_calls]
             else:
                 raise LLMError("the model keeps calling tools instead of answering")
-            reply = self._conversation.send_tool_results(results)
+            reply = timed(self._conversation.send_tool_results, results)
             spoken.append(reply.text)
             usage, requests = usage + reply.usage, requests + 1
 
@@ -66,7 +82,8 @@ class Call:
         elif reply.stop != "end" or not answer:
             # Cut off, or still asking for tools after too many rounds: never go silent.
             answer = answer or DID_NOT_FOLLOW
-        return Turn(answer, tuple(self.session.events[events_before:]), usage, requests)
+        events = tuple(self.session.events[events_before:])
+        return Turn(answer, events, usage, requests, tuple(latencies))
 
 
 class FrontDeskAgent:

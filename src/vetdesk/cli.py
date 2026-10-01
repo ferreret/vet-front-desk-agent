@@ -15,6 +15,7 @@ import anthropic
 from .agent import FrontDeskAgent
 from .dbguard import ForeignDatabaseError
 from .evals.identity import Probe, format_report, probes_from_scenarios, run_probe, summarize
+from .evals.latency import PRICES, format_timings, time_call
 from .evals.sweep import sweep_probes
 from .explain import Labels, explain
 from .identity import Evidence, IdentityResolver
@@ -227,6 +228,9 @@ def _chat(args: argparse.Namespace) -> int:
                     result = json.dumps(event.result, ensure_ascii=False)
                     print(f"        [{event.name} {arguments} -> {result}]")
             print(f"agent > {turn.text}")
+            if args.verbose:
+                steps = " + ".join(f"{seconds:.1f}" for seconds in turn.latencies)
+                print(f"        ({turn.seconds:.1f} s waiting for the model: {steps})")
     except (LLMError, anthropic.AnthropicError) as error:
         print(f"error: {error}", file=sys.stderr)
         if not os.environ.get("ANTHROPIC_API_KEY"):
@@ -244,6 +248,29 @@ def _chat(args: argparse.Namespace) -> int:
     print(f"tokens: {total.input_tokens} in, {total.output_tokens} out, "
           f"{total.cache_read_tokens} read from cache")
     return 0
+
+
+def _latency(args: argparse.Namespace) -> int:
+    scenarios = _load(args.data / SCENARIOS_NAME)
+    clinic = _clinic(args.data / DB_NAME)
+    if scenarios is None or clinic is None:
+        return 1
+    _load_env()
+    kb = load_kb()
+    scenario = next(s for s in scenarios
+                    if s.category == "identity.borrowed_phone" and s.speech.noise == "none")
+    timings = []
+    for model in args.models.split(","):
+        print(f"{model}:")
+        try:
+            llm = create_client(args.provider, model.strip())
+            timings.append(time_call(model.strip(), llm, clinic, kb, scenario, print))
+        except (LLMError, anthropic.AnthropicError) as error:
+            print(f"  error: {error}", file=sys.stderr)
+    if timings:
+        print()
+        print(format_timings(timings))
+    return 0 if timings else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -307,6 +334,15 @@ def main(argv: list[str] | None = None) -> int:
     chat.add_argument("--model", help="model id (default: the provider's default)")
     chat.add_argument("--verbose", action="store_true", help="show the tool calls")
     chat.set_defaults(run=_chat)
+
+    latency = commands.add_parser(
+        "latency", help="play one fixed call against several models and time the answers"
+    )
+    latency.add_argument("--data", type=Path, default=Path("data"))
+    latency.add_argument("--provider", help="LLM provider (default: anthropic)")
+    latency.add_argument("--models", default=",".join(PRICES),
+                         help="comma-separated model ids")
+    latency.set_defaults(run=_latency)
 
     args = parser.parse_args(argv)
     return args.run(args)
