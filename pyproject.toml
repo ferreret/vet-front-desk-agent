@@ -6,7 +6,10 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 authors = [{ name = "Nicolás Barceló" }]
-dependencies = ["pydantic>=2.7"]
+dependencies = [
+    "anthropic>=1.11.0",
+    "pydantic>=2.7",
+]
 
 [project.scripts]
 vetdesk = "vetdesk.cli:main"
