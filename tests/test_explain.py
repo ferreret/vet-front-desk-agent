@@ -56,5 +56,5 @@ def test_explain_command(tmp_path, capsys):
     assert main(["scenarios", "explain", "S-031", "--file", file]) == 0
     out = capsys.readouterr().out
     assert out.startswith("S-031  identity.borrowed_phone")
-    assert "(Sara Ginard Gil)" in out
+    assert "The caller says where they live" in out and "-> confirmed: C-" in out
     assert main(["scenarios", "explain", "S-999", "--file", file]) == 1

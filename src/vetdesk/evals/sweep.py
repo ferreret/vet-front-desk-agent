@@ -24,8 +24,8 @@ def sweep_probes(world: World, strangers: int = 2000, seed: int = 0) -> list[Pro
     probes: list[Probe] = []
 
     def add(kind: str, caller_id: str | None, number: str | None, said: SaidName,
-            pet: str | None, full: SaidName | None = None) -> None:
-        steps = trace(view, number, said, pet, full)
+            pet: str | None, town: str, full: SaidName | None = None) -> None:
+        steps = trace(view, number, said, pet, full, town)
         last = steps[-1][2]
         asked = sum(1 for step_kind, _, _ in steps if step_kind != "caller_number")
         for level in LEVELS:
@@ -44,6 +44,7 @@ def sweep_probes(world: World, strangers: int = 2000, seed: int = 0) -> list[Pro
                 full_name_heard=full_heard,
                 pet_said=pet,
                 pet_heard=pet_heard,
+                town_heard=corrupt(town, level, rng),
                 noise=noise,
                 expected_outcome=OUTCOMES[last.decision],
                 expected_client_id=last.client_id,
@@ -55,14 +56,15 @@ def sweep_probes(world: World, strangers: int = 2000, seed: int = 0) -> list[Pro
         full = SaidName(client.given, client.surname1, client.surname2)
         pets = [world.pets[pet_id].name for pet_id in client.pet_ids]
         pet = rng.choice(pets) if pets else None
-        add("own_phone", client.client_id, world.current_phones(client)[0], full, pet)
-        add("hidden_number", client.client_id, None, full, pet)
+        town = world.households[client.household_id].town
+        add("own_phone", client.client_id, world.current_phones(client)[0], full, pet, town)
+        add("hidden_number", client.client_id, None, full, pet, town)
         one_surname = SaidName(client.given, client.surname1)
-        add("one_surname", client.client_id, None, one_surname, pet, full)
+        add("one_surname", client.client_id, None, one_surname, pet, town, full)
         lender = rng.choice(clients)
         if lender.household_id != client.household_id:
             number = world.current_phones(lender)[0]
-            add("borrowed_phone", client.client_id, number, full, pet)
+            add("borrowed_phone", client.client_id, number, full, pet, town)
 
     inherited = sorted(n for n, holder in world.stale_holders.items() if holder == "stranger")
     for _ in range(strangers):
@@ -70,6 +72,6 @@ def sweep_probes(world: World, strangers: int = 2000, seed: int = 0) -> list[Pro
         said = SaidName(person.given, person.surname1, person.surname2)
         pet = _weighted(rng, names.PET_NAMES)
         number = rng.choice([None, None, rng.choice(inherited), "+34600000000"])
-        add("not_a_client", None, number, said, pet)
+        add("not_a_client", None, number, said, pet, rng.choice(names.TOWNS)[0])
     return probes
 

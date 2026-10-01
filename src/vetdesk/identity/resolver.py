@@ -12,7 +12,9 @@ it, leaving a single candidate. The factor is the calling number being on their 
 a pet name linked to them. How much the name is worth depends on how much of it could be
 compared (rules learnt from measuring, not from intuition):
 
-* Full name, both surnames given and on file: either factor confirms it.
+* Full name, both surnames given and on file: the phone confirms it. A pet confirms it only
+  together with the town on the record, because two different people do share a full name
+  and a pet name now and then.
 * One surname given but the record holds two: nothing confirms it. Ask for both surnames.
   Relatives are often namesakes and borrow each other's phones.
 * The record itself holds a single surname: only the phone confirms it, and only when
@@ -30,7 +32,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from ..legacy.models import Client, Clinic
-from ..legacy.normalize import fold
+from ..legacy.normalize import fold, osa_distance
 from .matching import (
     EXACT,
     GRADE_NAMES,
@@ -46,10 +48,11 @@ from .matching import (
     pet_grade,
     spelled_grade,
 )
+from .phonetics import phonetic_key
 
 Decision = Literal["ask", "resolved", "not_found"]
 Level = Literal["none", "probable", "confirmed"]
-AskFor = Literal["client_name", "confirm_name", "full_name", "pet_name", "confirm_pet"]
+AskFor = Literal["client_name", "confirm_name", "full_name", "pet_name", "confirm_pet", "town"]
 
 
 @dataclass(frozen=True)
@@ -61,6 +64,7 @@ class Evidence:
     name_verified: bool = False  # the caller confirmed or spelled their name
     pet_name: str | None = None
     pet_verified: bool = False
+    town: str | None = None
 
 
 @dataclass(frozen=True)
@@ -71,6 +75,7 @@ class Candidate:
     full_name: bool = False  # both surnames were given and compared with the record
     pet_grade: int = NO_MATCH
     pet_matched: str | None = None
+    town_matches: bool = False
 
     def reasons(self, verified: bool) -> list[str]:
         reasons = []
@@ -82,6 +87,8 @@ class Candidate:
             reasons.append("calling number is on this record")
         if self.pet_grade:
             reasons.append(f"pet {GRADE_NAMES[self.pet_grade]}: {self.pet_matched!r}")
+        if self.town_matches:
+            reasons.append(f"town matches: {self.client.town!r}")
         return reasons
 
 
@@ -95,6 +102,11 @@ class Resolution:
     why: str
 
 
+def _one_word(place: str) -> str:
+    """A place name as a single word, so it is compared whole and by sound."""
+    return "".join(place.lower().split())
+
+
 class IdentityResolver:
     def __init__(self, clinic: Clinic) -> None:
         self.clinic = clinic
@@ -104,6 +116,8 @@ class IdentityResolver:
         for client in clinic.clients.values():
             if client.name is not None:
                 self._by_surname.setdefault(client.name.surname1.lower(), []).append(client)
+        towns = {_one_word(c.town) for c in clinic.clients.values() if c.town}
+        self._towns = {town: phonetic_key(town) for town in sorted(towns)}
 
     def resolve(self, evidence: Evidence) -> Resolution:
         on_phone = {c.code for c in self.clinic.clients_by_phone(evidence.caller_number)}
@@ -146,19 +160,23 @@ class IdentityResolver:
             strong = [m for m in strong if m.name_grade == EXACT]
 
         # Narrow down with each corroborating factor that actually selects somebody.
-        pool, corroborated = strong, False
+        pool, by_the_phone = strong, False
         with_phone = [m for m in pool if m.phone_on_file]
         if with_phone:
             pool = with_phone
-            corroborated = all(self._phone_confirms(m, on_phone) for m in with_phone)
+            by_the_phone = all(self._phone_confirms(m, on_phone) for m in with_phone)
         with_pet = [m for m in pool if m.pet_grade >= SOUNDS_SAME]
         if with_pet:
             pool = with_pet
-            corroborated = corroborated or all(m.full_name for m in with_pet)
-        if corroborated and len(pool) == 1:
+        by_the_pet = len(pool) == 1 and bool(with_pet) and pool[0].full_name
+        if len(pool) == 1 and (by_the_phone or (by_the_pet and pool[0].town_matches)):
             (winner,) = pool
             return Resolution("resolved", "confirmed", winner.client, (winner,), None,
                               "; ".join(winner.reasons(evidence.name_verified)))
+        if by_the_pet:
+            if not evidence.town:
+                return self._ask(pool, "town", "name and pet agree: the town will settle it")
+            return self._ask(pool, None, "the town does not match the record")
 
         if said.surname2 is None and any(m.client.name.surname2 for m in pool):
             return self._ask(pool, "full_name",
@@ -186,7 +204,27 @@ class IdentityResolver:
             names = [a.name for a in self.clinic.animals_of(client.code)]
             pet, matched = pet_grade(evidence.pet_name, names, evidence.pet_verified)
         full_name = bool(said.surname2 and client.name.surname2)
-        return Candidate(client, grade, client.code in on_phone, full_name, pet, matched)
+        town = bool(client.town) and self._town_heard(evidence.town) == _one_word(client.town)
+        return Candidate(client, grade, client.code in on_phone, full_name, pet, matched, town)
+
+    def _town_heard(self, heard: str | None) -> str | None:
+        """Which of the towns on file the caller most likely said, if any.
+
+        Towns come from a short known list, so a badly heard one can still be recognised
+        as long as it is clearly closer to one town than to the others."""
+        if not heard:
+            return None
+        key = phonetic_key(_one_word(heard))
+        scored = sorted(
+            ((1 - osa_distance(key, town_key, 99) / max(len(key), len(town_key)), town)
+             for town, town_key in self._towns.items()),
+            reverse=True,
+        )
+        if not scored or scored[0][0] < 0.6:
+            return None
+        if len(scored) > 1 and scored[1][0] > scored[0][0] - 0.15:
+            return None
+        return scored[0][1]
 
     def _phone_confirms(self, match: Candidate, on_phone: set[int]) -> bool:
         if match.client.name.surname2:

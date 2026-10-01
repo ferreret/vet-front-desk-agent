@@ -3,6 +3,8 @@
 Every test is a call: what the agent knows, and what the resolver must conclude.
 """
 
+from dataclasses import replace
+
 import pytest
 
 from vetdesk.identity import Evidence, IdentityResolver
@@ -17,6 +19,8 @@ ROCA_FAMILY = "+34971000002"
 DAVID_MOBILE = "+34600000004"
 JOAN_MOBILE = "+34600000005"
 PONS_LANDLINE = "+34971000003"
+TOWN = "Vallserena"
+TOWNS = {12: "Port Blau", 3: "Pinar del Mar"}
 
 CLIENTS = [
     (1, "Ferrer Oliver, Margalida", [LANDLINE, MARGA_MOBILE]),
@@ -46,7 +50,7 @@ ANIMALS = [
 @pytest.fixture(scope="module")
 def resolver():
     clients = {
-        code: Client(code, raw, parse_name(raw), tuple(phones), None)
+        code: Client(code, raw, parse_name(raw), tuple(phones), None, TOWNS.get(code, TOWN))
         for code, raw, phones in CLIENTS
     }
     animals = {
@@ -89,9 +93,21 @@ def test_name_alone_asks_for_the_pet(resolver):
     assert (r.decision, r.ask_for) == ("ask", "pet_name")
 
 
-def test_full_name_plus_pet_confirms_without_caller_id(resolver):
-    r = resolver.resolve(Evidence(None, "Margalida Ferrer Oliver", pet_name="Xispa"))
-    assert _code(r) == 1
+def test_full_name_and_pet_need_the_town_without_caller_id(resolver):
+    evidence = Evidence(None, "Margalida Ferrer Oliver", pet_name="Xispa")
+    r = resolver.resolve(evidence)
+    assert (r.decision, r.ask_for) == ("ask", "town")
+    assert _code(resolver.resolve(replace(evidence, town="Vallserena"))) == 1
+    r = resolver.resolve(replace(evidence, town="Port Blau"))
+    assert (r.decision, r.ask_for) == ("ask", None) and "town" in r.why
+
+
+def test_a_badly_heard_town_is_still_recognised(resolver):
+    evidence = Evidence(None, "Margalida Ferrer Oliver", pet_name="Xispa")
+    for heard in ("Ballserena", "Vall Serena", "Balserena"):
+        assert _code(resolver.resolve(replace(evidence, town=heard))) == 1, heard
+    for heard in ("Madrid", "Port", "Pinar"):
+        assert resolver.resolve(replace(evidence, town=heard)).decision == "ask", heard
 
 
 def test_shared_landline_is_settled_by_the_name(resolver):
@@ -109,7 +125,7 @@ def test_a_first_name_is_not_a_name(resolver):
 
 def test_sound_alike_spellings_match(resolver):
     assert _code(resolver.resolve(Evidence(LANDLINE, "Antoni Serra Bidal"))) == 2
-    heard = Evidence(None, "Margalida Ferrer Oliver", pet_name="Chispa")
+    heard = Evidence(None, "Margalida Ferrer Oliver", pet_name="Chispa", town=TOWN)
     assert _code(resolver.resolve(heard)) == 1
 
 
@@ -128,7 +144,8 @@ def test_a_pet_name_that_only_resembles_one_on_file_must_be_confirmed(resolver):
     heard = Evidence(None, "Francesc Vich Socias", pet_name="Luna")
     r = resolver.resolve(heard)
     assert (r.decision, r.ask_for) == ("ask", "confirm_pet")
-    confirmed = Evidence(None, "Francesc Vich Socias", pet_name="Lluna", pet_verified=True)
+    confirmed = Evidence(None, "Francesc Vich Socias", pet_name="Lluna", pet_verified=True,
+                         town="Port Blau")
     assert _code(resolver.resolve(confirmed)) == 12
     denied = Evidence(None, "Francesc Vich Socias", pet_name="Luna", pet_verified=True)
     assert resolver.resolve(denied).decision == "ask"
@@ -156,8 +173,8 @@ def test_the_phone_tells_homonyms_apart(resolver):
 
 
 def test_borrowed_phone_does_not_override_name_and_pet(resolver):
-    r = resolver.resolve(Evidence(ANTONIO_MOBILE, "Margalida Ferrer Oliver", pet_name="Xispa"))
-    assert _code(r) == 1
+    evidence = Evidence(ANTONIO_MOBILE, "Margalida Ferrer Oliver", pet_name="Xispa", town=TOWN)
+    assert _code(resolver.resolve(evidence)) == 1
 
 
 def test_inherited_number_with_a_coinciding_pet_name(resolver):
@@ -205,9 +222,10 @@ def test_a_sister_is_not_her_sister(resolver):
 
 
 def test_every_decision_explains_itself(resolver):
-    r = resolver.resolve(Evidence(None, "Margalida Ferrer Oliver", pet_name="Chispa"))
-    reasons = r.candidates[0].reasons(verified=False)
-    assert reasons == [
+    heard = Evidence(None, "Margalida Ferrer Oliver", pet_name="Chispa", town="Ballserena")
+    r = resolver.resolve(heard)
+    assert r.candidates[0].reasons(verified=False) == [
         "name exact: 'Ferrer Oliver, Margalida'",
         "pet sounds the same: 'Xispa'",
+        "town matches: 'Vallserena'",
     ]

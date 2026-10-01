@@ -76,13 +76,14 @@ class Caller(_Model):
     surname1: str
     surname2: str | None
     says_name: str  # what they answer when asked for their name
+    town: str  # where they live
     pets: list[CallerPet]
     persona: str
     goal: Goal
 
 
 class Utterance(_Model):
-    field: Literal["client_name", "pet_name"]
+    field: Literal["client_name", "pet_name", "town"]
     said: str
     heard: str  # what speech recognition delivers
 
@@ -93,7 +94,7 @@ class Speech(_Model):
 
 
 class Evidence(_Model):
-    type: Literal["caller_number", "client_name", "pet_name"]
+    type: Literal["caller_number", "client_name", "pet_name", "town"]
     said: str
     heard: str
 

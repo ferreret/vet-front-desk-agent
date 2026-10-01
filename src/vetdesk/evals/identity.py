@@ -38,6 +38,7 @@ class Probe:
     full_name_heard: str | None
     pet_said: str | None
     pet_heard: str | None
+    town_heard: str | None
     noise: str
     expected_outcome: str  # resolved | unresolved | not_a_client
     expected_client_id: str | None
@@ -66,6 +67,7 @@ def probes_from_scenarios(scenarios: list[Scenario]) -> list[Probe]:
             continue
         name, *fuller = (u for u in s.speech.utterances if u.field == "client_name")
         pet = next((u for u in s.speech.utterances if u.field == "pet_name"), None)
+        town = next((u for u in s.speech.utterances if u.field == "town"), None)
         if s.caller.goal.type not in ("book", "cancel", "reschedule") and not s.caller.pets:
             pet = None  # the only pet mentioned belongs to somebody else
         probes.append(Probe(
@@ -79,6 +81,7 @@ def probes_from_scenarios(scenarios: list[Scenario]) -> list[Probe]:
             full_name_heard=fuller[0].heard if fuller else None,
             pet_said=pet.said if pet else None,
             pet_heard=pet.heard if pet else None,
+            town_heard=town.heard if town else None,
             noise=s.speech.noise,
             expected_outcome=identity.outcome,
             expected_client_id=identity.client_id,
@@ -112,6 +115,9 @@ def run_probe(resolver: IdentityResolver, probe: Probe, client_ids: dict[int, st
             elif resolution.ask_for == "confirm_pet" and not evidence.pet_verified:
                 questions += 1
                 evidence = replace(evidence, pet_name=probe.pet_said, pet_verified=True)
+            elif resolution.ask_for == "town" and not evidence.town and probe.town_heard:
+                questions += 1
+                evidence = replace(evidence, town=probe.town_heard)
             else:
                 return evidence, resolution
 

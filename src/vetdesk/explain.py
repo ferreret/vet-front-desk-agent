@@ -20,6 +20,7 @@ EVIDENCE = {
     "caller_number": "The number arrives",
     "client_name": "The caller says their name",
     "pet_name": "The caller says their pet's name",
+    "town": "The caller says where they live",
 }
 
 NONE = "nothing"
@@ -143,7 +144,7 @@ def explain(scenario: Scenario, labels: Labels | None = None) -> str:
         f"  Language: {LANGUAGES[s.language]}",
         "",
         "WHO IS REALLY CALLING  (the agent does not know this)",
-        f"  {full_name}, {who}",
+        f"  {full_name}, {who}, from {caller.town}",
         f"  Pets:   {pets}",
         f"  Manner: {caller.persona}",
         f"  Goal:   {_goal(caller.goal, labels)}",
@@ -153,7 +154,7 @@ def explain(scenario: Scenario, labels: Labels | None = None) -> str:
 
     lines += ["", f"WHAT SPEECH RECOGNITION HEARS  (noise: {s.speech.noise})"]
     for utterance in s.speech.utterances:
-        kind = "name" if utterance.field == "client_name" else "pet "
+        kind = {"client_name": "name", "pet_name": "pet ", "town": "town"}[utterance.field]
         same = "  (heard correctly)" if utterance.heard == utterance.said else ""
         lines.append(f'  {kind}  "{utterance.said}" -> "{utterance.heard}"{same}')
 

@@ -170,9 +170,23 @@ def test_one_surname_leads_to_a_request_for_both(scenarios):
             f"{s.caller.given_name} {s.caller.surname1} {s.caller.surname2}",
         ]
         assert all(step.expect.decision == "ask" for step in names)
-        assert s.identity_trace[-1].evidence.type == "pet_name"
+        kinds = [step.evidence.type for step in s.identity_trace]
+        assert kinds == ["client_name", "client_name", "pet_name", "town"]
         assert s.expected.identity.outcome == "resolved"
         assert len([u for u in s.speech.utterances if u.field == "client_name"]) == 2
+
+
+def test_without_the_phone_the_town_settles_it(world, scenarios):
+    for category in ("identity.hidden_number", "identity.borrowed_phone",
+                     "identity.changed_number"):
+        for s in _of(scenarios, category):
+            last = s.identity_trace[-1]
+            assert (last.evidence.type, last.expect.decision) == ("town", "resolved"), s.id
+            assert last.evidence.said == world.households[
+                world.clients[s.caller.client_id].household_id
+            ].town
+    for s in _of(scenarios, "identity.phone_and_name"):
+        assert all(step.evidence.type != "town" for step in s.identity_trace), s.id
 
 
 def test_a_pet_cannot_confirm_a_record_with_a_single_surname(world, scenarios):

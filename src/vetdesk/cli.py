@@ -135,6 +135,7 @@ def _identity_resolve(args: argparse.Namespace) -> int:
         name_verified=args.name_verified,
         pet_name=args.pet,
         pet_verified=args.pet_verified,
+        town=args.town,
     )
     resolution = IdentityResolver(clinic).resolve(evidence)
     print(f"decision: {resolution.decision}   level: {resolution.level}")
@@ -218,6 +219,7 @@ def main(argv: list[str] | None = None) -> int:
     resolve.add_argument("--name-verified", action="store_true", help="the name was spelled")
     resolve.add_argument("--pet", help="the pet's name as heard")
     resolve.add_argument("--pet-verified", action="store_true", help="the pet name was confirmed")
+    resolve.add_argument("--town", help="where the caller says they live, as heard")
     resolve.set_defaults(run=_identity_resolve)
     evaluate = identity_actions.add_parser("eval", help="measure the resolver against the truth")
     evaluate.add_argument("--data", type=Path, default=Path("data"))

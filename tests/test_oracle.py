@@ -5,12 +5,13 @@ from datetime import date
 import pytest
 
 from vetdesk.synth.oracle import FileView, SaidName, decide, trace
-from vetdesk.synth.world import Client, GeneratorConfig, Pet, PhoneOnFile, World
+from vetdesk.synth.world import Client, GeneratorConfig, Household, Pet, PhoneOnFile, World
 
 LANDLINE = "+34971000001"
 MARGA_MOBILE = "+34600000001"
 ANTONIO_MOBILE = "+34600000002"
 OLD_NUMBER = "+34600000009"
+TOWN = "Vallserena"
 FAMILY_NUMBER = "+34971000002"
 
 
@@ -31,6 +32,7 @@ def _pet(world, pet_id, name, linked):
 @pytest.fixture(scope="module")
 def view():
     world = World(config=GeneratorConfig())
+    world.households["H-1"] = Household("H-1", "ca", TOWN, "07990", "Carrer Major, 1", None)
     # A couple sharing a landline.
     _client(world, "MARGA", "Margalida", "Ferrer", "Oliver", [LANDLINE, MARGA_MOBILE])
     _client(world, "TONI", "Antoni", "Serra", "Vidal", [LANDLINE])
@@ -70,8 +72,11 @@ def test_name_alone_is_only_probable(view):
     assert (result.decision, result.level) == ("ask", "probable")
 
 
-def test_name_plus_pet_confirms_without_caller_id(view):
-    assert decide(view, None, MARGA, "Xispa").client_id == "MARGA"
+def test_name_and_pet_need_the_town_to_confirm_without_caller_id(view):
+    assert decide(view, None, MARGA, "Xispa").decision == "ask"
+    assert decide(view, None, MARGA, "Xispa", "Port Blau").decision == "ask"
+    assert decide(view, None, MARGA, "Xispa", TOWN).client_id == "MARGA"
+    assert decide(view, None, MARGA, None, TOWN).decision == "ask"  # the town is no pet
 
 
 def test_a_pet_that_is_not_on_file_does_not_confirm(view):
@@ -80,7 +85,7 @@ def test_a_pet_that_is_not_on_file_does_not_confirm(view):
 
 def test_catalan_and_castilian_forms_of_a_name_match(view):
     said = SaidName("Margarita", "Ferrer", "Oliver")
-    assert decide(view, None, said, "Xispa").client_id == "MARGA"
+    assert decide(view, None, said, "Xispa", TOWN).client_id == "MARGA"
 
 
 def test_homonyms_cannot_be_told_apart_by_a_pet_linked_by_name(view):
@@ -93,7 +98,7 @@ def test_the_phone_tells_homonyms_apart(view):
 
 
 def test_borrowed_phone_does_not_override_name_and_pet(view):
-    result = decide(view, ANTONIO_MOBILE, MARGA, "Xispa")
+    result = decide(view, ANTONIO_MOBILE, MARGA, "Xispa", TOWN)
     assert (result.decision, result.client_id) == ("resolved", "MARGA")
 
 
@@ -121,7 +126,7 @@ def test_one_surname_is_never_enough_when_the_record_has_two(view):
 def test_record_with_a_single_surname_is_confirmed_by_its_own_phone_only(view):
     pere = SaidName("Pere", "Mas", "Coll")
     assert decide(view, OLD_NUMBER, pere, None).client_id == "PERE"
-    assert decide(view, None, pere, "Luna").decision == "ask"
+    assert decide(view, None, pere, "Luna", TOWN).decision == "ask"
 
 
 def test_family_number_cannot_confirm_half_a_name(view):
@@ -132,9 +137,17 @@ def test_family_number_cannot_confirm_half_a_name(view):
 
 
 def test_trace_asks_for_both_surnames_before_the_pet(view):
-    steps = trace(view, None, SaidName("Margalida", "Ferrer"), "Xispa", MARGA)
+    steps = trace(view, None, SaidName("Margalida", "Ferrer"), "Xispa", MARGA, TOWN)
     assert [(kind, value, d.decision) for kind, value, d in steps] == [
         ("client_name", "Margalida Ferrer", "ask"),
         ("client_name", "Margalida Ferrer Oliver", "ask"),
-        ("pet_name", "Xispa", "resolved"),
+        ("pet_name", "Xispa", "ask"),
+        ("town", "Vallserena", "resolved"),
     ]
+
+
+def test_the_town_is_only_asked_when_it_could_settle_the_matter(view):
+    by_phone = trace(view, MARGA_MOBILE, MARGA, "Xispa", None, TOWN)
+    assert [kind for kind, _, _ in by_phone] == ["caller_number", "client_name"]
+    homonyms = trace(view, None, ANTONIO, "Rocky", None, TOWN)
+    assert [kind for kind, _, _ in homonyms] == ["client_name", "pet_name"]

@@ -78,8 +78,8 @@ PILOT_FAILURE = {
 NOTES = {
     "identity.phone_and_name": "Baseline: the number is on file for one client and the name "
     "agrees.",
-    "identity.hidden_number": "No caller ID: the full name alone is not enough, the pet "
-    "confirms it.",
+    "identity.hidden_number": "No caller ID: the full name alone is not enough; the pet and "
+    "the town on the record confirm it.",
     "identity.shared_phone": "The number is on file for several people of one household; "
     "greeting by name from the number alone picks the wrong one.",
     "identity.homonym_with_phone": "Two clients share a full name; the phone tells them apart.",
@@ -90,8 +90,9 @@ NOTES = {
     "identity.stale_phone_stranger": "The number is still on a client's record but belongs to "
     "someone else now; the caller is not that client.",
     "identity.borrowed_phone": "A client calls from another client's phone; the number points "
-    "at the wrong person.",
-    "identity.changed_number": "The client's current number is not on file; name and pet are.",
+    "at the wrong person. Name, pet and town settle it.",
+    "identity.changed_number": "The client's current number is not on file; name, pet and "
+    "town are.",
     "identity.no_pets_with_phone": "Client with no animals on file: there is no pet to ask "
     "about, the phone has to corroborate the name.",
     "identity.no_pets_hidden_number": "Client with no animals on file and no caller ID: the "
@@ -169,6 +170,7 @@ class _Who:
     name: SaidName
     language: str
     pets: tuple[CallerPet, ...]
+    town: str
 
 
 class _Generator:
@@ -204,7 +206,8 @@ class _Generator:
 
     def _who(self, client: Client) -> _Who:
         pets = tuple(CallerPet(pet_id=p.pet_id, name=p.name) for p in self._alive(client))
-        return _Who(client.client_id, self._full(client), client.language, pets)
+        town = self.world.households[client.household_id].town
+        return _Who(client.client_id, self._full(client), client.language, pets, town)
 
     def _ordered(self, clients: Iterable[Client]) -> list[Client]:
         """Deterministic shuffle, with clients not yet used in a scenario first."""
@@ -230,6 +233,10 @@ class _Generator:
             person = _person(self.rng, language)
             if not self.view.by_name(SaidName(person.given, person.surname1)):
                 return SaidName(person.given, person.surname1, person.surname2)
+
+    def _stranger(self, name: SaidName, language: str, pet: CallerPet) -> _Who:
+        town, _ = self.rng.choice(names.TOWNS)
+        return _Who(None, name, language, (pet,), town)
 
     def _stranger_number(self) -> str:
         while True:
@@ -303,7 +310,7 @@ class _Generator:
         traps: set[str] = set(extra_traps)
         outcome, resolved_id = "not_required", None
         if identity:
-            steps = oracle_trace(self.view, number, said, own_pet, who.name)
+            steps = oracle_trace(self.view, number, said, own_pet, who.name, who.town)
             for _, _, decision in steps:
                 traps.update(decision.consistent_with)
             last = steps[-1][2]
@@ -322,6 +329,7 @@ class _Generator:
             heard[("client_name", full)] = corrupt(full, level, self.rng)
         for pet_name in dict.fromkeys(n for n in (own_pet, goal.pet_name) if n):
             heard[("pet_name", pet_name)] = corrupt(pet_name, level, self.rng)
+        heard[("town", who.town)] = corrupt(who.town, level, self.rng)
         utterances = [Utterance(field=k, said=v, heard=h) for (k, v), h in heard.items()]
         if all(u.said == u.heard for u in utterances):
             level = "none"
@@ -365,6 +373,7 @@ class _Generator:
                 surname1=who.name.surname1,
                 surname2=who.name.surname2,
                 says_name=said.text(),
+                town=who.town,
                 pets=list(who.pets),
                 persona=self.rng.choice(PERSONAS),
                 goal=goal,
@@ -418,7 +427,7 @@ class _Generator:
         who = self._who(client)
         if new_pet:
             pet = CallerPet(pet_id=None, name=self._new_pet_name({client.client_id}))
-            who = _Who(who.client_id, who.name, who.language, (pet,))
+            who = _Who(who.client_id, who.name, who.language, (pet,), who.town)
         elif who.pets:
             pet = self.rng.choice(who.pets)
         else:
@@ -458,7 +467,7 @@ class _Generator:
             window=self._window(clock),
         )
         return self._emit(
-            category, _Who(None, name, language, (pet,)), number, relation, goal, clock,
+            category, self._stranger(name, language, pet), number, relation, goal, clock,
             want=want, actions=self._booking(goal), **options,
         )
 
@@ -722,7 +731,7 @@ class _Generator:
         if i % 3 == 1:
             language = self.rng.choice(["es", "ca"])
             pet = CallerPet(pet_id=None, name=_weighted(self.rng, names.PET_NAMES))
-            return _Who(None, self._stranger_name(language), language, (pet,)), None, "hidden"
+            return self._stranger(self._stranger_name(language), language, pet), None, "hidden"
         client = self._ordered(self.simple)[0]
         if i % 3 == 0:
             return self._who(client), self._own_phone(client), "own"

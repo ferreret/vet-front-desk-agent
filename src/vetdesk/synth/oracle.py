@@ -9,7 +9,9 @@ corroborates it, leaving exactly one candidate. The factor is the calling number
 that client's record, or a pet name linked to that client. How much the name is worth
 depends on how much of it could be compared:
 
-* Full name (both surnames given and on file): either factor confirms it.
+* Full name (both surnames given and on file): the phone confirms it. A pet confirms it
+  only together with the town on the record: the same full name and the same pet name do
+  coincide between two different people, and the town makes that far less likely.
 * The caller gave one surname but the record holds two: nothing confirms it; the missing
   surname has to be asked for. Relatives are often namesakes and borrow each other's phones.
 * The record itself holds a single surname: only the phone confirms it, and only when
@@ -52,6 +54,10 @@ class FileView:
         self._phones = world.phone_index()
         self._two_surnames = {c.client_id for c in world.clients.values() if c.surname2_on_file}
         self._surname1 = {c.client_id: fold(c.surname1) for c in world.clients.values()}
+        self._town = {
+            c.client_id: fold(world.households[c.household_id].town)
+            for c in world.clients.values()
+        }
         self._names: dict[tuple[str, str], list] = {}
         for client in world.clients.values():
             key = (given_key(client.given), fold(client.surname1))
@@ -84,6 +90,9 @@ class FileView:
         """Both surnames were given and the record has both to compare them with."""
         return bool(said.surname2) and client_id in self._two_surnames
 
+    def town_matches(self, town: str | None, client_id: str) -> bool:
+        return bool(town) and fold(town) == self._town[client_id]
+
     def phone_confirms(self, said: SaidName, number: str | None, client_id: str) -> bool:
         if client_id in self._two_surnames:
             return bool(said.surname2)
@@ -91,7 +100,11 @@ class FileView:
 
 
 def decide(
-    view: FileView, number: str | None, name: SaidName | None, pet: str | None
+    view: FileView,
+    number: str | None,
+    name: SaidName | None,
+    pet: str | None,
+    town: str | None = None,
 ) -> Decision:
     by_phone = view.by_phone(number)
     if name is None:
@@ -100,19 +113,23 @@ def decide(
     candidates = view.by_name(name)
     if not candidates:
         return Decision("not_found", "none", None, ())
-    corroborated = False
+    by_the_phone = False
     on_phone = candidates & by_phone
     if on_phone:
         candidates = on_phone
-        corroborated = all(view.phone_confirms(name, number, c) for c in on_phone)
+        by_the_phone = all(view.phone_confirms(name, number, c) for c in on_phone)
     with_pet = candidates & view.by_pet(pet)
     if with_pet:
         candidates = with_pet
-        if all(view.full_name_matched(name, client_id) for client_id in with_pet):
-            corroborated = True
-    if corroborated and len(candidates) == 1:
+    if len(candidates) == 1:
         (client_id,) = candidates
-        return Decision("resolved", "confirmed", client_id, (client_id,))
+        by_pet_and_town = (
+            bool(with_pet)
+            and view.full_name_matched(name, client_id)
+            and view.town_matches(town, client_id)
+        )
+        if by_the_phone or by_pet_and_town:
+            return Decision("resolved", "confirmed", client_id, (client_id,))
     return Decision("ask", "probable", None, tuple(sorted(candidates)))
 
 
@@ -122,10 +139,12 @@ def trace(
     name: SaidName,
     pet: str | None,
     full_name: SaidName | None = None,
+    town: str | None = None,
 ) -> list[tuple[str, str, Decision]]:
     """Evidence in the order a call produces it, with the decision after each piece:
-    number, name, full name (when the caller first gave a single surname), pet.
-    Stops at the first decision that settles the matter."""
+    number, name, full name (when the caller first gave a single surname), pet, town.
+    Stops at the first decision that settles the matter. The town is only asked for when
+    it could settle it: a single candidate whose pet matched."""
     evidence: list[tuple[str, object]] = [("caller_number", number)] if number else []
     evidence.append(("client_name", name))
     if full_name and full_name != name:
@@ -141,7 +160,15 @@ def trace(
         decision = decide(view, number, known_name, known_pet)
         steps.append((kind, value, decision))
         if decision.decision != "ask":
-            break
+            return steps
+    last = steps[-1][2]
+    town_could_settle_it = (
+        town and known_pet and len(last.consistent_with) == 1
+        and last.consistent_with[0] in view.by_pet(known_pet)
+        and view.full_name_matched(known_name, last.consistent_with[0])
+    )
+    if town_could_settle_it:
+        steps.append(("town", town, decide(view, number, known_name, known_pet, town)))
     return steps
 
 
