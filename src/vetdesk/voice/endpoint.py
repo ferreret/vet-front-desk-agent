@@ -14,8 +14,8 @@ So each request is matched to its call, and only the caller's last line is taken
 The agent set up on the platform needs nothing but these two lines as its prompt, which
 tell this address which call a request belongs to and who is calling:
 
-    conversation: {{system__conversation_id}}
-    caller: {{system__caller_id}}
+    vetdesk-conversation: {{system__conversation_id}}
+    vetdesk-caller: {{system__caller_id}}
 
 The address has to be reachable from the internet, so every request must carry the key in
 VETDESK_ENDPOINT_KEY as a bearer token. Without the key nothing is answered.
@@ -51,8 +51,10 @@ log = logging.getLogger("vetdesk.endpoint")
 
 KEY_NAME = "VETDESK_ENDPOINT_KEY"
 IDLE_SECONDS = 30 * 60  # a call nobody has asked about for this long is over
-_CONVERSATION = re.compile(r"^\s*conversation:\s*(\S+)", re.MULTILINE | re.IGNORECASE)
-_CALLER = re.compile(r"^\s*caller:\s*(.*)$", re.MULTILINE | re.IGNORECASE)
+# ElevenLabs wraps the agent's prompt in text of its own, so the two markers are looked for
+# anywhere in it, under names nothing else would use.
+_CONVERSATION = re.compile(r"vetdesk-conversation:\s*(\S+)")
+_CALLER = re.compile(r"vetdesk-caller:[ \t]*([+\d][\d ()-]*)?")
 
 
 def _text(content) -> str:
@@ -85,12 +87,12 @@ class Switchboard:
         self._lines = {k: v for k, v in self._lines.items() if now - v[1] < IDLE_SECONDS}
         if conversation not in self._lines:
             caller = _CALLER.search(system)
-            numbers, _ = parse_phones(caller.group(1) if caller else "")
+            numbers, _ = parse_phones((caller.group(1) if caller else "") or "")
             number = numbers[0] if numbers else None
             log.info("call %s from %s", conversation, number or "a hidden number")
             if not found:
                 log.info("no conversation id in what the platform sent as system text: %r",
-                         system[:300])
+                         system)
             self._lines[conversation] = (Line(self._start_call(number)), now)
         line, _ = self._lines[conversation]
         self._lines[conversation] = (line, now)

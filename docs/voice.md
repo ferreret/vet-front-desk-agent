@@ -162,8 +162,8 @@ The agent set up at ElevenLabs needs only two lines as its prompt, which tell th
 which call a request belongs to and who is calling:
 
 ```
-conversation: {{system__conversation_id}}
-caller: {{system__caller_id}}
+vetdesk-conversation: {{system__conversation_id}}
+vetdesk-caller: {{system__caller_id}}
 ```
 
 ## Who does what

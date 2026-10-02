@@ -18,7 +18,8 @@ from vetdesk.voice.endpoint import Switchboard, build_app  # noqa: E402
 
 NOW = datetime(2026, 11, 3, 10, 15)
 KEY = "a-test-key"
-PROMPT = "conversation: conv_123\ncaller: {caller}"
+PROMPT = ("Task description: You are an AI agent. Your character definition is provided "
+          "below. vetdesk-conversation: conv_123\nvetdesk-caller: {caller}\nGuardrails: none.")
 LOOKUP = ToolCall("c1", "get_availability", {"date_from": "2026-11-09", "date_to": "2026-11-13",
                                              "part_of_day": "any"})
 
@@ -126,7 +127,7 @@ def test_a_line_asked_for_twice_is_answered_once(clinic, kb):
 
 def test_two_conversations_are_two_calls(clinic, kb):
     model, calls, app = _front_desk([Reply("Dígame."), Reply("Digui.")], clinic, kb)
-    other = _messages("Bon dia", prompt="conversation: conv_456\ncaller: {caller}")
+    other = _messages("Bon dia", prompt="vetdesk-conversation: conv_456\nvetdesk-caller: {caller}")
     answers = _ask(app, _messages("Hola"), other)
     assert [_spoken(stream) for _, _, stream in answers] == ["Dígame.", "Digui."]
     assert len(calls) == 2
@@ -135,7 +136,7 @@ def test_two_conversations_are_two_calls(clinic, kb):
 def test_without_an_id_from_the_platform_the_opening_tells_calls_apart(clinic, kb):
     model, calls, app = _front_desk([Reply("Uno."), Reply("Dos."), Reply("Tres.")], clinic, kb)
     plain = "You are a helpful assistant."
-    unfilled = "conversation: {{{{system__conversation_id}}}}\ncaller: {caller}"
+    unfilled = "vetdesk-conversation: {{{{system__conversation_id}}}}\nvetdesk-caller: {caller}"
     _ask(app, _messages("Hola", prompt=plain), _messages("Hola", "¿Abrís?", prompt=plain),
          _messages("Buenas", prompt=unfilled))
     assert len(calls) == 2  # the same opening twice, then another one

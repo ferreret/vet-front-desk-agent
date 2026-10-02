@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from vetdesk.agent.spoken import say_ca, say_es
+from vetdesk.spoken import clock_es, say_ca, say_es
 
 
 @pytest.mark.parametrize(("moment", "spanish", "catalan"), [
@@ -45,3 +45,13 @@ def test_every_slot_the_agenda_can_offer_has_words(clinic):
     for slot in slots:
         for said in (say_es(slot), say_ca(slot)):
             assert not any(ch.isdigit() for ch in said.split(" a ", 1)[1]), said
+
+
+def test_clock_times_for_opening_hours():
+    from datetime import time
+
+    assert clock_es(time(9, 30)) == "las nueve y media de la mañana"
+    assert clock_es(time(13, 30)) == "la una y media de la tarde"
+    assert clock_es(time(16, 30)) == "las cuatro y media de la tarde"
+    assert clock_es(time(20, 0)) == "las ocho de la tarde"
+    assert clock_es(time(12, 0)) == "las doce del mediodía"

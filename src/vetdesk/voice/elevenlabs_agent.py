@@ -25,7 +25,8 @@ from .endpoint import KEY_NAME, _load_env
 
 API = "https://api.elevenlabs.io/v1/convai"
 AGENT_ID, SECRET_ID = "VETDESK_ELEVENLABS_AGENT_ID", "VETDESK_ELEVENLABS_SECRET_ID"
-PROMPT = "conversation: {{system__conversation_id}}\ncaller: {{system__caller_id}}"
+PROMPT = ("vetdesk-conversation: {{system__conversation_id}}\n"
+          "vetdesk-caller: {{system__caller_id}}")
 
 
 def _call(method: str, path: str, body: dict | None = None) -> dict:

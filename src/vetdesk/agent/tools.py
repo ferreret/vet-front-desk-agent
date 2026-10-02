@@ -26,7 +26,7 @@ from ..legacy.models import Client, Clinic
 from ..legacy.normalize import fold, parse_phones
 from ..llm import ToolCall, ToolResult, ToolSpec
 from ..scheduling import Agenda, AgendaError, Appointment
-from .spoken import say_ca, say_es
+from ..spoken import say_ca, say_es
 
 
 class ToolError(Exception):

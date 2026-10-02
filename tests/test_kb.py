@@ -102,6 +102,12 @@ def test_what_the_agent_reads_carries_the_critical_facts(kb):
     assert "+34" not in text
     assert all(service.name in text for service in kb.services)
     assert "invierno" in text and "verano" in text and "domingo: cerrado" in text
+    # Opening hours come in words, ready to be said: no clock time is left for a model to
+    # read aloud its own way.
+    assert ("- lunes: de las nueve y media de la mañana a la una y media de la tarde y de "
+            "las cuatro y media de la tarde a las ocho de la tarde") in text
+    assert "- sábado: de las diez de la mañana a la una de la tarde" in text
+    assert "09:30" not in text and "16:30" not in text
     assert kb.facts() == {"kb.emergency_phone": "600555020", "kb.clinic_phone": "971555010"}
 
 

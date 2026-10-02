@@ -1,13 +1,15 @@
 """Days and times written out the way they are said, in Spanish and in Catalan.
 
 A model asked to turn "16:30" into Catalan said "les cinc i mitja" to six callers out of
-eighty-two: an hour late for their appointment. A time the caller will act on is not left
-to the model. The tools hand it over already in words, and the model repeats them.
+eighty-two: an hour late for their appointment. Asked on a voice line when the clinic
+opens, it began "a las cinco y media menos... perdone, a las 16:30". A time the caller
+will act on is not left to the model. It is handed over already in words, and the model
+repeats them.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, time
 
 _ES = {
     "weekdays": ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"),
@@ -78,3 +80,10 @@ def say_ca(moment: datetime) -> str:
     of = "d'" if month[0] in "aeiou" else "de "
     return (f"{_CA['weekdays'][moment.weekday()]} {moment.day} {of}{month} {article} {hour}"
             f"{_minutes(_CA, moment.minute, 'i')} {_part_ca(moment.hour)}")
+
+
+def clock_es(moment: time) -> str:
+    """'las cuatro y media de la tarde', 'la una de la tarde'"""
+    hour = _ES["hours"][moment.hour % 12]
+    article = "la" if hour == "una" else "las"
+    return f"{article} {hour}{_minutes(_ES, moment.minute, 'y')} {_part_es(moment.hour)}"

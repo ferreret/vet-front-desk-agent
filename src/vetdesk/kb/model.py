@@ -16,6 +16,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+from ..spoken import clock_es
+
 WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 WEEKDAYS_ES = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 
@@ -201,8 +203,12 @@ class KnowledgeBase(_Model):
             lines.append(f"Horario de {season.season} (del {_spoken(season.starts)} "
                          f"al {_spoken(season.ends)}):")
             for day, name in zip(WEEKDAYS, WEEKDAYS_ES, strict=True):
-                intervals = getattr(season, day)
-                opening = " y ".join(i.replace("-", " a ") for i in intervals) or "cerrado"
+                # In words: asked for the opening hours on a voice line, a model handed
+                # "16:30" began "a las cinco y media menos... perdone".
+                opening = " y ".join(
+                    f"de {clock_es(start)} a {clock_es(end)}"
+                    for start, end in map(_interval, getattr(season, day))
+                ) or "cerrado"
                 lines.append(f"- {name}: {opening}")
         lines += ["", "CITAS"]
         lines += [f"- {note}" for note in self.appointments.notes]
