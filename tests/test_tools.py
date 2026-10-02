@@ -176,6 +176,40 @@ def test_pets_of_a_confirmed_caller(confirmed):
     assert {pet.name for pet in scenario.caller.pets} <= {pet["name"] for pet in result["pets"]}
 
 
+def test_animals_that_may_be_a_namesakes_are_not_handed_to_the_model(clinic, kb, scenarios):
+    """Found by the evaluation harness: `get_pets` listed them with a note not to mention
+    them. A barrier that depends on the model heeding a note is not a barrier."""
+    checked = 0
+    for scenario in scenarios:
+        if scenario.category != "identity.homonym_with_phone":
+            continue
+        toolbox = _toolbox(clinic, kb, scenario.call.caller_number)
+        name = " ".join(p for p in (scenario.caller.given_name, scenario.caller.surname1,
+                                    scenario.caller.surname2) if p)
+        if _identify(toolbox, name=name, name_spelled=True)["status"] != "confirmed":
+            continue
+        animals = clinic.animals_of(toolbox.session.client.code)
+        shared = {a.name for a in animals if len(a.owner_codes) > 1}
+        if not shared:
+            continue
+        checked += 1
+        result, failed = _call(toolbox, "get_pets")
+        assert not failed and all("certain" not in pet for pet in result["pets"])
+        assert {pet["name"] for pet in result["pets"]} == \
+            {a.name for a in animals if len(a.owner_codes) == 1}
+        text = json.dumps(result, ensure_ascii=False)
+        only_shared = shared - {a.name for a in animals if len(a.owner_codes) == 1}
+        assert not any(name in text for name in only_shared)
+        hidden = sum(len(a.owner_codes) > 1 for a in animals)
+        assert f"{hidden} more on file" in result["note"]
+        # The caller can still book for one of them by naming it.
+        booked, failed = _call(toolbox, "book_appointment", start=SLOT, reason="vacuna",
+                               pet_name=sorted(shared)[0], contact_name=None,
+                               contact_phone=None)
+        assert not failed and booked["pet_name"] == sorted(shared)[0]
+    assert checked
+
+
 def test_booking_for_a_confirmed_caller_goes_on_their_record(confirmed):
     toolbox, scenario = confirmed
     pet = scenario.caller.pets[0].name
@@ -237,6 +271,35 @@ def test_availability_needs_no_identification(clinic, kb):
     assert result["slots"][0] == {"start": "2026-11-09T16:30", "weekday": "lunes"}
     assert _call(toolbox, "get_availability", date_from="2026-11-08", date_to="2026-11-08",
                  part_of_day="any")[0]["slots"] == []
+
+
+def test_free_times_are_a_sample_over_several_days_and_say_so(clinic, kb):
+    """Found by the evaluation harness: given the six earliest times, all on a Monday, the
+    model told callers there was nothing else that week."""
+    toolbox = _toolbox(clinic, kb)
+    week, _ = _call(toolbox, "get_availability", date_from="2026-11-09", date_to="2026-11-13",
+                    part_of_day="any")
+    assert [slot["weekday"] for slot in week["slots"]] == \
+        ["lunes", "lunes", "martes", "martes", "miércoles", "miércoles"]
+    assert len({slot["start"] for slot in week["slots"]}) == 6
+    assert week["free_days"] == ["lunes 2026-11-09", "martes 2026-11-10", "miércoles 2026-11-11",
+                                 "jueves 2026-11-12", "viernes 2026-11-13"]
+    assert "never say a day or the week is full" in week["note"]
+
+    day, _ = _call(toolbox, "get_availability", date_from="2026-11-09", date_to="2026-11-09",
+                   part_of_day="morning")
+    assert len(day["slots"]) == 6 and day["free_days"] == ["lunes 2026-11-09"]
+    assert day["slots"][0]["start"] == "2026-11-09T09:30"
+
+    # When everything fits, everything is shown and the model may say so.
+    for start in ("10:00", "10:30", "11:00", "11:30"):
+        toolbox.agenda.book(datetime.fromisoformat(f"2026-11-14T{start}"), "x", "Luna",
+                            contact_name="A", contact_phone="+34600000001")
+    saturday, _ = _call(toolbox, "get_availability", date_from="2026-11-14",
+                        date_to="2026-11-14", part_of_day="any")
+    assert [slot["start"][-5:] for slot in saturday["slots"]] == ["12:00", "12:30"]
+    assert saturday["note"] == "These are all the free times in that range."
+    assert "free_days" not in saturday
 
 
 def test_an_unconfirmed_caller_books_under_their_word(clinic, kb):

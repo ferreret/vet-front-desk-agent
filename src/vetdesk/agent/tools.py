@@ -85,6 +85,9 @@ NOT_A_CLIENT = (
     "identify_client again with name_spelled=true."
 )
 
+MAX_OFFERED = 6  # free times handed to the model at once
+DAYS_OFFERED = 3  # days they are spread over
+
 _NULLABLE_TEXT = {"type": ["string", "null"]}
 
 
@@ -247,16 +250,20 @@ class Toolbox:
 
     def _get_pets(self) -> dict:
         client = self._confirmed()
+        animals = self.clinic.animals_of(client.code)
+        # An animal filed under a name two clients share may be the other client's. It is
+        # not handed to the model at all: telling it "do not bring these up" would make
+        # the barrier a matter of prompt again.
         pets = [
-            {"name": a.name, "species": a.species, "breed": a.breed, "deceased": a.deceased,
-             "certain": len(a.owner_codes) == 1}
-            for a in self.clinic.animals_of(client.code)
+            {"name": a.name, "species": a.species, "breed": a.breed, "deceased": a.deceased}
+            for a in animals if len(a.owner_codes) == 1
         ]
         result: dict = {"pets": pets}
-        if any(not pet["certain"] for pet in pets):
+        if len(pets) < len(animals):
             result["note"] = (
-                "Pets with certain=false are filed under a name this client shares with "
-                "another client. Do not bring them up; act on one only if the caller names it."
+                f"{len(animals) - len(pets)} more on file cannot be told apart from another "
+                "client's animals, so they are not listed. If the caller names an animal "
+                "that is not listed, that is fine: book it under the name they give."
             )
         return result
 
@@ -268,11 +275,28 @@ class Toolbox:
             raise ToolError("ask for a range of at most one month, with date_to after date_from")
         if part_of_day not in ("morning", "afternoon", "any"):
             raise ToolError("part_of_day must be morning, afternoon or any")
-        slots = self.agenda.free_slots(first, last, part_of_day, limit=6)
+        slots = self.agenda.free_slots(first, last, part_of_day, limit=10_000)
         if not slots:
             return {"slots": [], "note": "Nothing free in that range. Offer other days."}
-        return {"slots": [_when(slot) for slot in slots],
-                "note": "Offer two or three of these, not the whole list."}
+        if len(slots) <= MAX_OFFERED:
+            return {"slots": [_when(slot) for slot in slots],
+                    "note": "These are all the free times in that range."}
+        # A sample spread over the first days. Handed the six earliest times, all on one
+        # day, a model told callers that the rest of the week was full.
+        by_day: dict[date, list[datetime]] = {}
+        for slot in slots:
+            by_day.setdefault(slot.date(), []).append(slot)
+        days = list(by_day)[:DAYS_OFFERED]
+        per_day = MAX_OFFERED // len(days)
+        sample = [slot for day in days
+                  for slot in by_day[day][::max(1, len(by_day[day]) // per_day)][:per_day]]
+        return {
+            "slots": [_when(slot) for slot in sample],
+            "free_days": [f"{WEEKDAYS_ES[day.weekday()]} {day.isoformat()}" for day in by_day],
+            "note": "A sample: offer two or three of these. Every day in free_days has more "
+                    "free times than are shown, so never say a day or the week is full "
+                    "because it is not in the sample. To see one day, ask again for that day.",
+        }
 
     def _book_appointment(
         self,
