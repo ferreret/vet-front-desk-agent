@@ -195,8 +195,9 @@ The model is most of the wait. Our own clock put the same first words at 1.8 to 
 the tunnel costs a few tenths of a second, which a server would save.
 
 ElevenLabs charged 150 credits a minute for these calls, at the reduced rate it applies to
-test calls from its dashboard, and nothing for the model, since it is ours. The model
-costs about 2 to 3 US cents for a booking of a dozen turns.
+test calls from its dashboard, and nothing for the model, since it is ours. The model's
+cost was not recorded for these calls (it is logged per answer since); in the evaluation
+harness a call of six turns costs about 2 US cents.
 
 ## Who does what
 
