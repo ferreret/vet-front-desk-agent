@@ -2095,6 +2095,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+endpoint = [
+    { name = "aiohttp" },
+]
 voice = [
     { name = "aiohttp" },
     { name = "livekit-agents", extra = ["elevenlabs", "silero"] },
@@ -2108,13 +2111,14 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", marker = "extra == 'endpoint'", specifier = ">=3.9" },
     { name = "aiohttp", marker = "extra == 'voice'", specifier = ">=3.9" },
     { name = "anthropic", specifier = ">=1.11.0" },
     { name = "google-genai", specifier = ">=2.26.0" },
     { name = "livekit-agents", extras = ["elevenlabs", "silero"], marker = "extra == 'voice'", specifier = "~=1.5" },
     { name = "pydantic", specifier = ">=2.7" },
 ]
-provides-extras = ["voice"]
+provides-extras = ["endpoint", "voice"]
 
 [package.metadata.requires-dev]
 dev = [

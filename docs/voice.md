@@ -169,6 +169,35 @@ vetdesk-conversation: {{system__conversation_id}}
 vetdesk-caller: {{system__caller_id}}
 ```
 
+### On a server
+
+A tunnel to a laptop is for trying things. The image in the `Dockerfile` runs the same
+address anywhere a container runs: it holds the synthetic clinic (built from its seed) and
+no key. It needs two settings in its environment, `ANTHROPIC_API_KEY` and
+`VETDESK_ENDPOINT_KEY`, and refuses to start without the second.
+
+```bash
+docker build -t vetdesk-endpoint .
+docker run --rm -p 8013:8013 -e ANTHROPIC_API_KEY=... -e VETDESK_ENDPOINT_KEY=... vetdesk-endpoint
+```
+
+### What a call costs and how long it waits
+
+From ElevenLabs' own records of the first three calls (13 turns), through the tunnel:
+
+| From the caller falling silent to the agent's voice | 3.2 s (median) |
+|---|---|
+| of which: our address answering its first words | 1.9 s (1.5 to 5.3) |
+| of which: the voice starting | 0.13 s |
+| the rest: ElevenLabs deciding the caller has finished, and transcribing | about 1.1 s |
+
+The model is most of the wait. Our own clock put the same first words at 1.8 to 2.3 s, so
+the tunnel costs a few tenths of a second, which a server would save.
+
+ElevenLabs charged 150 credits a minute for these calls, at the reduced rate it applies to
+test calls from its dashboard, and nothing for the model, since it is ours. The model
+costs about 2 to 3 US cents for a booking of a dozen turns.
+
 ## Who does what
 
 | Piece | Does | Why this one |

@@ -39,7 +39,8 @@ from pathlib import Path
 from aiohttp import web
 
 from ..agent import FrontDeskAgent
-from ..agent.agent import Call
+from ..agent.agent import Call, Turn
+from ..evals.cost import cost
 from ..kb import load_kb
 from ..legacy import LegacySqliteSource
 from ..legacy.normalize import parse_phones
@@ -105,7 +106,17 @@ def _chunk(request_id: str, model: str, delta: dict, finish: str | None = None) 
     return f"data: {json.dumps(body, ensure_ascii=False)}\n\n".encode()
 
 
-def build_app(switchboard: Switchboard, key: str) -> web.Application:
+def build_app(switchboard: Switchboard, key: str, model: str = "") -> web.Application:
+    """`model` is the agent's own model, named only to put a price on each answer."""
+    agent_model = model
+
+    def spent(turn: Turn) -> None:
+        usage, price = turn.usage, cost(agent_model, turn.usage)
+        log.info("model: %d requests, %d tokens in (%d from cache), %d out%s", turn.requests,
+                 usage.input_tokens + usage.cache_read_tokens + usage.cache_write_tokens,
+                 usage.cache_read_tokens, usage.output_tokens,
+                 f", ${price:.4f}" if price is not None else "")
+
     async def chat_completions(request: web.Request) -> web.StreamResponse:
         given = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
         if not key or not hmac.compare_digest(given.encode(), key.encode()):
@@ -132,7 +143,7 @@ def build_app(switchboard: Switchboard, key: str) -> web.Application:
             else:
                 log.info("caller: %s", said[-1])
                 answer, first = [], None
-                async for piece in line.answer(said[-1], turn=len(said)):
+                async for piece in line.answer(said[-1], on_turn=spent, turn=len(said)):
                     first = first if first is not None else time.perf_counter() - started
                     answer.append(piece)
                     await response.write(_chunk(request_id, model, {"content": piece}))
@@ -166,8 +177,12 @@ def _load_env(path: Path = Path(".env")) -> None:
                 os.environ.setdefault(name.strip(), value.strip().strip("'\""))
 
 
-def _key(path: Path = Path(".env")) -> str:
+def _key(host: str, path: Path = Path(".env")) -> str:
     """The key requests must carry. Made on first use and kept in .env, never printed."""
+    if not os.environ.get(KEY_NAME) and host not in ("127.0.0.1", "localhost"):
+        # On a server the key comes from its settings. One invented here would be known
+        # to nobody, and one written into an image would be known to everybody.
+        raise SystemExit(f"{KEY_NAME} is not set; refusing to listen on {host} without it.")
     if not os.environ.get(KEY_NAME):
         os.environ[KEY_NAME] = secrets.token_urlsafe(32)
         with path.open("a", encoding="utf-8") as env:
@@ -186,10 +201,12 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)s",
                         datefmt="%H:%M:%S")
     _load_env()
+    key = _key(args.host)
     kb = load_kb()
     clinic = LegacySqliteSource(args.data / "clinic.db").load()
-    front_desk = FrontDeskAgent(create_client(), clinic, kb, SqliteAgenda(kb, datetime.now))
-    app = build_app(Switchboard(front_desk.start_call), _key())
+    llm = create_client()
+    front_desk = FrontDeskAgent(llm, clinic, kb, SqliteAgenda(kb, datetime.now))
+    app = build_app(Switchboard(front_desk.start_call), key, getattr(llm, "model", ""))
     print(f"The front desk answers at http://{args.host}:{args.port}/v1/chat/completions")
     web.run_app(app, host=args.host, port=args.port, print=None)
 
