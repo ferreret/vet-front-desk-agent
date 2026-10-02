@@ -191,9 +191,9 @@ class KnowledgeBase(_Model):
         """The knowledge base as the text handed to the agent."""
         lines = [
             f"Clínica veterinaria {self.clinic.name}. Dirección: {self.clinic.address}.",
-            f"Teléfono de la clínica: {self.clinic.phone}.",
+            f"Teléfono de la clínica: {spoken_phone(self.clinic.phone)}.",
             "",
-            f"URGENCIAS: {self.emergency.phone}. {self.emergency.description}",
+            f"URGENCIAS: {spoken_phone(self.emergency.phone)}. {self.emergency.description}",
             "",
             "HORARIO",
         ]
@@ -228,6 +228,16 @@ _MONTHS_ES = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "a
 def _spoken(month_day: str) -> str:
     month, day = _month_day(month_day)
     return f"{day} de {_MONTHS_ES[month - 1]}"
+
+
+def spoken_phone(number: str) -> str:
+    """A phone number as it is said: without the country prefix, in groups of three.
+
+    Given "+34600555020" to read, a model said "más seis cuatro..." to a caller with an
+    emergency in two of three measured calls. It is handed the number ready to say.
+    """
+    digits = number.removeprefix("+34")
+    return " ".join(digits[i:i + 3] for i in range(0, len(digits), 3))
 
 
 def parse_kb(text: str) -> KnowledgeBase:

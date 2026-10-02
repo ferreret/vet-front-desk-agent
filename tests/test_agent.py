@@ -49,7 +49,7 @@ def test_the_model_gets_the_clinic_facts_and_the_call_context(clinic, kb):
     assert call.greeting == ("Clínica veterinaria Planeta Animal, buenos días. "
                              "¿En qué puedo ayudarle?")
     transcript = model.transcript
-    assert kb.emergency.phone in transcript.system and kb.render() in transcript.system
+    assert "600 555 020" in transcript.system and kb.render() in transcript.system
     assert "+34600111222" in transcript.context and "martes" in transcript.context
     assert "The clinic is open" in transcript.context and call.greeting in transcript.context
     assert len(transcript.tools) == 8
@@ -67,7 +67,8 @@ def test_the_system_prompt_is_the_same_for_every_call(clinic, kb):
 
 def test_no_clinic_fact_is_written_into_the_instructions(kb):
     """Facts come from the knowledge base only, so the prompt cannot go stale."""
-    for fact in (kb.emergency.phone, kb.clinic.phone, kb.clinic.address, "09:30", "euros"):
+    for fact in (kb.emergency.phone, "600 555 020", "971 555 010", kb.clinic.address, "09:30",
+                 "euros"):
         assert fact not in INSTRUCTIONS
 
 

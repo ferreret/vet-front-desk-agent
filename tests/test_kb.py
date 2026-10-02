@@ -97,7 +97,9 @@ def test_unknown_fields_are_rejected(source):
 
 def test_what_the_agent_reads_carries_the_critical_facts(kb):
     text = kb.render()
-    assert kb.emergency.phone in text and kb.clinic.phone in text
+    # Phones are written as they are said: no country prefix for a model to misread.
+    assert "URGENCIAS: 600 555 020." in text and "Teléfono de la clínica: 971 555 010." in text
+    assert "+34" not in text
     assert all(service.name in text for service in kb.services)
     assert "invierno" in text and "verano" in text and "domingo: cerrado" in text
     assert kb.facts() == {"kb.emergency_phone": "600555020", "kb.clinic_phone": "971555010"}
