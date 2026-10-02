@@ -111,6 +111,17 @@ Bloques de 90 minutos. Es mejor cerrar una fase entera que dejar tres a medias.
 - Un nombre que no coincide con nadie significa «no es cliente», diga lo que diga el teléfono.
 - Quien no queda confirmado puede reservar una cita «sin verificar», marcada para recepción, sin leer ni escribir datos de ningún cliente. Cancelar y cambiar exigen `confirmed`.
 
+## Lenguas (decidido el 2026-10-02)
+
+El piloto posible está en una **zona turística de la costa catalana**, con clientes de muchas nacionalidades. Requisitos de Nicolás:
+
+- **Castellano de España peninsular, impecable.** Nada de acento latinoamericano. Es lo primero.
+- **Voz multilingüe**: además de castellano y catalán, las lenguas de los visitantes (inglés, francés, alemán, neerlandés, italiano; lista por confirmar con él).
+- El **catalán sintetizado le preocupa poco**: da por hecho que ningún sintetizador lo hace natural.
+- El acento lo pone la **voz** elegida en ElevenLabs más que el modelo; se decide de oído con `python -m vetdesk.voice.sample`.
+
+Pendiente y sin medir: el agente, los escenarios y las horas dichas desde código (`say_es`, `say_ca`) solo cubren castellano y catalán. Abrir el prompt a más lenguas es un cambio que hay que medir con escenarios en esas lenguas antes de darlo por bueno.
+
 ## Lo que enseñó el harness (2026-10-02)
 
 - **Lo que el cliente va a usar no lo calcula el modelo**: horas, teléfonos y la marca de «deletreado» salen de código. Cada una se dejó primero al modelo y se midió fallando.

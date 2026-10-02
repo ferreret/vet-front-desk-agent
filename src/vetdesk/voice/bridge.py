@@ -15,17 +15,35 @@ from collections.abc import AsyncIterator, Callable
 from ..agent.agent import Call, Turn
 
 # Said before a tool when the model itself says nothing: on the phone, silence is a dead line.
-WAITING = {"es": "Un momento, por favor.", "ca": "Un moment, si us plau."}
+WAITING = {
+    "es": "Un momento, por favor.",
+    "ca": "Un moment, si us plau.",
+    "en": "One moment, please.",
+    "fr": "Un instant, s'il vous plaît.",
+    "de": "Einen Moment, bitte.",
+    "nl": "Een ogenblik, alstublieft.",
+    "it": "Un momento, per favore.",
+}
 # Said when the model cannot be reached. The caller must never be left with nothing.
 TROUBLE = {
     "es": "Perdone, he tenido un problema. ¿Me lo puede repetir?",
     "ca": "Perdoni, he tingut un problema. M'ho pot repetir?",
+    "en": "Sorry, I had a problem. Could you say that again?",
+    "fr": "Excusez-moi, j'ai eu un problème. Pouvez-vous répéter ?",
+    "de": "Entschuldigung, es gab ein Problem. Können Sie das bitte wiederholen?",
+    "nl": "Excuseer, er ging iets mis. Kunt u dat herhalen?",
+    "it": "Mi scusi, ho avuto un problema. Può ripetere?",
 }
+# What speech recognition may call each language: two-letter and three-letter codes.
+_CODES = {"ca": "ca", "cat": "ca", "en": "en", "eng": "en", "fr": "fr", "fra": "fr",
+          "fre": "fr", "de": "de", "deu": "de", "ger": "de", "nl": "nl", "nld": "nl",
+          "dut": "nl", "it": "it", "ita": "it"}
 
 
 def language_of(code: str | None) -> str:
-    """The language to speak in, from what speech recognition reports ('ca', 'cat', 'es-ES')."""
-    return "ca" if (code or "").lower().startswith("ca") else "es"
+    """The language for the agent's own stock phrases, from what recognition reports
+    ('ca', 'cat', 'en-GB'). Spanish when in doubt: it is the clinic's language."""
+    return _CODES.get((code or "").lower().split("-")[0], "es")
 
 
 class Line:

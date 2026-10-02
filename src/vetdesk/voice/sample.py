@@ -30,6 +30,15 @@ LINES = {
     "ca": "Clínica veterinària Planeta Animal, bon dia. Tinc hora dilluns 9 de novembre a "
           "les quatre i mitja de la tarda. Em pot dir el seu nom i els dos cognoms, si us "
           "plau?",
+    "en": "Planeta Animal veterinary clinic, good morning. I have a free slot on Monday the "
+          "9th of November at half past four in the afternoon. If it is urgent, please call "
+          "600 555 020. May I have your full name, please?",
+    "fr": "Clinique vétérinaire Planeta Animal, bonjour. J'ai un créneau lundi 9 novembre à "
+          "seize heures trente. En cas d'urgence, appelez le 600 555 020. Puis-je avoir "
+          "votre nom complet, s'il vous plaît ?",
+    "de": "Tierklinik Planeta Animal, guten Morgen. Ich habe einen freien Termin am Montag, "
+          "dem 9. November, um sechzehn Uhr dreißig. Im Notfall rufen Sie bitte 600 555 020 "
+          "an. Wie ist Ihr vollständiger Name, bitte?",
 }
 
 
@@ -64,7 +73,8 @@ def main() -> None:
     parser.add_argument("--voice", default=os.environ.get("VETDESK_TTS_VOICE"),
                         help="ElevenLabs voice id (default: VETDESK_TTS_VOICE, else theirs)")
     parser.add_argument("--models", default=",".join(MODELS), help="comma-separated model ids")
-    parser.add_argument("--languages", default="es", help="es, ca or es,ca")
+    parser.add_argument("--languages", default="es,en",
+                        help=f"comma-separated, from: {', '.join(LINES)}")
     parser.add_argument("--out", type=Path, default=DATA / "voice-samples")
     args = parser.parse_args()
     if not os.environ.get("ELEVEN_API_KEY"):

@@ -28,8 +28,7 @@ Realtime. A synthetic voice is clearer than a caller on a phone, so this is a be
 - **A spelled name arrives as letters joined by hyphens**, but with the words run together
   and the accent gone. The spelling check was adapted to that: a name counts as spelled
   when its letters, in order, are among the letters the caller said.
-- **The Catalan phrase was transcribed in Catalan but labelled Spanish.** The language
-  label is therefore not to be trusted for choosing what language to speak.
+- **The Catalan phrase was transcribed in Catalan but labelled Spanish.** See Languages.
 - **Speed**: first audio from the voice after about 0.25 s; a transcript 0.6 to 1.0 s
   after the caller stops.
 
@@ -60,8 +59,31 @@ uv run python -m vetdesk.voice.sample --voice <voice id>   # one WAV per model
 ```
 
 The files land in `data/voice-samples/`. The voice and the model then go in `.env` as
-`VETDESK_TTS_VOICE` and `VETDESK_TTS_MODEL`. The requirement is a Spanish from Spain;
-Catalan matters less, because no synthesizer speaks it convincingly.
+`VETDESK_TTS_VOICE` and `VETDESK_TTS_MODEL`.
+
+What the voice has to do: **Spanish from Spain, flawless**, and the languages of visitors
+as well, because the clinic this is meant for is on a tourist coast. One voice speaks every
+language of a multilingual model and keeps its own accent in all of them, so a voice from
+Spain will speak English the way a receptionist from Spain does. Catalan matters less: no
+synthesizer speaks it convincingly. `--languages es,en,fr,de,ca` adds samples in those.
+
+## Languages
+
+| | Spanish and Catalan | Visitors' languages |
+|---|---|---|
+| Hearing (Scribe v2 Realtime) | Yes | Yes: Spanish is the hinted language, with Catalan, English, French, German, Dutch and Italian as alternatives (`VETDESK_STT_LANGUAGES`) |
+| Speaking (v4 Turbo) | Yes | Yes |
+| The agent's own stock phrases (waiting, trouble) | Yes | Yes, in those six |
+| The agent's prompt, the scenarios, days and times built in code | Yes | **No** |
+
+So a visitor is heard and can be answered, but nothing about answering them has been
+measured: the prompt still says "Spanish or Catalan", and a time in German would be the
+model's own wording, which is exactly what went wrong in Catalan before code took it over.
+
+Tried with synthesized phrases: English and German were transcribed and labelled
+correctly. Catalan was transcribed correctly both times but labelled Spanish once and
+Portuguese once, so the label is not what decides the language of the answer; the model
+reads the words. Only the stock phrases follow the label, and fall back to Spanish.
 
 ## Who does what
 
@@ -95,8 +117,7 @@ line cannot behave differently from what was measured in text.
   collected.
 - **Spelling by a real person.** A synthesized voice spelling a name in one breath is
   handled. A caller who spells slowly, with pauses or "be de Barcelona", is not known yet.
-- **The language of the waiting phrase.** It follows the recogniser's language label,
-  which called a Catalan sentence Spanish.
+- **Answering visitors in their language, measured.** See Languages.
 - **Real recognition errors.** The harness garbles names by rule. Playing synthesized
   callers through the real recogniser would replace that with measurement.
 - **A call from a browser or a phone.** That needs a LiveKit server: their cloud, or the

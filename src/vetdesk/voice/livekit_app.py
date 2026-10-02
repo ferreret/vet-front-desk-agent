@@ -39,6 +39,9 @@ DATA = Path(os.environ.get("VETDESK_DATA", "data"))
 TTS_MODEL = os.environ.get("VETDESK_TTS_MODEL", "eleven_v4_turbo")
 TTS_VOICE = os.environ.get("VETDESK_TTS_VOICE")  # an ElevenLabs voice id; theirs by default
 STT_MODEL = os.environ.get("VETDESK_STT_MODEL", "scribe_v2_realtime")
+# The first is the clinic's language; the others are what callers may speak instead. The
+# clinic this is meant for is on a tourist coast: Catalan, and the visitors' languages.
+STT_LANGUAGES = os.environ.get("VETDESK_STT_LANGUAGES", "es,ca,en,fr,de,nl,it").split(",")
 
 
 class _ElsewhereLLM(llm.LLM):
@@ -105,7 +108,11 @@ async def entrypoint(ctx: JobContext) -> None:
     agent = VoiceFrontDesk(call)
 
     session = AgentSession(
-        stt=elevenlabs.STT(model=STT_MODEL, language_code="es", secondary_languages=["ca"]),
+        # With a primary language set, the recogniser stops saying which language it
+        # heard unless asked to: it then called a Catalan sentence Spanish.
+        stt=elevenlabs.STT(model=STT_MODEL, language_code=STT_LANGUAGES[0],
+                           secondary_languages=STT_LANGUAGES[1:],
+                           include_language_detection=True),
         llm=_ElsewhereLLM(),
         tts=elevenlabs.TTS(model=TTS_MODEL, **({"voice_id": TTS_VOICE} if TTS_VOICE else {})),
         vad=ready["vad"],
