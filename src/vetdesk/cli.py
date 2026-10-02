@@ -14,8 +14,9 @@ import anthropic
 
 from .agent import FrontDeskAgent
 from .dbguard import ForeignDatabaseError
+from .evals.cost import PRICES
 from .evals.identity import Probe, format_report, probes_from_scenarios, run_probe, summarize
-from .evals.latency import PRICES, format_timings, time_call
+from .evals.latency import format_timings, time_call
 from .evals.sweep import sweep_probes
 from .explain import Labels, explain
 from .identity import Evidence, IdentityResolver

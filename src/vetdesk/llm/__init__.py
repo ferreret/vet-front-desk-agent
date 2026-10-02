@@ -28,12 +28,20 @@ def provider_of(model: str | None) -> str | None:
     return None
 
 
-def create_client(provider: str | None = None, model: str | None = None) -> LLMClient:
+def create_client(
+    provider: str | None = None,
+    model: str | None = None,
+    *,
+    effort: str | None = None,
+    thinking: bool | None = None,
+) -> LLMClient:
     """Build the client for a provider. Adding a provider means adding one adapter here.
 
     Defaults come from VETDESK_LLM_PROVIDER, VETDESK_LLM_MODEL, VETDESK_LLM_EFFORT and
     VETDESK_LLM_THINKING (off by default, on the models that allow switching it off). A
-    model id that names its provider (claude-..., gemini-...) needs no provider.
+    model id that names its provider (claude-..., gemini-...) needs no provider. `effort`
+    and `thinking` override the environment, for uses other than answering the phone (a
+    judge reading a transcript is in no hurry).
     """
     model = model or os.environ.get("VETDESK_LLM_MODEL")
     provider = (provider or provider_of(model)
@@ -41,8 +49,9 @@ def create_client(provider: str | None = None, model: str | None = None) -> LLMC
     if provider == "anthropic":
         from .anthropic_client import DEFAULT_EFFORT, DEFAULT_MODEL, AnthropicClient
 
-        effort = os.environ.get("VETDESK_LLM_EFFORT", DEFAULT_EFFORT)
-        thinking = os.environ.get("VETDESK_LLM_THINKING", "off").lower() == "on"
+        effort = effort or os.environ.get("VETDESK_LLM_EFFORT", DEFAULT_EFFORT)
+        if thinking is None:
+            thinking = os.environ.get("VETDESK_LLM_THINKING", "off").lower() == "on"
         return AnthropicClient(model or DEFAULT_MODEL, effort=effort, thinking=thinking)
     if provider == "gemini":
         from .gemini_client import DEFAULT_MODEL, GeminiClient

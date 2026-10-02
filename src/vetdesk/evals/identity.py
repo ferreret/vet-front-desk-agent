@@ -59,6 +59,15 @@ class Result:
         return limit is not None and self.questions > limit
 
 
+def verdict_of(confirmed: str | None, caller_id: str | None, policy_confirms: str | None) -> str:
+    """Judge an identification: who was confirmed, who is calling, whom the policy confirms."""
+    if confirmed is None:
+        return "missed" if policy_confirms == caller_id is not None else "correct"
+    if confirmed != caller_id:
+        return "coincidence" if confirmed == policy_confirms else "false_identification"
+    return "correct" if policy_confirms == confirmed else "unsupported_identification"
+
+
 def probes_from_scenarios(scenarios: list[Scenario]) -> list[Probe]:
     probes = []
     for s in scenarios:
@@ -131,14 +140,7 @@ def run_probe(resolver: IdentityResolver, probe: Probe, client_ids: dict[int, st
     outcome = OUTCOME_OF_DECISION[resolution.decision]
     client_id = client_ids[resolution.client.code] if resolution.client else None
     policy_confirms = probe.expected_client_id if probe.expected_outcome == "resolved" else None
-    if client_id is None:
-        verdict = "missed" if policy_confirms == probe.caller_id is not None else "correct"
-    elif client_id != probe.caller_id:
-        verdict = "coincidence" if client_id == policy_confirms else "false_identification"
-    elif policy_confirms == client_id:
-        verdict = "correct"
-    else:
-        verdict = "unsupported_identification"
+    verdict = verdict_of(client_id, probe.caller_id, policy_confirms)
     return Result(probe, outcome, client_id, questions, verdict)
 
 

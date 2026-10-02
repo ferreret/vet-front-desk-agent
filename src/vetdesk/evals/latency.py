@@ -22,14 +22,7 @@ from ..legacy.models import Clinic
 from ..llm import LLMClient, Usage
 from ..scenario import Scenario
 from ..scheduling import SqliteAgenda
-
-# US dollars per million tokens (input, output), first-party API prices as of 2026-09.
-# Cached input is billed at a tenth of the input price; writing the cache at 1.25 times.
-PRICES = {
-    "claude-sonnet-5-5": (2.0, 10.0),
-    "claude-opus-5-5": (4.0, 20.0),
-    "claude-haiku-4-5": (1.0, 5.0),
-}
+from .cost import cost
 
 
 @dataclass(frozen=True)
@@ -44,12 +37,7 @@ class CallTiming:
 
     @property
     def cost(self) -> float | None:
-        if self.model not in PRICES:
-            return None
-        price_in, price_out = PRICES[self.model]
-        u = self.usage
-        tokens_in = u.input_tokens + 0.1 * u.cache_read_tokens + 1.25 * u.cache_write_tokens
-        return (tokens_in * price_in + u.output_tokens * price_out) / 1_000_000
+        return cost(self.model, self.usage)
 
 
 def caller_lines(scenario: Scenario) -> list[str]:
