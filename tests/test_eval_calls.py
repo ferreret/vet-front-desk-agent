@@ -217,6 +217,22 @@ def test_an_agent_that_claims_a_spelling_it_never_got_is_caught(scenarios, clini
     assert any("verification not given" in failure for failure in verdict.failures)
 
 
+def test_a_spelling_put_back_together_wrong_is_caught(scenarios, clinic, kb, truth):
+    """Seen with a real model: "R-O-S-S-E-L-L-Ó" spelled, "Rossellón" passed on as spelled."""
+    scenario = _first(scenarios, "identity.heavy_asr_noise")
+    said = scenario.caller.says_name
+    spelled = " ".join("-".join(word.upper()) for word in said.split())
+    wrong = said + "n"
+    agent = ScriptedClient([
+        _tool("identify_client", **{**NOTHING, "name": wrong, "name_spelled": True}),
+        Reply("Gracias."), Reply("Adiós."),
+    ])
+    record = _play(scenario, agent, _caller(scenario, spelled, BYE), clinic, kb, truth)
+    verdict = score(scenario, record, truth, kb)
+    assert verdict.unsupported_verifications == [
+        f"turn 1: name_spelled for {wrong!r}, which is not what the caller spelled"]
+
+
 def test_a_spelled_name_backs_the_claim(scenarios, clinic, kb, truth):
     scenario = _first(scenarios, "identity.heavy_asr_noise")
     said = scenario.caller.says_name
@@ -247,6 +263,23 @@ def test_appointments_made_before_the_call_are_in_the_agenda(scenarios, clinic, 
     assert record.appointments[0].status == "cancelled"
     verdict = score(scenario, record, truth, kb)
     assert (verdict.identity, verdict.action, verdict.failures) == ("correct", "ok", [])
+
+
+def test_a_caller_is_kept_on_the_line_while_it_is_being_asked_something(easy, clinic, kb, truth):
+    """Seen with a real model: it said goodbye while the agent was asking for its phone."""
+    agent = ScriptedClient([Reply("Para reservar necesito un teléfono. ¿Me lo dice?"),
+                            Reply("Reservado. Adiós.")])
+    caller = _caller(easy, BYE, BYE)
+    record = _play(easy, agent, caller, clinic, kb, truth)
+    assert record.ended == "hung_up" and len(record.exchanges) == 2
+    kept = caller.transcript.tool_results[0]
+    assert kept.call_id == "h" and "You have not hung up" in kept.content
+    assert "¿Me lo dice?" in kept.content
+
+    # Not for ever: an agent that keeps asking does not keep the caller.
+    agent = ScriptedClient([Reply("¿Seguro?") for _ in range(5)])
+    record = _play(easy, agent, _caller(easy, *[BYE] * 5), clinic, kb, truth)
+    assert record.ended == "hung_up" and len(record.exchanges) == 3
 
 
 def test_a_model_that_fails_breaks_the_call_not_the_run(easy, clinic, kb, truth):

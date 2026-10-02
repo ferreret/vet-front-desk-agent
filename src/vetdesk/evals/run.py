@@ -103,9 +103,13 @@ def run(
     *,
     reps: int = 1,
     workers: int = 4,
+    again: bool = False,
     report: Callable[[str], None] = lambda line: None,
 ) -> bool:
-    """Play and judge whatever the run is still missing. False if it had to stop early."""
+    """Play and judge whatever the run is still missing. False if it had to stop early.
+
+    With `again`, the given scenarios are played afresh and replace what was stored.
+    """
     lock = threading.Lock()
     errors_in_a_row = 0
     stop = threading.Event()
@@ -115,7 +119,7 @@ def run(
         key = (scenario.id, rep)
         if stop.is_set():
             return
-        if not store.played(key):
+        if again or not store.played(key):
             record = play_call(scenario, rep)
             store.add_call(record)
             with lock:

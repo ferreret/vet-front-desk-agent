@@ -55,7 +55,7 @@ def summarize(verdicts: list[Verdict], scenarios: dict[str, Scenario]) -> Summar
         if expected.identity.outcome != "not_required":
             identity["needed"] += 1
             identity[v.identity] += 1
-            identifiable = expected.identity.outcome == "resolved"
+            identifiable = expected.identity.outcome == "resolved" and v.identity != "not_needed"
             identity["identifiable"] += identifiable
             identity["identified"] += identifiable and v.identity == "correct"
             if v.identity_questions is not None:
@@ -148,6 +148,7 @@ def format_report(
         f"IDENTITY  ({i['needed']} scored calls that needed it)",
         f"  identified, of those who could be         {_share(i['identified'], i['identifiable'])}",
         f"  missed (safe: served without their record) {i['missed']}",
+        f"  never asked, because nothing depended on it {i['not_needed']}",
     ]
     if i["judged"]:
         lines += [

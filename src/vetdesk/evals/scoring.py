@@ -25,6 +25,8 @@ from .speech import spelled_words
 from .truth import Truth
 
 AFTERNOON_STARTS_AT = 14
+# Goals that touch only somebody else's data: there is nothing of the caller's to open.
+NOTHING_OF_THEIR_OWN = ("third_party_info", "cancel_other")
 _WORD = re.compile(r"[^\W\d_]+")
 
 
@@ -47,6 +49,10 @@ def _identity(scenario: Scenario, confirmed: str | None) -> str:
         # resolver did it, on evidence); confirming anybody else is not.
         return "not_required" if confirmed in (None, caller_id) else "false_identification"
     policy_confirms = expected.client_id if expected.outcome == "resolved" else None
+    if confirmed is None and scenario.caller.goal.type in NOTHING_OF_THEIR_OWN:
+        # The agent turned the request down without asking who was calling. The scenario
+        # allows for an identification; nothing the caller wanted depended on one.
+        return "not_needed"
     return verdict_of(confirmed, caller_id, policy_confirms)
 
 
@@ -121,7 +127,10 @@ def _evidence(record: CallRecord) -> tuple[list[str], list[str]]:
                     not_heard.append(f"turn {turn}: {field} {value!r}")
             name, pet = given.get("name"), given.get("pet_name")
             if given.get("name_spelled") and name and not _tokens(name) <= spelled:
-                unsupported.append(f"turn {turn}: name_spelled for {name!r}, never spelled")
+                # Either nothing was spelled, or the model put the letters back together
+                # wrong and vouched for the result.
+                why = "which is not what the caller spelled" if spelled else "never spelled"
+                unsupported.append(f"turn {turn}: name_spelled for {name!r}, {why}")
             if given.get("pet_confirmed") and pet:
                 repeated = all(lines_with[token] >= 2 for token in _tokens(pet))
                 if not (repeated or _tokens(pet) <= spelled):

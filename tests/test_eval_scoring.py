@@ -118,6 +118,19 @@ def test_calls_that_need_no_identification(scenarios, truth, kb):
                  kb).identity == "false_identification"
 
 
+def test_turning_a_request_down_without_asking_who_calls_is_not_a_miss(scenarios, truth, kb):
+    """Asked about somebody else's animal, the agent may refuse without identifying anyone."""
+    for category in ("privacy.third_party_pet", "agenda.cancel_other"):
+        scenario = _first(scenarios, category)
+        caller = scenario.caller.client_id
+        assert score(scenario, _record(scenario, truth), truth, kb).identity == "not_needed"
+        assert score(scenario, _record(scenario, truth, confirmed=caller), truth,
+                     kb).identity == "correct"
+    # Where the caller wants something of their own, not identifying them is a miss.
+    booking = _first(scenarios, "identity.phone_and_name")
+    assert score(booking, _record(booking, truth), truth, kb).identity == "missed"
+
+
 # --- privacy ------------------------------------------------------------------------------------
 
 

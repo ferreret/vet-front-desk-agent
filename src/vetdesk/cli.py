@@ -376,7 +376,7 @@ def _eval_run(args: argparse.Namespace) -> int:
     print(f"{len(chosen)} scenarios x {args.reps}: agent {models.agent}, caller "
           f"{models.caller}, judge {models.judge or 'none'}  ->  {out}")
     finished = run_evaluation(chosen, store, play_call, judge_call if judge_llm else None,
-                   reps=args.reps, workers=args.workers, report=print)
+                   reps=args.reps, workers=args.workers, again=args.again, report=print)
     print()
     text = _print_report(chosen, store, truth, models)
     (out / "report.txt").write_text(text + "\n", encoding="utf-8")
@@ -545,6 +545,8 @@ def main(argv: list[str] | None = None) -> int:
     eval_run.add_argument("--per-category", type=int, default=0,
                           help="at most this many scenarios of each category")
     eval_run.add_argument("--reps", type=int, default=1, help="times each scenario is played")
+    eval_run.add_argument("--again", action="store_true",
+                          help="play the chosen scenarios afresh, replacing what the run holds")
     eval_run.add_argument("--workers", type=int, default=4, help="calls played at once")
     eval_run.set_defaults(run=_eval_run)
     eval_report = eval_actions.add_parser("report", help="score a run again; costs nothing")

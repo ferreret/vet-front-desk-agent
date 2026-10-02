@@ -57,6 +57,11 @@ def test_a_run_is_stored_and_not_played_twice(tmp_path, scenarios):
     assert run(scenarios[:7], store, play, _judgement, reps=2, workers=3)
     assert sorted({scenario_id for scenario_id, _ in played}) == [s.id for s in scenarios[5:7]]
 
+    played.clear()  # on request, calls already stored are played afresh
+    assert run(scenarios[:2], store, play, _judgement, again=True)
+    assert sorted(played) == [(scenarios[0].id, 0), (scenarios[1].id, 0)]
+    assert len(RunStore(tmp_path).calls) == 14
+
 
 def test_a_broken_call_is_retried_and_an_unjudged_one_is_judged(tmp_path, scenarios):
     some = scenarios[:3]

@@ -20,6 +20,11 @@ from .truth import Truth
 
 # A call that is still going after this many caller lines is not going to end by itself.
 MAX_EXCHANGES = 24
+# A caller who says goodbye while the agent is still asking for something (the phone number
+# the booking needs) is kept on the line to answer it, this many times at most. A real
+# person does not hang up on a question; a simulated one sometimes does, and the agent
+# would be blamed for a booking it was not allowed to finish.
+MAX_HELD_ON_THE_LINE = 2
 
 
 def _agenda(scenario: Scenario, kb: KnowledgeBase, truth: Truth) -> SqliteAgenda:
@@ -58,7 +63,7 @@ def play(
     channel = SpeechChannel(scenario.speech)
     exchanges: list[Exchange] = []
     agent_usage, caller_usage = Usage(), Usage()
-    ended, error = "turn_limit", None
+    ended, error, held = "turn_limit", None, 0
     try:
         caller = SimulatedCaller(caller_llm, scenario, truth)
         agent_said = call.greeting
@@ -82,6 +87,10 @@ def play(
                     requests=list(turn.latencies),
                 ))
             if line.hang_up:
+                asked_something = bool(line.text) and "?" in agent_said
+                if asked_something and held < MAX_HELD_ON_THE_LINE:
+                    held += 1
+                    continue
                 ended = "hung_up" if line.hang_up == "done" else "gave_up"
                 break
             if not line.text:

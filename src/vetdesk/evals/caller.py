@@ -15,7 +15,7 @@ import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 
-from ..llm import LLMClient, ToolSpec, Usage
+from ..llm import LLMClient, ToolResult, ToolSpec, Usage
 from ..scenario import Goal, Scenario, Window
 from .truth import Truth
 
@@ -26,8 +26,8 @@ Answer with what your character says next and nothing else: spoken words only, w
 stage directions, no quotation marks and no notes.
 
 # How to play
-- Speak the language in your brief, the way people talk on the phone: one or two short
-  sentences per turn.
+- Speak the language in your brief, and only that one, whatever language the assistant
+  uses. Talk the way people do on the phone: one or two short sentences per turn.
 - The manner in your brief changes how you talk. It never changes the facts.
 - Open by saying what you are calling about. Give your name, your town or your phone number
   only when you are asked for them.
@@ -196,13 +196,26 @@ def brief(scenario: Scenario, truth: Truth) -> str:
     )
 
 
+STILL_ON_THE_LINE = (
+    "You have not hung up: the assistant was still talking to you, and you answer before "
+    "you go. The assistant said: "
+)
+
+
 class SimulatedCaller:
     def __init__(self, llm: LLMClient, scenario: Scenario, truth: Truth) -> None:
         self._conversation = llm.start(INSTRUCTIONS, brief(scenario, truth), [HANG_UP])
+        self._hanging_up: str | None = None  # the hang_up call still waiting for its answer
 
     def reply(self, agent_said: str) -> CallerLine:
         """What the caller says after hearing the agent."""
-        answer = self._conversation.send_user(agent_said)
-        hang_up = next((call.arguments.get("outcome", "done") for call in answer.tool_calls
-                        if call.name == HANG_UP.name), None)
-        return CallerLine(answer.text.strip(), hang_up, answer.usage)
+        if self._hanging_up is None:
+            answer = self._conversation.send_user(agent_said)
+        else:  # the harness kept the caller on the line: see `play`
+            answer = self._conversation.send_tool_results(
+                [ToolResult(self._hanging_up, STILL_ON_THE_LINE + agent_said)]
+            )
+        call = next((c for c in answer.tool_calls if c.name == HANG_UP.name), None)
+        self._hanging_up = call.id if call else None
+        outcome = call.arguments.get("outcome", "done") if call else None
+        return CallerLine(answer.text.strip(), outcome, answer.usage)
