@@ -49,6 +49,20 @@ choose one, and `console --text` types instead of talking.
 A microphone has no caller ID, so the call arrives with a hidden number. To try a call
 "from" a number on file, set `VETDESK_CALLER_NUMBER`.
 
+## Choosing the voice
+
+The accent comes mostly from the voice and partly from the model, and neither can be
+judged from documentation: ElevenLabs lists v4 Turbo's Spanish as Latin American and Flash
+v2.5's as "Spain, Mexico". So the choice is made by ear:
+
+```bash
+uv run python -m vetdesk.voice.sample --voice <voice id>   # one WAV per model
+```
+
+The files land in `data/voice-samples/`. The voice and the model then go in `.env` as
+`VETDESK_TTS_VOICE` and `VETDESK_TTS_MODEL`. The requirement is a Spanish from Spain;
+Catalan matters less, because no synthesizer speaks it convincingly.
+
 ## Who does what
 
 | Piece | Does | Why this one |
