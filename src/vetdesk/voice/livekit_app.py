@@ -33,6 +33,17 @@ from .bridge import Line, language_of
 
 log = logging.getLogger("vetdesk.voice")
 
+
+def _load_env(path: Path = Path(".env")) -> None:
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            key, separator, value = line.strip().partition("=")
+            if separator and key and not key.startswith("#"):
+                os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+
+
+_load_env()  # before the settings below are read, in whichever process imports this
+
 DATA = Path(os.environ.get("VETDESK_DATA", "data"))
 # Catalan rules out the fastest ElevenLabs model (Flash v2.5 does not speak it). Of the two
 # that do and can stream, v4 Turbo is the quicker.
@@ -72,14 +83,6 @@ class VoiceFrontDesk(Agent):
                      json.dumps(event.result, ensure_ascii=False)[:300])
         log.info("model: first words %.1f s, complete %.1f s (%s)", turn.first_words or 0,
                  turn.seconds, " + ".join(f"{s:.1f}" for s in turn.latencies))
-
-
-def _load_env(path: Path = Path(".env")) -> None:
-    if path.exists():
-        for line in path.read_text(encoding="utf-8").splitlines():
-            key, separator, value = line.strip().partition("=")
-            if separator and key and not key.startswith("#"):
-                os.environ.setdefault(key.strip(), value.strip().strip("'\""))
 
 
 def prewarm(proc: JobProcess) -> None:
