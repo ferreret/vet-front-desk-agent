@@ -45,23 +45,31 @@ def test_the_answer_comes_out_piece_by_piece(clinic, kb):
     assert model.transcript.user_messages == ["¿A qué hora abrís?"]
 
 
-def test_what_is_said_before_a_tool_is_spoken_before_the_tool_runs(clinic, kb):
-    order = []
+def test_what_is_said_before_a_tool_reaches_the_caller_while_the_turn_is_still_running(clinic, kb):
+    """The waiting phrase must be on its way to the caller's ear before the model is asked
+    again, not handed over with the rest of the answer."""
+    heard_first = threading.Event()
+    in_time = []
 
     def after_the_tool(transcript):
-        order.append("tool ran")
+        # The turn is still running here, on its worker thread. The listener, on the event
+        # loop, must already have the first piece: wait for it instead of racing it.
+        in_time.append(heard_first.wait(timeout=5))
         return Reply("Tengo hueco el lunes.")
 
     model = ScriptedClient([Reply("Un momento, lo miro.", (LOOKUP,), "tool_calls"),
                             after_the_tool])
     call = _call(model, clinic, kb)
 
-    async def collect():
+    async def listen():
+        pieces = []
         async for piece in Line(call).answer("Quiero una cita"):
-            order.append(piece)
+            pieces.append(piece)
+            heard_first.set()
+        return pieces
 
-    asyncio.run(collect())
-    assert order == ["Un momento, lo miro.", "tool ran", " Tengo hueco el lunes."]
+    assert asyncio.run(listen()) == ["Un momento, lo miro.", " Tengo hueco el lunes."]
+    assert in_time == [True]
 
 
 def test_a_tool_called_in_silence_gets_a_waiting_phrase(clinic, kb):
