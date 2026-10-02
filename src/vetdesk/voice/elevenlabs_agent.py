@@ -68,7 +68,10 @@ def config(url: str, secret_id: str) -> dict:
                 "voice_id": os.environ["VETDESK_TTS_VOICE"],
                 "model_id": os.environ.get("VETDESK_TTS_MODEL", "eleven_v4_turbo"),
             },
-            "turn": {"turn_timeout": 7, "turn_eagerness": "normal"},
+            # ElevenLabs can ask for an answer before it is sure the caller has finished
+            # and discard it if they go on ("speculative turn", on by default). Our agent's
+            # answers have effects (a booking), so it is asked only when the turn is over.
+            "turn": {"turn_timeout": 7, "turn_eagerness": "normal", "speculative_turn": False},
         },
     }
 
