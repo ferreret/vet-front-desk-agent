@@ -19,7 +19,7 @@ from datetime import date, datetime
 
 from ..identity import Evidence, IdentityResolver, Resolution
 from ..identity.matching import SOUNDS_SAME, pet_grade
-from ..identity.spelling import spelled_words
+from ..identity.spelling import spelled_words, was_spelled
 from ..kb import KnowledgeBase
 from ..kb.model import WEEKDAYS_ES
 from ..legacy.models import Client, Clinic
@@ -220,14 +220,13 @@ class Toolbox:
         together wrong ("Rossellón" for R-O-S-S-E-L-L-Ó). So the claim is checked here,
         against what the caller actually said.
         """
-        letters = {fold(word) for word in self.session.spelled}
-        if spelled and name and not set(fold(name).split()) <= letters:
+        if spelled and name and not was_spelled(name, self.session.spelled):
             said = ", ".join(self.session.spelled)
             raise ToolError(NOT_SPELLED.format(
                 spelled=f"They spelled: {said}." if said else "They have spelled nothing."))
         if repeated and pet:
-            words = set(fold(pet).split())
-            if not (words <= letters or all(self.session.lines_with[w] >= 2 for w in words)):
+            said_twice = all(self.session.lines_with[w] >= 2 for w in fold(pet).split())
+            if not (said_twice or was_spelled(pet, self.session.spelled)):
                 raise ToolError(NOT_REPEATED)
 
     def run(self, call: ToolCall) -> ToolResult:

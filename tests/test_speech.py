@@ -66,3 +66,21 @@ def test_every_scenario_is_heard_as_recorded(scenarios):
         channel = SpeechChannel(scenario.speech)
         for utterance in scenario.speech.utterances:
             assert channel.hear(utterance.said) == utterance.heard, scenario.id
+
+
+def test_a_name_is_spelled_when_its_letters_are_there_in_order():
+    """Word breaks and accents are not what spelling is about: a real recogniser returned
+    "M-I-Q-U-E-L-R-O-S-S-E-L-L-O" for a first name and a surname spelled in one breath."""
+    from vetdesk.identity.spelling import was_spelled
+
+    in_one_breath = spelled_words("Se lo deletreo: M-I-Q-U-E-L-R-O-S-S-E-L-L-O.")
+    assert in_one_breath == ["MIQUELROSSELLO"]
+    assert was_spelled("Miquel Rosselló", in_one_breath)
+    assert was_spelled("Rosselló", in_one_breath)
+    assert not was_spelled("Miquel Rossellón", in_one_breath)  # a letter nobody said
+    assert not was_spelled("Miquel Rosselló López", in_one_breath)  # a surname never spelled
+
+    in_two_lines = spelled_words("M-I-Q-U-E-L") + spelled_words("R-O-S-S-E-L-L-Ó L-Ó-P-E-Z")
+    assert was_spelled("Miquel Rosselló López", in_two_lines)
+    assert not was_spelled("Miquel López", in_two_lines)  # letters skipped
+    assert not was_spelled("Miquel", []) and not was_spelled("", in_two_lines)

@@ -16,12 +16,12 @@ import json
 import re
 from collections import Counter
 
+from ..identity.spelling import spelled_words, was_spelled
 from ..kb import KnowledgeBase
 from ..legacy.normalize import fold
 from ..scenario import ExpectedAction, Scenario, Window
 from .identity import verdict_of
 from .record import Booking, CallRecord, Judgement, Verdict
-from .speech import spelled_words
 from .truth import Truth
 
 AFTERNOON_STARTS_AT = 14
@@ -109,32 +109,34 @@ def _evidence(record: CallRecord) -> tuple[list[str], list[str]]:
     Evidence the caller never gave (a name the model "corrected") is listed separately.
     """
     heard: set[str] = set()
-    spelled: set[str] = set()
+    spelled: list[str] = []
     lines_with: Counter[str] = Counter()
     unsupported, not_heard = [], []
     for turn, exchange in enumerate(record.exchanges, start=1):
         tokens = _tokens(exchange.heard)
         heard |= tokens
         lines_with.update(tokens)
-        spelled |= {fold(word) for word in spelled_words(exchange.heard)}
+        spelled += spelled_words(exchange.heard)
+        spelled_tokens = {fold(word) for word in spelled}
         for tool in exchange.tools:
             if tool.name != "identify_client":
                 continue
             given = tool.arguments
             for field in ("name", "pet_name", "town"):
                 value = given.get(field)
-                if value and _tokens(value) - heard - spelled:
+                if value and _tokens(value) - heard - spelled_tokens \
+                        and not was_spelled(value, spelled):
                     not_heard.append(f"turn {turn}: {field} {value!r}")
             name, pet = given.get("name"), given.get("pet_name")
             claims = []
-            if given.get("name_spelled") and name and not _tokens(name) <= spelled:
+            if given.get("name_spelled") and name and not was_spelled(name, spelled):
                 # Either nothing was spelled, or the model put the letters back together
                 # wrong and vouched for the result.
                 why = "which is not what the caller spelled" if spelled else "never spelled"
                 claims.append(f"turn {turn}: name_spelled for {name!r}, {why}")
             if given.get("pet_confirmed") and pet:
                 repeated = all(lines_with[token] >= 2 for token in _tokens(pet))
-                if not (repeated or _tokens(pet) <= spelled):
+                if not (repeated or was_spelled(pet, spelled)):
                     claims.append(
                         f"turn {turn}: pet_confirmed for {pet!r}, neither repeated nor spelled"
                     )

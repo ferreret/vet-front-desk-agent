@@ -7,10 +7,31 @@ its tools.
 
 - Code: [`src/vetdesk/voice/`](../src/vetdesk/voice/).
 
-**State on 2026-10-02: written and tested without audio, not yet heard.** The bridge to
-the agent is covered by tests on a scripted model, and the application starts, sees the
-audio devices and loads the clinic. It has not been run with a microphone and an
-ElevenLabs key yet, so nothing below about speed or recognition quality is measured.
+**State on 2026-10-02: the pieces work, the whole has not been heard.** The bridge to the
+agent is covered by tests on a scripted model, and the application starts, sees the audio
+devices and loads the clinic. ElevenLabs was tried without a microphone, by having it say
+four phrases and transcribe them back (see below). Nobody has yet talked to it.
+
+## First look at the real recogniser
+
+Four synthesized phrases, said by ElevenLabs v4 Turbo and transcribed by Scribe v2
+Realtime. A synthetic voice is clearer than a caller on a phone, so this is a best case.
+
+| Said | Heard |
+|---|---|
+| Me llamo Miquel Rosselló López | Me llamo Miquel **Roselló** López |
+| Em dic Xisca Bauzà Llull i visc a Santa Aina del Camp | Em dic Xisca **Bausà** Llull i visc a Santa Aina del Camp |
+| eme, i, cu, u, e, ele. Erre, o, ese, ese, e, ele, ele, o con acento | M-I-Q-U-E-L-R-O-S-S-E-L-L-O |
+
+- **Names are misheard even in the best case**, and in the way the simulated noise
+  assumed: a doubled consonant lost, a "z" turned into "s".
+- **A spelled name arrives as letters joined by hyphens**, but with the words run together
+  and the accent gone. The spelling check was adapted to that: a name counts as spelled
+  when its letters, in order, are among the letters the caller said.
+- **The Catalan phrase was transcribed in Catalan but labelled Spanish.** The language
+  label is therefore not to be trusted for choosing what language to speak.
+- **Speed**: first audio from the voice after about 0.25 s; a transcript 0.6 to 1.0 s
+  after the caller stops.
 
 ## Try it
 
@@ -58,9 +79,10 @@ line cannot behave differently from what was measured in text.
   median of 1.6 s. Recognition, end-of-turn detection and synthesis add to that. The
   application logs each turn's timings as LiveKit reports them; they have not been
   collected.
-- **Spelling by voice.** The check that a name was really spelled reads letters joined by
-  hyphens, which is how text arrives. How a recogniser delivers "eme, a, erre" is not
-  known yet, and until it is handled a spoken spelling will be refused.
+- **Spelling by a real person.** A synthesized voice spelling a name in one breath is
+  handled. A caller who spells slowly, with pauses or "be de Barcelona", is not known yet.
+- **The language of the waiting phrase.** It follows the recogniser's language label,
+  which called a Catalan sentence Spanish.
 - **Real recognition errors.** The harness garbles names by rule. Playing synthesized
   callers through the real recogniser would replace that with measurement.
 - **A call from a browser or a phone.** That needs a LiveKit server: their cloud, or the
