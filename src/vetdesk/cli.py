@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -14,10 +15,17 @@ import anthropic
 
 from .agent import FrontDeskAgent
 from .dbguard import ForeignDatabaseError
+from .evals.calls import play
 from .evals.cost import PRICES
 from .evals.identity import Probe, format_report, probes_from_scenarios, run_probe, summarize
+from .evals.judge import judge, transcript
 from .evals.latency import format_timings, time_call
+from .evals.report import format_report as format_call_report
+from .evals.report import summarize as summarize_calls
+from .evals.run import Models, RunStore, verdicts
+from .evals.run import run as run_evaluation
 from .evals.sweep import sweep_probes
+from .evals.truth import Truth
 from .explain import Labels, explain
 from .identity import Evidence, IdentityResolver
 from .kb import load_kb
@@ -282,6 +290,163 @@ def _latency(args: argparse.Namespace) -> int:
     return 0 if timings else 1
 
 
+def _select(scenarios: list[Scenario], args: argparse.Namespace) -> list[Scenario]:
+    """The scenarios a run is about: all of them, or the ones the options narrow it to."""
+    only = set(args.only.split(",")) if args.only else None
+    chosen, taken = [], Counter()
+    for s in scenarios:
+        if only is not None and s.id not in only:
+            continue
+        if not s.category.startswith(args.category or ""):
+            continue
+        if args.per_category and taken[s.category] >= args.per_category:
+            continue
+        taken[s.category] += 1
+        chosen.append(s)
+    return chosen
+
+
+def _print_report(scenarios: list[Scenario], store: RunStore, truth: Truth, models: Models) -> str:
+    kb = load_kb()
+    scored = verdicts(scenarios, store, truth, kb)
+    keys = {(v.scenario_id, v.rep) for v in scored}
+    text = format_call_report(
+        summarize_calls(scored, {s.id: s for s in scenarios}),
+        models,
+        [record for key, record in sorted(store.calls.items()) if key in keys],
+        [judgement for key, judgement in sorted(store.judgements.items()) if key in keys],
+    )
+    print(text)
+    return text
+
+
+def _eval_run(args: argparse.Namespace) -> int:
+    scenarios = _load(args.data / SCENARIOS_NAME)
+    clinic = _clinic(args.data / DB_NAME)
+    if scenarios is None or clinic is None:
+        return 1
+    _load_env()
+    kb = load_kb()
+    truth = Truth(json.loads((args.data / TRUTH_NAME).read_text(encoding="utf-8")))
+    chosen = _select(scenarios, args)
+    if not chosen:
+        print("error: no scenario matches", file=sys.stderr)
+        return 1
+    scenarios_text = (args.data / SCENARIOS_NAME).read_bytes()
+    fingerprint = hashlib.sha256(scenarios_text).hexdigest()[:12]
+    out = args.out or args.data / "runs" / f"{datetime.now():%Y%m%d-%H%M%S}"
+    store = RunStore(out)
+
+    try:
+        agent_llm = create_client(args.provider, args.model)
+        caller_llm = create_client(model=args.caller_model)
+        # The judge is in no hurry: it reads with thinking on.
+        judge_llm = None if args.no_judge else \
+            create_client(model=args.judge_model, effort="medium", thinking=True)
+    except (LLMError, anthropic.AnthropicError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        _explain_llm_error(error, args.provider, args.model)
+        return 1
+    models = Models(getattr(agent_llm, "model", "unknown"), args.caller_model,
+                    None if args.no_judge else args.judge_model)
+    earlier = store.models()
+    if earlier and (earlier.agent, earlier.caller) != (models.agent, models.caller):
+        print(f"error: {out} holds a run of {earlier.agent} against {earlier.caller}; "
+              "choose another --out", file=sys.stderr)
+        return 1
+    info = json.loads((out / "run.json").read_text(encoding="utf-8")) if earlier else {}
+    if info.get("scenarios", fingerprint) != fingerprint:
+        print(f"error: {out} was played against other scenarios; choose another --out",
+              file=sys.stderr)
+        return 1
+    store.write_info(models, {
+        "scenarios": fingerprint,
+        "started": info.get("started", datetime.now().isoformat(timespec="seconds")),
+        "agent_effort": getattr(agent_llm, "effort", None),
+        "agent_thinking": getattr(agent_llm, "thinking", None),
+    })
+
+    def play_call(scenario: Scenario, rep: int):
+        return play(scenario, agent_llm=agent_llm, caller_llm=caller_llm, clinic=clinic, kb=kb,
+                    truth=truth, rep=rep, agent_model=models.agent, caller_model=models.caller)
+
+    def judge_call(record, scenario: Scenario):
+        return judge(record, scenario, truth, kb, judge_llm, models.judge)
+
+    print(f"{len(chosen)} scenarios x {args.reps}: agent {models.agent}, caller "
+          f"{models.caller}, judge {models.judge or 'none'}  ->  {out}")
+    finished = run_evaluation(chosen, store, play_call, judge_call if judge_llm else None,
+                   reps=args.reps, workers=args.workers, report=print)
+    print()
+    text = _print_report(chosen, store, truth, models)
+    (out / "report.txt").write_text(text + "\n", encoding="utf-8")
+    if not finished:
+        print("\nStopped early: several calls in a row failed. Run the same command with "
+              f"--out {out} to carry on from here.", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _run_store(args: argparse.Namespace) -> tuple[list[Scenario], RunStore, Truth, Models] | None:
+    scenarios = _load(args.data / SCENARIOS_NAME)
+    store = RunStore(args.run_dir)
+    models = store.models()
+    if scenarios is None:
+        return None
+    if models is None:
+        print(f"error: {args.run_dir} is not an evaluation run", file=sys.stderr)
+        return None
+    truth = Truth(json.loads((args.data / TRUTH_NAME).read_text(encoding="utf-8")))
+    return scenarios, store, truth, models
+
+
+def _eval_report(args: argparse.Namespace) -> int:
+    loaded = _run_store(args)
+    if loaded is None:
+        return 1
+    scenarios, store, truth, models = loaded
+    played = {scenario_id for scenario_id, _ in store.calls}
+    _print_report([s for s in scenarios if s.id in played], store, truth, models)
+    return 0
+
+
+def _eval_show(args: argparse.Namespace) -> int:
+    loaded = _run_store(args)
+    if loaded is None:
+        return 1
+    scenarios, store, truth, _ = loaded
+    scenario = next((s for s in scenarios if s.id == args.id), None)
+    keys = [key for key in sorted(store.calls) if key[0] == args.id]
+    if scenario is None or not keys:
+        print(f"error: no call for {args.id} in {args.run_dir}", file=sys.stderr)
+        return 1
+    kb = load_kb()
+    for verdict in verdicts([scenario], store, truth, kb):
+        key = (verdict.scenario_id, verdict.rep)
+        record, judgement = store.calls[key], store.judgements.get(key)
+        print(f"{scenario.id}  {scenario.category}  (repetition {verdict.rep})")
+        print(f"{scenario.notes}\n")
+        for turn, exchange in enumerate(record.exchanges, start=1):
+            if exchange.said != exchange.heard:
+                print(f"[turn {turn}] the caller said: {exchange.said}")
+        print(transcript(record))
+        if record.error:
+            print(f"error: {record.error}")
+        print(f"\nstatus: {verdict.status}   identity: {verdict.identity}"
+              f" (confirmed {verdict.identified_as or 'nobody'})   task: {verdict.action}")
+        if judgement:
+            print(f"identity questions: {judgement.identity_questions} "
+                  f"(allowed: {scenario.expected.identity.max_questions})")
+            if judgement.caller_off_script:
+                print(f"caller off its brief: {judgement.caller_off_script}")
+        for title, problems in (("failures", verdict.failures),
+                                ("shortfalls", verdict.shortfalls)):
+            for problem in problems:
+                print(f"{title}: {problem}")
+        print()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="vetdesk", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -354,6 +519,43 @@ def main(argv: list[str] | None = None) -> int:
     latency.add_argument("--models", default=",".join(PRICES),
                          help="comma-separated model ids, from any provider")
     latency.set_defaults(run=_latency)
+
+    evaluation = commands.add_parser(
+        "eval", help="play the scenarios as whole calls against the agent and measure them"
+    )
+    eval_actions = evaluation.add_subparsers(dest="action", required=True)
+    eval_run = eval_actions.add_parser(
+        "run", help="play and judge the calls a run is still missing, then report"
+    )
+    eval_run.add_argument("--data", type=Path, default=Path("data"))
+    eval_run.add_argument("--out", type=Path,
+                          help="run directory; an existing one is carried on (default: a new "
+                               "one under data/runs)")
+    eval_run.add_argument("--provider", choices=PROVIDERS,
+                          help="the agent's LLM provider (default: the model's, else anthropic)")
+    eval_run.add_argument("--model", help="the agent's model (default: as `vetdesk chat`)")
+    eval_run.add_argument("--caller-model", default="claude-haiku-4-5",
+                          help="model that plays the callers")
+    eval_run.add_argument("--judge-model", default="claude-opus-5-5",
+                          help="model that reads the transcripts")
+    eval_run.add_argument("--no-judge", action="store_true",
+                          help="only what code can measure; cheaper")
+    eval_run.add_argument("--only", help="comma-separated scenario ids, e.g. S-031,S-049")
+    eval_run.add_argument("--category", help="category prefix, e.g. identity")
+    eval_run.add_argument("--per-category", type=int, default=0,
+                          help="at most this many scenarios of each category")
+    eval_run.add_argument("--reps", type=int, default=1, help="times each scenario is played")
+    eval_run.add_argument("--workers", type=int, default=4, help="calls played at once")
+    eval_run.set_defaults(run=_eval_run)
+    eval_report = eval_actions.add_parser("report", help="score a run again; costs nothing")
+    eval_report.add_argument("run_dir", metavar="run", type=Path)
+    eval_report.add_argument("--data", type=Path, default=Path("data"))
+    eval_report.set_defaults(run=_eval_report)
+    eval_show = eval_actions.add_parser("show", help="one call of a run: transcript and verdict")
+    eval_show.add_argument("run_dir", metavar="run", type=Path)
+    eval_show.add_argument("id")
+    eval_show.add_argument("--data", type=Path, default=Path("data"))
+    eval_show.set_defaults(run=_eval_show)
 
     args = parser.parse_args(argv)
     return args.run(args)
