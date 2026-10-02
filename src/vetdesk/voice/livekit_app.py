@@ -126,6 +126,10 @@ async def entrypoint(ctx: JobContext) -> None:
         llm=_ElsewhereLLM(),
         tts=elevenlabs.TTS(model=TTS_MODEL, **({"voice_id": TTS_VOICE} if TTS_VOICE else {})),
         vad=ready["vad"],
+        # LiveKit can start on an answer before it is sure the caller has finished, and
+        # throw it away if they go on. Our agent's turns have effects (a booking), so an
+        # answer is only asked for once the turn is over.
+        preemptive_generation=False,
     )
 
     @session.on("user_input_transcribed")

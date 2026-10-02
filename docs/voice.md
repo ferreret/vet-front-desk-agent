@@ -106,6 +106,49 @@ correctly. Catalan was transcribed correctly both times but labelled Spanish onc
 Portuguese once, so the label is not what decides the language of the answer; the model
 reads the words. Only the stock phrases follow the label, and fall back to Spanish.
 
+## Two ways to carry the voice
+
+The first call with a microphone made one thing plain: the hard part of a voice line is
+the listening (when has the caller finished, which language was that), and it is not the
+part this project is about. So there are two ways in, and the agent is the same in both.
+
+| | LiveKit Agents (`vetdesk.voice`) | ElevenLabs Agents (`vetdesk.voice.endpoint`) |
+|---|---|---|
+| Turn-taking, interruptions | LiveKit, tuned here | ElevenLabs' own |
+| Hearing and speaking | ElevenLabs, called from here | ElevenLabs |
+| Phone line or browser call | Needs a LiveKit server | Included |
+| **Who answers** | **`FrontDeskAgent`**, through `llm_node` | **`FrontDeskAgent`**, as a "custom LLM" |
+| Needs | Nothing for the console; a server for real calls | An address reachable from the internet |
+| State | One call with a microphone, then fixed | The address works and is tested; no call yet |
+
+What is never handed over is the answering. An ElevenLabs agent with ElevenLabs' model and
+a prompt in their dashboard is what the 2025 pilot was, and it did not know who it was
+talking to. Here ElevenLabs gets an address to ask, and what answers is the agent with
+the privacy barrier in code and the evaluation harness behind it.
+
+### The address
+
+```bash
+uv run python -m vetdesk.voice.endpoint     # http://127.0.0.1:8013/v1/chat/completions
+```
+
+It speaks the OpenAI chat-completions format, streamed. The platform resends the whole
+conversation with every request; the agent keeps its own, so each request is matched to
+its call and only the caller's last line is taken from it. A line asked for twice is
+answered once: a retry must not book twice.
+
+Because the address has to be reachable from outside, every request must carry a key
+(`VETDESK_ENDPOINT_KEY`, made on first run and kept in `.env`). Without it nothing is
+answered.
+
+The agent set up at ElevenLabs needs only two lines as its prompt, which tell the address
+which call a request belongs to and who is calling:
+
+```
+conversation: {{system__conversation_id}}
+caller: {{system__caller_id}}
+```
+
 ## Who does what
 
 | Piece | Does | Why this one |

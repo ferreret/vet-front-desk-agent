@@ -17,6 +17,7 @@ vetdesk = "vetdesk.cli:main"
 
 [project.optional-dependencies]
 voice = [
+    "aiohttp>=3.9",
     "livekit-agents[elevenlabs,silero]~=1.5",
 ]
 
