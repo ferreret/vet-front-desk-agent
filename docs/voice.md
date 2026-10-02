@@ -82,9 +82,12 @@ flagged for reception. Every time was said as the tool wrote it.
   one that uses a tool. ElevenLabs' own share (end of turn, voice) is not in that figure.
 - **ElevenLabs asks again if it waits about four seconds.** One request was dropped and
   repeated with the same line; the agent answered it once, as designed.
-- **The conversation id did not arrive** in what ElevenLabs sent, so the call was told
-  apart by its opening words. Being looked into: with two calls at once and no id, they
-  could be confused.
+- **The conversation id was not found** at first: ElevenLabs wraps the agent's prompt in
+  text of its own, and the two marker lines were looked for at the start of a line. They
+  are now found anywhere, and a later call arrived with its id.
+- **Opening hours were stumbled over**: "a las cinco y media menos... perdone, a las
+  16:30". The knowledge base now hands them over in words; on the next call the same
+  question was answered "a las cuatro y media".
 
 ## Choosing the voice
 
