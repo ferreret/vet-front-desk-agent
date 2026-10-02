@@ -120,6 +120,8 @@ El piloto posible está en una **zona turística de la costa catalana**, con cli
 - El **catalán sintetizado le preocupa poco**: da por hecho que ningún sintetizador lo hace natural.
 - El acento lo pone la **voz** elegida en ElevenLabs más que el modelo; se decide de oído con `python -m vetdesk.voice.sample`.
 
+Probado el 2026-10-02 con micrófono: dar al reconocedor una lista de lenguas alternativas hizo que transcribiera castellano como neerlandés. Por defecto solo castellano y catalán; **oír a los visitantes está sin resolver**.
+
 Pendiente y sin medir: el agente, los escenarios y las horas dichas desde código (`say_es`, `say_ca`) solo cubren castellano y catalán. Abrir el prompt a más lenguas es un cambio que hay que medir con escenarios en esas lenguas antes de darlo por bueno.
 
 ## Lo que enseñó el harness (2026-10-02)

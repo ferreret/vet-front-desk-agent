@@ -50,9 +50,15 @@ DATA = Path(os.environ.get("VETDESK_DATA", "data"))
 TTS_MODEL = os.environ.get("VETDESK_TTS_MODEL", "eleven_v4_turbo")
 TTS_VOICE = os.environ.get("VETDESK_TTS_VOICE")  # an ElevenLabs voice id; theirs by default
 STT_MODEL = os.environ.get("VETDESK_STT_MODEL", "scribe_v2_realtime")
-# The first is the clinic's language; the others are what callers may speak instead. The
-# clinic this is meant for is on a tourist coast: Catalan, and the visitors' languages.
-STT_LANGUAGES = os.environ.get("VETDESK_STT_LANGUAGES", "es,ca,en,fr,de,nl,it").split(",")
+# The first is the clinic's language; the others are what callers may speak instead.
+# Only Catalan by default. With English, French, German, Dutch and Italian added, the
+# recogniser turned a Spanish sentence said into a real microphone into Dutch, and the
+# agent was handed "Hoi, ik wil een afspraak maken". Visitors' languages need another way
+# in than a longer list.
+STT_LANGUAGES = os.environ.get("VETDESK_STT_LANGUAGES", "es,ca").split(",")
+# Seconds of silence after which the recogniser closes what the caller said. Left to the
+# local voice detector, a phrase said into a real microphone stayed open for 20 seconds.
+STT_PAUSE = float(os.environ.get("VETDESK_STT_PAUSE", "0.6"))
 
 
 class _ElsewhereLLM(llm.LLM):
@@ -115,7 +121,8 @@ async def entrypoint(ctx: JobContext) -> None:
         # heard unless asked to: it then called a Catalan sentence Spanish.
         stt=elevenlabs.STT(model=STT_MODEL, language_code=STT_LANGUAGES[0],
                            secondary_languages=STT_LANGUAGES[1:],
-                           include_language_detection=True),
+                           include_language_detection=True,
+                           server_vad={"vad_silence_threshold_secs": STT_PAUSE}),
         llm=_ElsewhereLLM(),
         tts=elevenlabs.TTS(model=TTS_MODEL, **({"voice_id": TTS_VOICE} if TTS_VOICE else {})),
         vad=ready["vad"],
@@ -152,4 +159,8 @@ def main() -> None:
                          "speaking.")
     if not (DATA / "clinic.db").exists():
         raise SystemExit(f"{DATA / 'clinic.db'} not found; run `vetdesk generate` first.")
+    # What the caller said, what the agent said and how long it took. Not every packet.
+    os.environ.setdefault("LIVEKIT_LOG_LEVEL", "INFO")
+    for noisy in ("httpcore2", "httpx2", "httpcore", "httpx", "anthropic"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     cli.run_app(server)

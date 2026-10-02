@@ -48,6 +48,27 @@ choose one, and `console --text` types instead of talking.
 A microphone has no caller ID, so the call arrives with a hidden number. To try a call
 "from" a number on file, set `VETDESK_CALLER_NUMBER`.
 
+## First call with a microphone
+
+2026-10-02. It answered, and it was unusable. Two faults, both in how it listened:
+
+- **Spanish was turned into Dutch.** The caller said "Hola, quería pedir una cita para mi
+  mascota"; the first partial transcripts were right, then the recogniser settled on Dutch
+  and handed the agent "Hoi, ik wil een afspraak maken voor mijn huisdier". It had been
+  given five visitors' languages as alternatives that same morning. On clean synthesized
+  audio that had worked; on a real microphone it did not. The alternatives are back to
+  Catalan only.
+- **The caller's phrase was not closed for twenty seconds.** Closing it was left to the
+  local voice detector, which did not see the pause. The recogniser now closes a phrase
+  itself after 0.6 s of silence; tried on synthesized speech played in real time, the
+  final transcript arrives 0.6 to 0.8 s after the voice stops.
+
+Once it did answer, the chain measured 3.7 s from the caller stopping to the agent
+starting: 0.8 s to close the phrase, 2.5 s for the model's first words (a first request,
+with nothing cached), 0.2 s for the voice.
+
+Not retried with a microphone since these two changes.
+
 ## Choosing the voice
 
 The accent comes mostly from the voice and partly from the model, and neither can be
@@ -71,13 +92,13 @@ synthesizer speaks it convincingly. `--languages es,en,fr,de,ca` adds samples in
 
 | | Spanish and Catalan | Visitors' languages |
 |---|---|---|
-| Hearing (Scribe v2 Realtime) | Yes | Yes: Spanish is the hinted language, with Catalan, English, French, German, Dutch and Italian as alternatives (`VETDESK_STT_LANGUAGES`) |
+| Hearing (Scribe v2 Realtime) | Yes | **Not by default.** Giving the recogniser a list of alternatives made it mistake Spanish for Dutch on a real microphone. `VETDESK_STT_LANGUAGES` can widen it for a test |
 | Speaking (v4 Turbo) | Yes | Yes |
 | The agent's own stock phrases (waiting, trouble) | Yes | Yes, in those six |
 | The agent's prompt, the scenarios, days and times built in code | Yes | **No** |
 
-So a visitor is heard and can be answered, but nothing about answering them has been
-measured: the prompt still says "Spanish or Catalan", and a time in German would be the
+So the voice can speak to a visitor, but hearing them reliably is unsolved and nothing
+about answering them has been measured: the prompt still says "Spanish or Catalan", and a time in German would be the
 model's own wording, which is exactly what went wrong in Catalan before code took it over.
 
 Tried with synthesized phrases: English and German were transcribed and labelled
