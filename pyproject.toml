@@ -15,6 +15,11 @@ dependencies = [
 [project.scripts]
 vetdesk = "vetdesk.cli:main"
 
+[project.optional-dependencies]
+voice = [
+    "livekit-agents[elevenlabs,silero]~=1.5",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

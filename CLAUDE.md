@@ -96,7 +96,7 @@ Generador sintético ──► BD estilo «legacy» (SQLite) ──► Adaptador
 | F2 | Adaptador legacy + **resolución de identidad** con tests | ✅ Cerrada el 2026-10-01. 0 identificaciones falsas en 174.549 llamadas simuladas. Detalle en `docs/identity-resolution.md` |
 | F3 | Agente con herramientas + base de conocimiento + agenda mock, por texto (CLI) | ✅ Cerrada el 2026-10-01: probada con un modelo simulado y con una primera llamada real correcta. Falta medirla (F4). Detalle en `docs/agent.md` |
 | F4 | **Harness de evaluación** con clientes simulados | ✅ Cerrada el 2026-10-02. Dos ejecuciones de 82 conversaciones completas por texto: 0 identificaciones falsas en ambas. Los defectos encontrados (teléfono de urgencias, animales de homónimos, huecos, horas en catalán, deletreo) están corregidos en código. Falta una tercera ejecución completa tras las últimas correcciones. Detalle en `docs/evaluation.md` |
-| F5 | **Capa de voz**: STT/TTS en tiempo real, latencia, interrupciones, castellano y catalán | El canal de verdad |
+| F5 | **Capa de voz**: STT/TTS en tiempo real, latencia, interrupciones, castellano y catalán | 🚧 Empezada el 2026-10-02: LiveKit Agents (modo consola, sin servidor) + ElevenLabs (Scribe v2 Realtime para oír, v4 Turbo para hablar). Escrita y probada sin audio; **falta oírla** con micrófono y `ELEVEN_API_KEY`. Detalle en `docs/voice.md` |
 | F6 | Demo pública: llamada desde el navegador (y número SIP opcional) | La pieza que se enseña |
 | F7 | README con métricas + case study en el portfolio | |
 

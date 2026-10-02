@@ -23,7 +23,7 @@ threshold the agent asks instead of guessing; and the metric that matters most i
 | F2 | Legacy adapter + identity resolution, with tests | **Done** (2026-10-01): 0 false identifications in 174,567 simulated calls |
 | F3 | Agent with tools, knowledge base and mock agenda, over text | **Done** (2026-10-01): tested on a scripted model, and a first real call works end to end |
 | F4 | Evaluation harness with simulated callers | **Done** (2026-10-02): 82 whole calls, two full runs of 82 whole calls, 0 false identifications, and every defect found moved from the prompt into code |
-| F5 | Voice layer: real-time STT/TTS, latency budget, barge-in, Spanish and Catalan | Next |
+| F5 | Voice layer: real-time STT/TTS, latency budget, barge-in, Spanish and Catalan | In progress: wired to LiveKit Agents and ElevenLabs, tested without audio, not yet heard. See [docs/voice.md](docs/voice.md) |
 | F6 | Public demo: a call from the browser | |
 | F7 | Metrics and case study | |
 

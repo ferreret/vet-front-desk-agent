@@ -85,7 +85,8 @@ class SqliteAgenda:
     def __init__(self, kb: KnowledgeBase, now: Callable[[], datetime]) -> None:
         self._kb = kb
         self._now = now
-        self._db = sqlite3.connect(":memory:")
+        # On a voice line each turn runs on a worker thread, one at a time.
+        self._db = sqlite3.connect(":memory:", check_same_thread=False)
         self._db.executescript(_SCHEMA)
 
     # --- reading ----------------------------------------------------------------------------
