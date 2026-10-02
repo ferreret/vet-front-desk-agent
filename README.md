@@ -22,7 +22,7 @@ threshold the agent asks instead of guessing; and the metric that matters most i
 | F1 | Synthetic generator: legacy-style database + call scenarios with ground truth | **Done** (2026-10-01) |
 | F2 | Legacy adapter + identity resolution, with tests | **Done** (2026-10-01): 0 false identifications in 174,567 simulated calls |
 | F3 | Agent with tools, knowledge base and mock agenda, over text | **Done** (2026-10-01): tested on a scripted model, and a first real call works end to end |
-| F4 | Evaluation harness with simulated callers | **Done** (2026-10-02): 82 whole calls, 0 false identifications, and seven defects found that one call by hand had not shown; six fixed |
+| F4 | Evaluation harness with simulated callers | **Done** (2026-10-02): 82 whole calls, two full runs of 82 whole calls, 0 false identifications, and every defect found moved from the prompt into code |
 | F5 | Voice layer: real-time STT/TTS, latency budget, barge-in, Spanish and Catalan | Next |
 | F6 | Public demo: a call from the browser | |
 | F7 | Metrics and case study | |
@@ -144,22 +144,26 @@ real one. A language model plays the caller from a brief; what it says passes th
 simulated speech recognition, which garbles names the way the scenario recorded; and a
 third model reads the transcript for what code cannot check.
 
-First full run, `uv run vetdesk eval run`, with Claude Sonnet 5.5 as the agent:
+Two full runs of `uv run vetdesk eval run`, with Claude Sonnet 5.5 as the agent: the first
+on the agent as it was, the second after fixing what the first found.
 
-| 82 calls, each scenario once | |
-|---|---|
-| **False identifications** | **0** |
-| Another client's data said to the caller | 0 |
-| Somebody else's appointment touched | 0 |
-| Transfers promised | 0 |
-| Identified, of the callers who could be and needed to be | 47 of 48 |
-| Booked, cancelled or moved as asked | 63 of 64 |
-| Asked more identity questions than needed | 4 of 76 |
-| First words | median 1.6 s; within the 1.5 s target in 39% of answers |
+| 82 calls, each scenario once | Run 1 | Run 2 |
+|---|---|---|
+| **False identifications** | **0** | **0** |
+| Another client's data said to the caller | 0 | 0 |
+| Somebody else's appointment touched | 0 | 0 |
+| Transfers promised | 0 | 0 |
+| Another client's data handed to the model by a tool | 2 calls | 0 |
+| Identified, of the callers who could be and needed to be | 47 of 48 | 48 of 49 |
+| Booked, cancelled or moved as asked | 63 of 64 | 63 of 64 |
+| Bookings that needed a single look at the agenda | 18 of 58 | 58 of 58 |
+| Told the caller a time or a fact that was wrong | 5 calls | 8 calls |
+| First words: median; within the 1.5 s target | 1.6 s; 39% | 1.6 s; 40% |
 
-The zeros are the expected part: the barrier is code. What the run was for is the rest. It
-found seven defects that the one call tried by hand had not shown. Three are the kind this
-project exists to prevent:
+The zeros are the expected part: the barrier is code. What the runs were for is the rest.
+
+**Run 1** found seven defects that the one call tried by hand had not shown. Three are the
+kind this project exists to prevent:
 
 - Given the emergency number as `+34600555020`, the model said it right and then repeated
   it wrong ("más seis cuatro...") to two of three callers with an emergency.
@@ -168,18 +172,26 @@ project exists to prevent:
 - Handed the six earliest free times, all on a Monday, the model told callers the rest of
   the week was full.
 
-Those three are fixed in code, not in the prompt. Three more were manners of speech, fixed
-in the prompt: offering times before asking when the caller can come, line breaks in
-answers meant to be spoken, and Catalan clock times said wrong. The calls concerned pass
-when played again.
+Those were fixed in code. Others, smaller, were fixed in the prompt.
 
-One is open. When a caller spells a name, the model puts the letters back together and
-vouches for the result, and twice it got it wrong. Nobody was misidentified, but it is the
-one place where the guarantee still leans on the model.
+**Run 2** showed the code fixes holding over all 82 calls, and one of the prompt fixes
+making things worse. Told how to say half hours in Catalan, the model turned 16:30 into
+"les cinc i mitja" in six calls: the caller was told a time an hour later than the one
+booked. The same run saw the model, again, vouch for a spelled name it had put back
+together wrong.
 
-What these numbers are not: each scenario was played once, the callers and the speech
-recognition are simulated, and the full run has not yet been repeated after the fixes.
-Method, the complete table and the caveats are in
+Both are now out of the model's hands. The tools return every day and time already in
+words, in Spanish and Catalan, and `identify_client` checks a claimed spelling against the
+letters the caller actually said. The fifteen calls concerned pass when played again, with
+the tool refusing the wrong spellings.
+
+What the exercise says: whenever the model had to work out something a caller acts on (a
+time, a phone number, how a name is spelled), it went wrong often enough to measure, and
+telling it to be careful did not help. Handing it the finished words did.
+
+What these numbers are not: each scenario is played once per run, the callers and the
+speech recognition are simulated, and no full run has been made since the last fixes.
+Method, the complete tables and the caveats are in
 [docs/evaluation.md](docs/evaluation.md).
 
 ## Rules of the house

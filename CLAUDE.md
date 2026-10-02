@@ -95,7 +95,7 @@ Generador sintético ──► BD estilo «legacy» (SQLite) ──► Adaptador
 | F1 | Generador sintético: BD estilo legacy + escenarios con verdad de referencia | ✅ Cerrada el 2026-10-01. Formato de escenarios en `docs/scenario-format.md` |
 | F2 | Adaptador legacy + **resolución de identidad** con tests | ✅ Cerrada el 2026-10-01. 0 identificaciones falsas en 174.549 llamadas simuladas. Detalle en `docs/identity-resolution.md` |
 | F3 | Agente con herramientas + base de conocimiento + agenda mock, por texto (CLI) | ✅ Cerrada el 2026-10-01: probada con un modelo simulado y con una primera llamada real correcta. Falta medirla (F4). Detalle en `docs/agent.md` |
-| F4 | **Harness de evaluación** con clientes simulados | ✅ Cerrada el 2026-10-02. 82 llamadas completas por texto: 0 identificaciones falsas y siete defectos encontrados, seis corregidos y uno abierto (el deletreo). Falta repetir la ejecución completa tras las correcciones. Detalle en `docs/evaluation.md` |
+| F4 | **Harness de evaluación** con clientes simulados | ✅ Cerrada el 2026-10-02. Dos ejecuciones de 82 conversaciones completas por texto: 0 identificaciones falsas en ambas. Los defectos encontrados (teléfono de urgencias, animales de homónimos, huecos, horas en catalán, deletreo) están corregidos en código. Falta una tercera ejecución completa tras las últimas correcciones. Detalle en `docs/evaluation.md` |
 | F5 | **Capa de voz**: STT/TTS en tiempo real, latencia, interrupciones, castellano y catalán | El canal de verdad |
 | F6 | Demo pública: llamada desde el navegador (y número SIP opcional) | La pieza que se enseña |
 | F7 | README con métricas + case study en el portfolio | |
@@ -110,6 +110,12 @@ Bloques de 90 minutos. Es mejor cerrar una fase entera que dejar tres a medias.
 - Un nombre que solo se parece al de una ficha (error típico del reconocimiento de voz) no cuenta hasta que el cliente lo confirma o lo deletrea.
 - Un nombre que no coincide con nadie significa «no es cliente», diga lo que diga el teléfono.
 - Quien no queda confirmado puede reservar una cita «sin verificar», marcada para recepción, sin leer ni escribir datos de ningún cliente. Cancelar y cambiar exigen `confirmed`.
+
+## Lo que enseñó el harness (2026-10-02)
+
+- **Lo que el cliente va a usar no lo calcula el modelo**: horas, teléfonos y la marca de «deletreado» salen de código. Cada una se dejó primero al modelo y se midió fallando.
+- **Un arreglo de prompt se mide antes de darlo por bueno.** La instrucción de cómo decir las medias horas en catalán convirtió un fallo en seis.
+- Tras tocar el agente (prompt o herramientas), repetir como mínimo los escenarios afectados con `vetdesk eval run --only ...`; una ejecución completa cuesta unos 4,2 $.
 
 ## Convenciones
 

@@ -20,6 +20,14 @@ that the identity resolver has confirmed the caller. Until then:
 - Even for a confirmed caller, `get_pets` leaves out animals filed under a name they share
   with another client: the file cannot say whose they are. The caller can still book for
   one by naming it.
+- The model cannot vouch for what it did not hear. `identify_client` takes two flags that
+  stop the resolver doubting a name: `name_spelled` and `pet_confirmed`. Each is checked
+  against the caller's own words, and a claim they do not back is refused. In text, a
+  name counts as spelled when written as letters joined by hyphens: `M-A-R-T-A P-O-N-S`.
+
+The same rule holds for what the caller will act on. Days and times reach the model
+already in words, in Spanish and Catalan, built by code; phone numbers come as they are
+said. Each of these was first left to the model, and measured going wrong.
 
 So there is nothing for the model to leak, however it is prompted or manipulated. A test
 walks every identity scenario through the tools and checks that no name from the records
@@ -96,10 +104,11 @@ on the right record once the resolver confirmed the caller. Before that it said 
 from the records.
 
 **Measured since, on 2026-10-02:** every scenario played as a whole call by a simulated
-caller. No false identification, no client data given out and no transfer promised in 82
-calls, and several things one good call could not show: a misread emergency number, a tool
-that handed over a namesake's animals, another that made the model say the week was full.
-Those are fixed. Method, figures and what is still open are in
+caller, twice. No false identification, no client data given out and no transfer promised
+in either run of 82 calls, and several things one good call could not show: a misread
+emergency number, a tool that handed over a namesake's animals, another that made the
+model say the week was full, appointment times said an hour wrong in Catalan. Those are
+fixed, in code. Method, figures and what is still open are in
 [evaluation.md](evaluation.md).
 
 ## How long callers wait
