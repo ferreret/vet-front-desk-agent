@@ -211,10 +211,13 @@ def test_an_agent_that_claims_a_spelling_it_never_got_is_caught(scenarios, clini
     ])
     record = _play(scenario, agent, _caller(scenario, f"Soy {said}.", BYE), clinic, kb, truth)
     verdict = score(scenario, record, truth, kb)
-    assert verdict.unsupported_verifications == [
-        f"turn 1: name_spelled for {said!r}, never spelled"]
-    assert verdict.evidence_not_heard == [f"turn 1: name {said!r}"]
-    assert any("verification not given" in failure for failure in verdict.failures)
+    # The tool turns the claim away, so it never reaches the resolver: noted, not a breach.
+    assert record.exchanges[0].tools[0].is_error and record.confirmed_client_code is None
+    assert verdict.unsupported_verifications == []
+    assert verdict.evidence_not_heard == [
+        f"turn 1: name {said!r}",
+        f"turn 1: name_spelled for {said!r}, never spelled (refused by the tool)"]
+    assert not any("verification not given" in failure for failure in verdict.failures)
 
 
 def test_a_spelling_put_back_together_wrong_is_caught(scenarios, clinic, kb, truth):
@@ -229,8 +232,10 @@ def test_a_spelling_put_back_together_wrong_is_caught(scenarios, clinic, kb, tru
     ])
     record = _play(scenario, agent, _caller(scenario, spelled, BYE), clinic, kb, truth)
     verdict = score(scenario, record, truth, kb)
-    assert verdict.unsupported_verifications == [
-        f"turn 1: name_spelled for {wrong!r}, which is not what the caller spelled"]
+    assert verdict.unsupported_verifications == []
+    assert verdict.evidence_not_heard[-1] == (
+        f"turn 1: name_spelled for {wrong!r}, which is not what the caller spelled "
+        "(refused by the tool)")
 
 
 def test_a_spelled_name_backs_the_claim(scenarios, clinic, kb, truth):

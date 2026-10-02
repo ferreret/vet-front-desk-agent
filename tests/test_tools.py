@@ -41,6 +41,11 @@ def _identify(toolbox, **given):
     return _call(toolbox, "identify_client", **{**NOTHING, **given})[0]
 
 
+def _spell(toolbox, name):
+    """The caller spells `name` aloud, which is what lets the model vouch for it."""
+    toolbox.heard(" ".join("-".join(word.upper()) for word in name.split()))
+
+
 def _by_phone(scenarios):
     """A caller the resolver confirms from the number and a clearly heard name."""
     return next(
@@ -153,6 +158,7 @@ def test_someone_who_is_not_a_client(clinic, kb):
 
 def test_a_spelled_name_stays_spelled(clinic, kb):
     toolbox = _toolbox(clinic, kb)
+    _spell(toolbox, "Nadie Conocido Aquí")
     _identify(toolbox, name="Nadie Conocido Aquí", name_spelled=True)
     _identify(toolbox, name="Nadie Conocido Aquí", pet_name="Luna")
     assert toolbox.session.evidence.name_verified
@@ -164,6 +170,54 @@ def test_once_confirmed_the_caller_stays_who_they_are(confirmed):
     client = toolbox.session.client
     assert _identify(toolbox, name="Otra Persona Distinta")["status"] == "confirmed"
     assert toolbox.session.client is client
+
+
+def test_the_model_cannot_vouch_for_a_name_the_caller_did_not_spell(clinic, kb, scenarios):
+    """Found by the evaluation harness: the caller spelled R-O-S-S-E-L-L-Ó and the model
+    passed "Rossellón" as spelled. The flag switches off the resolver's doubt about a
+    misheard name, so the tool checks it against the caller's own words."""
+    scenario = next(
+        s for s in scenarios
+        if s.category == "identity.phone_and_name" and s.speech.noise == "none"
+        and _identify(_toolbox(clinic, kb, s.call.caller_number),
+                      name=s.caller.says_name)["status"] == "confirmed"
+    )
+    name = scenario.caller.says_name
+    toolbox = _toolbox(clinic, kb, scenario.call.caller_number)
+
+    refused, failed = _call(toolbox, "identify_client", **{**NOTHING, "name": name,
+                                                           "name_spelled": True})
+    assert failed and "They have spelled nothing" in refused["error"]
+    assert toolbox.session.evidence.client_name is None  # nothing reached the resolver
+
+    _spell(toolbox, name)
+    wrong = name + "n"  # the letters put back together wrong
+    refused, failed = _call(toolbox, "identify_client", **{**NOTHING, "name": wrong,
+                                                           "name_spelled": True})
+    assert failed and "They spelled: " + ", ".join(w.upper() for w in name.split()) \
+        in refused["error"]
+    assert toolbox.session.client is None
+
+    assert _identify(toolbox, name=name, name_spelled=True)["status"] == "confirmed"
+    # Accents and case are not what spelling is about.
+    other = _toolbox(clinic, kb)
+    other.heard("Sí: m-u-ñ-o-z, G-O-N-Z-A-L-E-Z.")
+    assert "error" not in _identify(other, name="Muñoz González", name_spelled=True)
+
+
+def test_a_pets_name_counts_as_confirmed_only_if_repeated_or_spelled(clinic, kb):
+    toolbox = _toolbox(clinic, kb)
+    toolbox.heard("Es para Yuna.")
+    refused, failed = _call(toolbox, "identify_client", **{**NOTHING, "pet_name": "Yuna",
+                                                           "pet_confirmed": True})
+    assert failed and "neither spelled that name nor said it twice" in refused["error"]
+    toolbox.heard("Sí, Yuna.")
+    assert "error" not in _identify(toolbox, pet_name="Yuna", pet_confirmed=True)
+    spelled = _toolbox(clinic, kb)
+    spelled.heard("L-L-U-N-A")
+    assert "error" not in _identify(spelled, pet_name="Lluna", pet_confirmed=True)
+    # Unconfirmed, a name needs no backing: the resolver keeps its doubts.
+    assert "error" not in _identify(_toolbox(clinic, kb), pet_name="Yuna")
 
 
 # --- what a confirmed caller can do ---------------------------------------------------------------
@@ -186,6 +240,7 @@ def test_animals_that_may_be_a_namesakes_are_not_handed_to_the_model(clinic, kb,
         toolbox = _toolbox(clinic, kb, scenario.call.caller_number)
         name = " ".join(p for p in (scenario.caller.given_name, scenario.caller.surname1,
                                     scenario.caller.surname2) if p)
+        _spell(toolbox, name)
         if _identify(toolbox, name=name, name_spelled=True)["status"] != "confirmed":
             continue
         animals = clinic.animals_of(toolbox.session.client.code)
@@ -215,7 +270,9 @@ def test_booking_for_a_confirmed_caller_goes_on_their_record(confirmed):
     pet = scenario.caller.pets[0].name
     result, failed = _call(toolbox, "book_appointment", start=SLOT, reason="vacuna",
                            pet_name=pet.upper(), contact_name=None, contact_phone=None)
-    assert not failed and result["status"] == "booked" and result["weekday"] == "lunes"
+    assert not failed and result["status"] == "booked"
+    assert result["say_es"] == "lunes 9 de noviembre a las nueve y media de la mañana"
+    assert result["say_ca"] == "dilluns 9 de novembre a les nou i mitja del matí"
     booked = toolbox.agenda.get(result["appointment_id"])
     assert booked.verified and booked.client_code == toolbox.session.client.code
     assert booked.pet_name == pet and booked.animal_code is not None
@@ -268,7 +325,11 @@ def test_availability_needs_no_identification(clinic, kb):
     result, failed = _call(toolbox, "get_availability", date_from="2026-11-09",
                            date_to="2026-11-13", part_of_day="afternoon")
     assert not failed and len(result["slots"]) == 6
-    assert result["slots"][0] == {"start": "2026-11-09T16:30", "weekday": "lunes"}
+    assert result["slots"][0] == {
+        "start": "2026-11-09T16:30",
+        "say_es": "lunes 9 de noviembre a las cuatro y media de la tarde",
+        "say_ca": "dilluns 9 de novembre a les quatre i mitja de la tarda",
+    }
     assert _call(toolbox, "get_availability", date_from="2026-11-08", date_to="2026-11-08",
                  part_of_day="any")[0]["slots"] == []
 
@@ -279,7 +340,7 @@ def test_free_times_are_a_sample_over_several_days_and_say_so(clinic, kb):
     toolbox = _toolbox(clinic, kb)
     week, _ = _call(toolbox, "get_availability", date_from="2026-11-09", date_to="2026-11-13",
                     part_of_day="any")
-    assert [slot["weekday"] for slot in week["slots"]] == \
+    assert [slot["say_es"].split()[0] for slot in week["slots"]] == \
         ["lunes", "lunes", "martes", "martes", "miércoles", "miércoles"]
     assert len({slot["start"] for slot in week["slots"]}) == 6
     assert week["free_days"] == ["lunes 2026-11-09", "martes 2026-11-10", "miércoles 2026-11-11",

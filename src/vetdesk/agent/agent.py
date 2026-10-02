@@ -59,6 +59,7 @@ class Call:
         agent says before running a tool ("un momento, lo miro") is heard before the tool
         runs, not after.
         """
+        self._toolbox.heard(text)
         events_before = len(self.session.events)
         latencies: list[float] = []
         turn_started = time.perf_counter()

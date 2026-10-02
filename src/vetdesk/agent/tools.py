@@ -12,18 +12,21 @@ be able to promise it. `take_message` is what it has instead.
 from __future__ import annotations
 
 import json
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 
 from ..identity import Evidence, IdentityResolver, Resolution
 from ..identity.matching import SOUNDS_SAME, pet_grade
+from ..identity.spelling import spelled_words
 from ..kb import KnowledgeBase
 from ..kb.model import WEEKDAYS_ES
 from ..legacy.models import Client, Clinic
-from ..legacy.normalize import parse_phones
+from ..legacy.normalize import fold, parse_phones
 from ..llm import ToolCall, ToolResult, ToolSpec
 from ..scheduling import Agenda, AgendaError, Appointment
+from .spoken import say_ca, say_es
 
 
 class ToolError(Exception):
@@ -54,6 +57,10 @@ class CallSession:
     evidence: Evidence
     resolution: Resolution | None = None
     client: Client | None = None  # set once, when the resolver confirms the caller
+    # What the caller has said, as far as it backs a claim of the model's: the words they
+    # spelled out, and in how many of their lines each word came up.
+    spelled: list[str] = field(default_factory=list)
+    lines_with: Counter = field(default_factory=Counter)
     events: list[ToolEvent] = field(default_factory=list)
     messages: list[Message] = field(default_factory=list)
 
@@ -62,6 +69,15 @@ NOT_CONFIRMED = (
     "The caller is not confirmed, so no client data is available. Use identify_client "
     "first. If it cannot confirm them, do not use this tool: offer an unverified booking "
     "or a message instead."
+)
+NOT_SPELLED = (
+    "name_spelled is true, but that is not the name the caller spelled letter by letter. "
+    "{spelled} Pass the name exactly as it was spelled, every word of it. If they spelled "
+    "only part of it, or nothing, ask them to spell their full name."
+)
+NOT_REPEATED = (
+    "pet_confirmed is true, but the caller has neither spelled that name nor said it "
+    "twice. Ask them to repeat or spell the pet's name."
 )
 ASK = {
     "client_name": "Ask for their first name and both surnames.",
@@ -190,6 +206,30 @@ class Toolbox:
         self.resolver = IdentityResolver(clinic)
         self.session = CallSession(caller_number, Evidence(caller_number=caller_number))
 
+    def heard(self, text: str) -> None:
+        """Take note of what the caller has just said, before the model answers it."""
+        self.session.spelled += spelled_words(text)
+        self.session.lines_with.update(set(fold(text).split()))
+
+    def _vouched_for(self, name: str | None, spelled: bool, pet: str | None,
+                     repeated: bool) -> None:
+        """Refuse a claim the caller's own words do not back.
+
+        `name_spelled` and `pet_confirmed` tell the resolver to stop doubting a name. The
+        model sets them, and measured over 82 calls it vouched for names it had put back
+        together wrong ("Rossellón" for R-O-S-S-E-L-L-Ó). So the claim is checked here,
+        against what the caller actually said.
+        """
+        letters = {fold(word) for word in self.session.spelled}
+        if spelled and name and not set(fold(name).split()) <= letters:
+            said = ", ".join(self.session.spelled)
+            raise ToolError(NOT_SPELLED.format(
+                spelled=f"They spelled: {said}." if said else "They have spelled nothing."))
+        if repeated and pet:
+            words = set(fold(pet).split())
+            if not (words <= letters or all(self.session.lines_with[w] >= 2 for w in words)):
+                raise ToolError(NOT_REPEATED)
+
     def run(self, call: ToolCall) -> ToolResult:
         handler = getattr(self, f"_{call.name}", None)
         try:
@@ -215,6 +255,7 @@ class Toolbox:
     ) -> dict:
         session = self.session
         if session.client is None:
+            self._vouched_for(name, name_spelled, pet_name, pet_confirmed)
             evidence = session.evidence
             if name:
                 same = name == evidence.client_name and evidence.name_verified
@@ -401,7 +442,9 @@ def _moment(text: str) -> datetime:
 
 
 def _when(moment: datetime) -> dict:
-    return {"start": moment.strftime("%Y-%m-%dT%H:%M"), "weekday": WEEKDAYS_ES[moment.weekday()]}
+    # `start` is for the tools; say_es and say_ca are for the caller's ears.
+    return {"start": moment.strftime("%Y-%m-%dT%H:%M"), "say_es": say_es(moment),
+            "say_ca": say_ca(moment)}
 
 
 def _summary(appointment: Appointment) -> dict:

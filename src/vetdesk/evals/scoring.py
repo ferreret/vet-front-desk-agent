@@ -126,17 +126,24 @@ def _evidence(record: CallRecord) -> tuple[list[str], list[str]]:
                 if value and _tokens(value) - heard - spelled:
                     not_heard.append(f"turn {turn}: {field} {value!r}")
             name, pet = given.get("name"), given.get("pet_name")
+            claims = []
             if given.get("name_spelled") and name and not _tokens(name) <= spelled:
                 # Either nothing was spelled, or the model put the letters back together
                 # wrong and vouched for the result.
                 why = "which is not what the caller spelled" if spelled else "never spelled"
-                unsupported.append(f"turn {turn}: name_spelled for {name!r}, {why}")
+                claims.append(f"turn {turn}: name_spelled for {name!r}, {why}")
             if given.get("pet_confirmed") and pet:
                 repeated = all(lines_with[token] >= 2 for token in _tokens(pet))
                 if not (repeated or _tokens(pet) <= spelled):
-                    unsupported.append(
+                    claims.append(
                         f"turn {turn}: pet_confirmed for {pet!r}, neither repeated nor spelled"
                     )
+            # The tool now checks these claims itself. One it turned away never reached the
+            # resolver: worth knowing about, not a breach.
+            if tool.is_error:
+                not_heard += [f"{claim} (refused by the tool)" for claim in claims]
+            else:
+                unsupported += claims
     return unsupported, not_heard
 
 

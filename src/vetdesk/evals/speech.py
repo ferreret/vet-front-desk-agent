@@ -11,15 +11,10 @@ from __future__ import annotations
 
 import re
 
+from ..identity.spelling import spelled_words
 from ..scenario import Speech
 
-# A word spelled aloud, as the simulated caller is told to write it: "L-L-U-L-L".
-SPELLED_WORD = re.compile(r"(?<![\w-])(?:[^\W\d_]-)+[^\W\d_](?![\w-])")
-
-
-def spelled_words(text: str) -> list[str]:
-    """The words a caller spelled out in `text`, put back together."""
-    return [match.group().replace("-", "") for match in SPELLED_WORD.finditer(text)]
+__all__ = ["SpeechChannel", "spelled_words"]
 
 
 class SpeechChannel:
