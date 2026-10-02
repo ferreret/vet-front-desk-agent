@@ -69,6 +69,23 @@ with nothing cached), 0.2 s for the voice.
 
 Not retried with a microphone since these two changes.
 
+## First call through ElevenLabs Agents
+
+2026-10-02, the same afternoon, from the test call in ElevenLabs' dashboard to the address
+on this machine through a tunnel. **A whole booking, by voice, in two and a half minutes**:
+a dog with fleas, the caller asked when he could come, offered three times on the
+Saturday, name taken, not found on file, phone taken and read back, booked unverified and
+flagged for reception. Every time was said as the tool wrote it.
+
+- **Listening was not a problem.** Every line of the caller arrived whole and in Spanish.
+- **Seconds from the request to the whole answer**: about 2 for a plain turn, 4 to 5 for
+  one that uses a tool. ElevenLabs' own share (end of turn, voice) is not in that figure.
+- **ElevenLabs asks again if it waits about four seconds.** One request was dropped and
+  repeated with the same line; the agent answered it once, as designed.
+- **The conversation id did not arrive** in what ElevenLabs sent, so the call was told
+  apart by its opening words. Being looked into: with two calls at once and no id, they
+  could be confused.
+
 ## Choosing the voice
 
 The accent comes mostly from the voice and partly from the model, and neither can be
@@ -119,7 +136,7 @@ part this project is about. So there are two ways in, and the agent is the same 
 | Phone line or browser call | Needs a LiveKit server | Included |
 | **Who answers** | **`FrontDeskAgent`**, through `llm_node` | **`FrontDeskAgent`**, as a "custom LLM" |
 | Needs | Nothing for the console; a server for real calls | An address reachable from the internet |
-| State | One call with a microphone, then fixed | The address works and is tested; no call yet |
+| State | One call with a microphone, unusable; fixed since, not retried | One call: a whole booking by voice |
 
 What is never handed over is the answering. An ElevenLabs agent with ElevenLabs' model and
 a prompt in their dashboard is what the 2025 pilot was, and it did not know who it was

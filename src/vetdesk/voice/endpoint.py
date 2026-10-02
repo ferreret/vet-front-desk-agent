@@ -88,6 +88,9 @@ class Switchboard:
             numbers, _ = parse_phones(caller.group(1) if caller else "")
             number = numbers[0] if numbers else None
             log.info("call %s from %s", conversation, number or "a hidden number")
+            if not found:
+                log.info("no conversation id in what the platform sent as system text: %r",
+                         system[:300])
             self._lines[conversation] = (Line(self._start_call(number)), now)
         line, _ = self._lines[conversation]
         self._lines[conversation] = (line, now)
@@ -119,19 +122,28 @@ def build_app(switchboard: Switchboard, key: str) -> web.Application:
         response = web.StreamResponse(headers={"Content-Type": "text/event-stream",
                                                "Cache-Control": "no-cache"})
         await response.prepare(request)
-        await response.write(_chunk(request_id, model, {"role": "assistant", "content": ""}))
-        if not said:  # asked to open the call: the agent's own greeting
-            await response.write(_chunk(request_id, model, {"content": line.call.greeting}))
-        else:
-            log.info("caller: %s", said[-1])
-            answer = []
-            async for piece in line.answer(said[-1], turn=len(said)):
-                answer.append(piece)
-                await response.write(_chunk(request_id, model, {"content": piece}))
-            log.info("agent: %s", "".join(answer))
-        await response.write(_chunk(request_id, model, {}, "stop"))
-        await response.write(b"data: [DONE]\n\n")
-        await response.write_eof()
+        started = time.perf_counter()
+        try:
+            await response.write(_chunk(request_id, model, {"role": "assistant", "content": ""}))
+            if not said:  # asked to open the call: the agent's own greeting
+                await response.write(_chunk(request_id, model, {"content": line.call.greeting}))
+            else:
+                log.info("caller: %s", said[-1])
+                answer, first = [], None
+                async for piece in line.answer(said[-1], turn=len(said)):
+                    first = first if first is not None else time.perf_counter() - started
+                    answer.append(piece)
+                    await response.write(_chunk(request_id, model, {"content": piece}))
+                log.info("agent (first words %.1f s, all %.1f s): %s", first or 0,
+                         time.perf_counter() - started, "".join(answer))
+            await response.write(_chunk(request_id, model, {}, "stop"))
+            await response.write(b"data: [DONE]\n\n")
+            await response.write_eof()
+        except ConnectionResetError:
+            # The platform stopped listening: the caller spoke over the answer, or it gave
+            # up waiting and will ask again. The turn runs on; asked again, it is repeated.
+            log.info("the platform hung up on this answer after %.1f s",
+                     time.perf_counter() - started)
         return response
 
     async def health(request: web.Request) -> web.Response:
