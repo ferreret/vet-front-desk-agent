@@ -22,12 +22,12 @@ threshold the agent asks instead of guessing; and the metric that matters most i
 | F1 | Synthetic generator: legacy-style database + call scenarios with ground truth | **Done** (2026-10-01) |
 | F2 | Legacy adapter + identity resolution, with tests | **Done** (2026-10-01): 0 false identifications in 174,567 simulated calls |
 | F3 | Agent with tools, knowledge base and mock agenda, over text | **Done** (2026-10-01): tested on a scripted model, and a first real call works end to end |
-| F4 | Evaluation harness with simulated callers | Next |
-| F5 | Voice layer: real-time STT/TTS, latency budget, barge-in, Spanish and Catalan | |
+| F4 | Evaluation harness with simulated callers | **Done** (2026-10-02): 82 whole calls, 0 false identifications, and seven defects found that one call by hand had not shown; six fixed |
+| F5 | Voice layer: real-time STT/TTS, latency budget, barge-in, Spanish and Catalan | Next |
 | F6 | Public demo: a call from the browser | |
 | F7 | Metrics and case study | |
 
-The evaluation harness (F4) comes before the voice interface on purpose.
+The evaluation harness (F4) came before the voice interface on purpose.
 
 ## Try it
 
@@ -45,11 +45,13 @@ uv run vetdesk identity eval             # the measurement
 uv run pytest
 ```
 
-To talk to the agent you need an API key for a language model:
+To talk to the agent, or to evaluate it, you need an API key for a language model:
 
 ```bash
 cp .env.example .env                     # then put your key in it
 uv run vetdesk chat --number +34618065507 --now 2026-11-06T12:30 --verbose
+uv run vetdesk eval run --per-category 1 # one call of each kind, played and judged
+uv run vetdesk eval show data/runs/<run> S-031   # read one of them
 ```
 
 `generate` writes three files into `data/` (git-ignored, always rebuilt from the seed):
@@ -131,10 +133,54 @@ A language model with eight tools, talking in text for now (`vetdesk chat`).
 - **Any provider.** The agent talks to a small interface; each provider is one adapter.
   There are two: Claude and Gemini.
 
-Tools, barrier, agenda, knowledge base and the agent loop are tested without a model. With
-a real model it has been tried by hand, not measured: one call so far, which went as it
-should. Measuring it over all the scenarios is what the evaluation harness (F4) is for.
+Tools, barrier, agenda, knowledge base and the agent loop are tested without a model.
 More in [docs/agent.md](docs/agent.md).
+
+## The whole agent, measured
+
+The resolver was measured on its own. The harness measures everything around it: each
+scenario is played as a whole phone call, in text, against the same agent that answers a
+real one. A language model plays the caller from a brief; what it says passes through
+simulated speech recognition, which garbles names the way the scenario recorded; and a
+third model reads the transcript for what code cannot check.
+
+First full run, `uv run vetdesk eval run`, with Claude Sonnet 5.5 as the agent:
+
+| 82 calls, each scenario once | |
+|---|---|
+| **False identifications** | **0** |
+| Another client's data said to the caller | 0 |
+| Somebody else's appointment touched | 0 |
+| Transfers promised | 0 |
+| Identified, of the callers who could be and needed to be | 47 of 48 |
+| Booked, cancelled or moved as asked | 63 of 64 |
+| Asked more identity questions than needed | 4 of 76 |
+| First words | median 1.6 s; within the 1.5 s target in 39% of answers |
+
+The zeros are the expected part: the barrier is code. What the run was for is the rest. It
+found seven defects that the one call tried by hand had not shown. Three are the kind this
+project exists to prevent:
+
+- Given the emergency number as `+34600555020`, the model said it right and then repeated
+  it wrong ("más seis cuatro...") to two of three callers with an emergency.
+- A tool returned animals that might belong to a client's namesake, with a note asking the
+  model not to mention them. It never did, but that was a barrier made of prompt.
+- Handed the six earliest free times, all on a Monday, the model told callers the rest of
+  the week was full.
+
+Those three are fixed in code, not in the prompt. Three more were manners of speech, fixed
+in the prompt: offering times before asking when the caller can come, line breaks in
+answers meant to be spoken, and Catalan clock times said wrong. The calls concerned pass
+when played again.
+
+One is open. When a caller spells a name, the model puts the letters back together and
+vouches for the result, and twice it got it wrong. Nobody was misidentified, but it is the
+one place where the guarantee still leans on the model.
+
+What these numbers are not: each scenario was played once, the callers and the speech
+recognition are simulated, and the full run has not yet been repeated after the fixes.
+Method, the complete table and the caveats are in
+[docs/evaluation.md](docs/evaluation.md).
 
 ## Rules of the house
 

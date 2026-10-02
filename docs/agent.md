@@ -17,6 +17,9 @@ that the identity resolver has confirmed the caller. Until then:
   never with a name, a pet or a candidate from the records.
 - Asking for somebody else's appointment gets the same answer as asking for one that does
   not exist, so the model cannot even confirm it is there.
+- Even for a confirmed caller, `get_pets` leaves out animals filed under a name they share
+  with another client: the file cannot say whose they are. The caller can still book for
+  one by naming it.
 
 So there is nothing for the model to leak, however it is prompted or manipulated. A test
 walks every identity scenario through the tools and checks that no name from the records
@@ -92,9 +95,12 @@ the name, asked for it to be spelled when it was mistyped, asked for the town, a
 on the right record once the resolver confirmed the caller. Before that it said nothing
 from the records.
 
-**Not measured yet.** One good call proves the plumbing, not the behaviour. How often the
-agent asks one question too many, promises something it cannot do or answers beyond the
-knowledge base is what the evaluation harness (F4) measures, over every scenario.
+**Measured since, on 2026-10-02:** every scenario played as a whole call by a simulated
+caller. No false identification, no client data given out and no transfer promised in 82
+calls, and several things one good call could not show: a misread emergency number, a tool
+that handed over a namesake's animals, another that made the model say the week was full.
+Those are fixed. Method, figures and what is still open are in
+[evaluation.md](evaluation.md).
 
 ## How long callers wait
 
@@ -132,9 +138,13 @@ So the defaults are now Sonnet 5.5, thinking off, answers streamed. The 1.5 s ta
 met yet, and two things are open:
 
 - **Outliers.** One first request took 16.9 s and another, on Haiku, 40.3 s. Cause not
-  established (possibly a retried request). On a phone call that is a dead line, so the
-  voice layer needs a time limit per request and something to say when it is exceeded.
-- **Quality without thinking is unmeasured.** One call went well. Whether the agent is as
-  careful across all the scenarios is for the evaluation harness (F4); the privacy barrier
-  does not depend on it, because it is code.
+  established (possibly a retried request). They did not come back: of the 775 requests of
+  the evaluation run on 2026-10-02, the slowest took 7.1 s. On a phone call a stalled
+  request is a dead line all the same, so the voice layer needs a time limit per request
+  and something to say when it is exceeded.
+- **Quality without thinking** has now been measured over all the scenarios: see
+  [evaluation.md](evaluation.md). That run also gives the latency figures to trust: 475
+  answers instead of six. First words came after a median of 1.6 s, within the 1.5 s target
+  39% of the time, and the long waits are the turns where the model reaches for a tool
+  without saying anything first.
 

@@ -99,6 +99,78 @@ What it does not give:
 - **Latency of the voice.** Seconds here are the model's; speech recognition and synthesis
   will add theirs.
 
+## Results
+
+**First full run, 2026-10-02.** Agent `claude-sonnet-5-5` (thinking off, low effort,
+answers streamed), caller `claude-haiku-4-5`, judge `claude-opus-5-5`. All 82 scenarios,
+played once: 475 answers, 775 requests to the model, $4.36. The agent is the one F3 left,
+before any of the fixes below. Full report:
+[runs/2026-10-02-baseline.txt](runs/2026-10-02-baseline.txt).
+
+| | |
+|---|---|
+| **False identifications** | **0** of 82 calls |
+| Confirmed without enough evidence | 0 |
+| Another client's data said to the caller | 0 |
+| Forbidden actions carried out (somebody else's appointment) | 0 |
+| Another client's data handed to the model by a tool | 2 calls |
+| Vouched for a name the caller had not spelled that way | 2 calls |
+| Identified, of the callers who could be and needed to be | 47 of 48 |
+| Booked, cancelled or moved as asked | 63 of 64 |
+| Message taken when a person was wanted; transfers promised | 3 of 3; none |
+| Stated something the clinic's information does not support `[judge]` | 2 calls |
+| Claimed something that did not happen `[judge]` | 3 calls |
+| Asked more identity questions than the scenario allows `[judge]` | 4 of 76 calls |
+| Identity questions per call `[judge]` | 1.7 (allowed: 2.5) |
+| First words | median 1.6 s; 39% within the 1.5 s target; 90% within 4.5 s |
+| Whole answer | median 3.9 s; slowest 11.0 s |
+| Answers with line breaks, which a voice cannot say | 18% |
+
+The caller who was not identified is the one whose given name is misspelled on file, the
+gap the resolver's own evaluation already reports: a safe failure, served with a booking
+flagged for reception. That call is also the one booking not done "as asked".
+
+No judge finding had to be thrown away for quoting words the agent did not say. In the
+first attempt three calls were set aside because the simulated caller left its brief
+(twice it hung up while being asked for a phone number); the caller was fixed and those
+three were played again against the same agent.
+
+### What measuring found
+
+Nothing here was visible in the one call tried by hand in F3.
+
+| Found | Evidence | What was done |
+|---|---|---|
+| **The emergency number was misread.** Given `+34600555020`, the model said it right and then repeated it starting "más seis cuatro", once with an extra digit | 2 of 3 emergency calls | The knowledge base hands over phone numbers as they are said: `600 555 020`. Fixed in code |
+| **A tool handed over a namesake's animals.** `get_pets` listed animals filed under a name two clients share, with a note not to mention them. The model never did, but the barrier rested on a note | 2 of 3 calls with a homonym | Those animals are no longer returned; they can still be booked when the caller names them. Fixed in code |
+| **"There is nothing else that week."** `get_availability` returned the six earliest times, all on one day, and the model concluded the other days were full | 2 calls said it outright | The tool returns a sample spread over several days and lists the days with free times. Fixed in code |
+| **Times offered before asking when.** The agent offered "today" and had to look again | 40 of 58 bookings needed two lookups | Prompt: ask when the caller can come first |
+| **Line breaks in spoken answers** | 18% of answers | Prompt |
+| **Catalan quarter-hours wrong.** "Un quart d'onze" for 10:00 or 10:30 | 1 call | Prompt: say "les deu i mitja" |
+| **A spelled name put back together wrong, and vouched for.** The caller spelled R-O-S-S-E-L-L-Ó; the model passed "Rossellón" with `name_spelled=true`. Another merged "Mas Sala" into "Massala" | 2 calls | **Open.** See below |
+| The model "corrected" what it heard: "Ballserena" became "Vallserena" before reaching the resolver | 1 call | Open, with the one above |
+| In a third of the turns that use a tool, the model says nothing until the tool has run | 94 of 258 turns; these are the 4-second waits | Open: for the voice layer (F5) |
+
+**After the fixes**, the twelve calls they concern (the three emergencies, the three
+homonyms, six bookings) were played again: no failure and no shortfall in any of them, one
+availability lookup per booking instead of two, line breaks in 3% of answers, and the
+emergency number said as written. Twelve calls check that the fixes do what they were
+meant to; they do not replace the full run, which has not been repeated yet. Report:
+[runs/2026-10-02-after-fixes-sample.txt](runs/2026-10-02-after-fixes-sample.txt).
+
+### What is open
+
+- **The spelling flag is the model's word.** `name_spelled` tells the resolver to stop
+  doubting a name, and the model sets it. In both calls where it vouched for a wrong
+  reassembly the resolver still reached the right client or none, but this is the one
+  place where the guarantee leans on the model. The fix belongs in code: take the letters
+  as the caller said them and put them together there, which needs to know how real speech
+  recognition delivers a spelling. It goes with the voice layer.
+- **Silent tool turns.** The model is allowed a waiting phrase before a tool; it uses it
+  two times in three. The voice layer needs its own filler when a tool call starts with
+  nothing said.
+- **One run.** Every rate above comes from playing each scenario once.
+
 ## Running it
 
 ```bash

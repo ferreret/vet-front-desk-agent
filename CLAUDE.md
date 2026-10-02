@@ -73,7 +73,7 @@ Generador sintético ──► BD estilo «legacy» (SQLite) ──► Adaptador
 | **Generador sintético** | Crea la BD de la clínica **con los defectos reales**: relación por nombre, homónimos, teléfonos viejos, clientes con `Nani = 0`, varios idiomas (castellano y catalán). Y genera los **escenarios de prueba con su verdad de referencia**, gratis |
 | **Adaptador legacy** | Lee el esquema viejo y lo traduce a un modelo limpio. Es una interfaz: otro programa de gestión (por ejemplo, uno web con API) sería otro adaptador |
 | **Resolución de identidad** | **El corazón.** Dado un teléfono, un nombre o el de una mascota, devuelve candidatos con su confianza y la evidencia usada. Decide si basta o hay que preguntar |
-| Agente | LLM con herramientas: `identify_client` (recibe el número que llama, si lo hay), `get_pets`, `search_clinic_info`, `get_availability`, `book_appointment`, `cancel_appointment`, `reschedule_appointment` y `take_message` (recado para recepción). Barrera de privacidad antes de revelar datos. **Respuestas cortas y habladas**, pensadas para el oído y no para leerse |
+| Agente | LLM con herramientas: `identify_client` (recibe el número que llama, si lo hay), `get_pets`, `get_availability`, `book_appointment`, `list_appointments`, `cancel_appointment`, `reschedule_appointment` y `take_message` (recado para recepción). La información de la clínica va en el prompt, no en una herramienta. Barrera de privacidad antes de revelar datos. **Respuestas cortas y habladas**, pensadas para el oído y no para leerse |
 | **Capa de voz** | STT → agente → TTS en tiempo real, con **presupuesto de latencia** (objetivo: responder en menos de ~1,5 s), interrupciones (*barge-in*) y frases de espera mientras se consulta la BD. Candidatos: **LiveKit Agents** (telefonía SIP y voz en el navegador), ElevenLabs para la voz. Castellano y catalán |
 | Base de conocimiento | Servicios, horarios que cambian según la época, precios orientativos, FAQ. Es pequeña, así que puede ir en contexto antes de pensar en RAG |
 | Agenda | Mock en SQLite detrás de una interfaz. Office 365 (Graph) como adaptador opcional al final |
@@ -95,7 +95,7 @@ Generador sintético ──► BD estilo «legacy» (SQLite) ──► Adaptador
 | F1 | Generador sintético: BD estilo legacy + escenarios con verdad de referencia | ✅ Cerrada el 2026-10-01. Formato de escenarios en `docs/scenario-format.md` |
 | F2 | Adaptador legacy + **resolución de identidad** con tests | ✅ Cerrada el 2026-10-01. 0 identificaciones falsas en 174.549 llamadas simuladas. Detalle en `docs/identity-resolution.md` |
 | F3 | Agente con herramientas + base de conocimiento + agenda mock, por texto (CLI) | ✅ Cerrada el 2026-10-01: probada con un modelo simulado y con una primera llamada real correcta. Falta medirla (F4). Detalle en `docs/agent.md` |
-| F4 | **Harness de evaluación** con clientes simulados | ⚠️ **Antes que la interfaz, a propósito** |
+| F4 | **Harness de evaluación** con clientes simulados | ✅ Cerrada el 2026-10-02. 82 llamadas completas por texto: 0 identificaciones falsas y siete defectos encontrados, seis corregidos y uno abierto (el deletreo). Falta repetir la ejecución completa tras las correcciones. Detalle en `docs/evaluation.md` |
 | F5 | **Capa de voz**: STT/TTS en tiempo real, latencia, interrupciones, castellano y catalán | El canal de verdad |
 | F6 | Demo pública: llamada desde el navegador (y número SIP opcional) | La pieza que se enseña |
 | F7 | README con métricas + case study en el portfolio | |
