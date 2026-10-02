@@ -28,3 +28,12 @@ def clinic(world, tmp_path_factory):
 def client_ids(world):
     """Legacy code -> ground-truth client id. Only tests may know this mapping."""
     return {c.legacy_codigo: c.client_id for c in world.clients.values()}
+
+
+@pytest.fixture(scope="session")
+def truth(world):
+    """Who is who, for the harness. The agent side never sees it."""
+    from vetdesk.evals.truth import Truth
+    from vetdesk.synth.legacy_db import export_truth
+
+    return Truth(export_truth(world))
