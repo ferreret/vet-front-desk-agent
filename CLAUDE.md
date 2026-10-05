@@ -82,7 +82,7 @@ Generador sintético ──► BD estilo «legacy» (SQLite) ──► Adaptador
 ## Stack (confirmado el 2026-10-01)
 
 - **Python 3.12 con `uv`**, en un solo paquete. Todo es Python: datos, agente y evaluación.
-- **LLM con tool use** detrás de una interfaz propia, con un adaptador por proveedor: el agente **no queda atado a ningún proveedor**. El modelo por defecto se elige con datos en F4 (el harness compara modelos y proveedores con los mismos escenarios); el coste de la demo pública lo paga Nicolás. La garantía de cero identificaciones falsas va en código, no en el modelo.
+- **LLM con tool use** detrás de una interfaz propia, con un adaptador por proveedor: el agente **no queda atado a ningún proveedor**. Hay tres adaptadores: Claude, Gemini y el formato de chat de OpenAI (que sirve también para Requesty, un enrutador hacia otros modelos). **Modelo por defecto: Gemini 3.5 Flash Lite** (`gemini-3.5-flash-lite`), elegido con datos el 2026-10-05: el único que contesta dentro de 1,5 s. **Claude no es opción como modelo del agente**, por precio y velocidad (decisión de Nicolás); el cliente simulado y el juez del harness sí siguen siendo Claude. El modelo se nombra por su identificador, nunca por un alias `-latest`. La garantía de cero identificaciones falsas va en código, no en el modelo.
 - **SQLite** para la BD sintética y la agenda.
 - **pytest** desde el principio, sobre todo para la resolución de identidad.
 - **Voz**: LiveKit Agents (ya lo exploró en el piloto) para el tiempo real y la telefonía SIP; STT y TTS por decidir (ElevenLabs lo usó en el piloto). Nicolás quiere probar las dos opciones, LiveKit y ElevenLabs. Se compara coste y latencia antes de elegir.
@@ -95,8 +95,8 @@ Generador sintético ──► BD estilo «legacy» (SQLite) ──► Adaptador
 | F1 | Generador sintético: BD estilo legacy + escenarios con verdad de referencia | ✅ Cerrada el 2026-10-01. Formato de escenarios en `docs/scenario-format.md` |
 | F2 | Adaptador legacy + **resolución de identidad** con tests | ✅ Cerrada el 2026-10-01. 0 identificaciones falsas en 174.549 llamadas simuladas. Detalle en `docs/identity-resolution.md` |
 | F3 | Agente con herramientas + base de conocimiento + agenda mock, por texto (CLI) | ✅ Cerrada el 2026-10-01: probada con un modelo simulado y con una primera llamada real correcta. Falta medirla (F4). Detalle en `docs/agent.md` |
-| F4 | **Harness de evaluación** con clientes simulados | ✅ Cerrada el 2026-10-02. Dos ejecuciones de 82 conversaciones completas por texto: 0 identificaciones falsas en ambas. Los defectos encontrados (teléfono de urgencias, animales de homónimos, huecos, horas en catalán, deletreo) están corregidos en código. Falta una tercera ejecución completa tras las últimas correcciones. Detalle en `docs/evaluation.md` |
-| F5 | **Capa de voz**: STT/TTS en tiempo real, latencia, interrupciones, castellano y catalán | 🚧 Empezada el 2026-10-02. Dos vías, con el mismo agente detrás: **agente de ElevenLabs con nuestro agente como «LLM propio»** (`vetdesk.voice.endpoint`; probada con una reserva completa por voz, es la que funciona bien) y LiveKit Agents en consola (`vetdesk.voice`; la primera prueba con micrófono fue mala, corregida y sin reprobar). Nunca se usa el modelo ni el prompt de ElevenLabs. **Siguiente paso: desplegar `vetdesk.voice.endpoint` en el VPS de Nicolás (Hostinger, Dokploy) con el `Dockerfile` de la raíz**; los pasos están en `docs/sessions/2026-10-02.md`. Detalle en `docs/voice.md` |
+| F4 | **Harness de evaluación** con clientes simulados | ✅ Cerrada el 2026-10-02. Tres ejecuciones completas de 82 conversaciones por texto (dos con Sonnet, una con Gemini Flash Lite el 2026-10-05): 0 identificaciones falsas en las tres. El 2026-10-05 se compararon diez modelos de cuatro proveedores y se eligió Gemini 3.5 Flash Lite. Falta una ejecución completa tras los últimos arreglos. Detalle en `docs/evaluation.md` y `docs/sessions/2026-10-05.md` |
+| F5 | **Capa de voz**: STT/TTS en tiempo real, latencia, interrupciones, castellano y catalán | 🚧 Empezada el 2026-10-02. Dos vías, con el mismo agente detrás: **agente de ElevenLabs con nuestro agente como «LLM propio»** (`vetdesk.voice.endpoint`; probada con una reserva completa por voz, es la que funciona bien) y LiveKit Agents en consola (`vetdesk.voice`; la primera prueba con micrófono fue mala, corregida y sin reprobar). Nunca se usa el modelo ni el prompt de ElevenLabs. **Siguiente paso: desplegar `vetdesk.voice.endpoint` en el VPS de Nicolás (Hostinger, Dokploy) con el `Dockerfile` de la raíz y la clave de Gemini**; los pasos están en `docs/sessions/2026-10-05.md`. Antes conviene arreglar en código que el agente diga «un momento, lo miro» y se calle (11 de 435 respuestas con Flash Lite). Detalle en `docs/voice.md` |
 | F6 | Demo pública: llamada desde el navegador (y número SIP opcional) | La pieza que se enseña |
 | F7 | README con métricas + case study en el portfolio | |
 
@@ -130,7 +130,10 @@ Pendiente y sin medir: el agente, los escenarios y las horas dichas desde códig
 
 - **Lo que el cliente va a usar no lo calcula el modelo**: horas, teléfonos y la marca de «deletreado» salen de código. Cada una se dejó primero al modelo y se midió fallando.
 - **Un arreglo de prompt se mide antes de darlo por bueno.** La instrucción de cómo decir las medias horas en catalán convirtió un fallo en seis.
-- Tras tocar el agente (prompt o herramientas), repetir como mínimo los escenarios afectados con `vetdesk eval run --only ...`; una ejecución completa cuesta unos 4,2 $.
+- Tras tocar el agente (prompt o herramientas), repetir como mínimo los escenarios afectados con `vetdesk eval run --only ...`; una ejecución completa cuesta unos 3,2 $ (2,4 $ de Claude, por el cliente simulado y el juez).
+- **Un modelo más flojo es mejor prueba de la barrera** (2026-10-05): enseñó dónde la garantía dependía aún del modelo. Lo que se rompió con Flash Lite se llevó a código, no se arregló cambiando de modelo.
+- **Las reglas de identidad se prueban primero en el barrido del resolutor** (`vetdesk identity eval`), que no usa ningún modelo y no cuesta nada. Solo después, con el agente.
+- **Para cribar varios modelos, sin juez** (`--no-judge`); el juez, solo a los finalistas.
 
 ## Convenciones
 

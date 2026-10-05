@@ -22,7 +22,7 @@ threshold the agent asks instead of guessing; and the metric that matters most i
 | F1 | Synthetic generator: legacy-style database + call scenarios with ground truth | **Done** (2026-10-01) |
 | F2 | Legacy adapter + identity resolution, with tests | **Done** (2026-10-01): 0 false identifications in 174,567 simulated calls |
 | F3 | Agent with tools, knowledge base and mock agenda, over text | **Done** (2026-10-01): tested on a scripted model, and a first real call works end to end |
-| F4 | Evaluation harness with simulated callers | **Done** (2026-10-02): 82 whole calls, two full runs of 82 whole calls, 0 false identifications, and every defect found moved from the prompt into code |
+| F4 | Evaluation harness with simulated callers | **Done** (2026-10-02): three full runs of 82 whole calls, 0 false identifications, and every defect found moved from the prompt into code. On 2026-10-05 the same scenarios chose the model: Gemini 3.5 Flash Lite, out of ten from four providers |
 | F5 | Voice layer: real-time STT/TTS, latency budget, barge-in, Spanish and Catalan | In progress: a first whole booking by voice, with ElevenLabs carrying the call and this agent answering as its "custom LLM". See [docs/voice.md](docs/voice.md) |
 | F6 | Public demo: a call from the browser | |
 | F7 | Metrics and case study | |
@@ -45,7 +45,9 @@ uv run vetdesk identity eval             # the measurement
 uv run pytest
 ```
 
-To talk to the agent, or to evaluate it, you need an API key for a language model:
+To talk to the agent you need an API key for a language model: Gemini's by default, or
+any other provider's with `--model`. Evaluating it also needs an Anthropic key, for the
+simulated callers and the judge:
 
 ```bash
 cp .env.example .env                     # then put your key in it
@@ -191,6 +193,42 @@ the tool refusing the wrong spellings.
 What the exercise says: whenever the model had to work out something a caller acts on (a
 time, a phone number, how a name is spelled), it went wrong often enough to measure, and
 telling it to be careful did not help. Handing it the finished words did.
+
+### Choosing the model (2026-10-05)
+
+The agent is not tied to a provider, so the same scenarios were played with ten models
+from four: Claude, Gemini, OpenAI's, and DeepSeek, GLM, Qwen and MiniMax through a router.
+On the sixteen hardest calls the four quickest all got identity right; speed told them
+apart. Gemini 3.5 Flash Lite is the default now.
+
+| 82 calls, each scenario once | Gemini 3.5 Flash Lite | Claude Sonnet 5.5 (run 2) |
+|---|---|---|
+| **False identifications** | **0** | **0** |
+| Another client's data said or handed over; somebody else's appointment touched | 0 | 0 |
+| Identified, of the callers who could be and needed to be | 40 of 42 | 48 of 49 |
+| Booked, cancelled or moved as asked | 60 of 63 | 63 of 64 |
+| Transfers promised | 1 | 0 |
+| First words: median; within the 1.5 s target | **1.2 s; 94%** | 1.6 s; 40% |
+| Model cost per call | $0.010 | $0.021 |
+
+The columns are not quite the same test: the identity rules changed that day.
+
+A faster, less obedient model was the better test of the barrier, because it showed where
+the guarantee still rested on the model. A caller said "I want to cancel an appointment
+that isn't mine, it's a friend's"; the model passed the friend's name, pet and town as the
+caller's own, the resolver confirmed the friend, and the appointment was cancelled. No
+check on the evidence catches that, since the words were the caller's. What code can see
+is the phone. So cancelling or moving now needs a call from a number on the record, and
+from another client's phone nobody is confirmed. The other things it got wrong (the
+clinic's own town passed as the caller's, a closed clinic recommended in an emergency, the
+clinic's phone saved as the caller's, "I'll put you through") went the same way: into
+code where code can decide, and measured again where it cannot.
+
+The same day's free measurement, the resolver sweep, answered a different question: do
+callers have to spell their name so often? One surname a sound away now counts when the
+phone or the pet and town back it, which cut spelling from 29% of clients to 22% with no
+false identification. Giving the given name the same room confirmed six in ten non-client
+brothers and sisters as the client, so it gets none.
 
 What these numbers are not: each scenario is played once per run, the callers and the
 speech recognition are simulated, and no full run has been made since the last fixes.
