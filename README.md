@@ -98,7 +98,8 @@ reasons behind every candidate.
 it, leaving a single candidate**: the calling number is on that record, or a pet name and
 the town both match it. A phone number alone never confirms anybody. A name that only
 resembles a record, as speech recognition often delivers it, counts for nothing until the
-caller has confirmed or spelled it. Cancelling or moving an appointment also needs the
+caller has confirmed or spelled it; the one exception is a single surname a sound away,
+with the phone or the pet and town backing it. Cancelling or moving an appointment also needs the
 call to come from a phone on the record.
 
 Measured with `uv run vetdesk identity eval`, on the default clinic:
@@ -108,7 +109,7 @@ Measured with `uv run vetdesk identity eval`, on the default clinic:
 | False identifications | **0** | **0** |
 | Confirmed without enough evidence | 0 | 0 |
 | Identified, of those who could be | 47 / 49 | 97.6% |
-| Asked more than a perfect listener would | 2 | 0.5% |
+| Asked more than a perfect listener would | 2 | 0.3% |
 
 Across eleven generated clinics: 174,567 calls, 0 false identifications, 97.7% identified.
 

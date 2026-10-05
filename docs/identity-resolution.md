@@ -53,8 +53,15 @@ Each word of a name is graded against the record:
 |---|---|---|
 | Exact, or the Catalan/Castilian form of the same given name | Margalida = Margarita | Yes |
 | Sounds the same | Vázquez / Bázquez, Ginard / Jinard, Rocky / Roki | Yes |
-| Similar: one sound away | Ferrer / Ferré, Puig / Puch, Lluna / Luna | Not until the caller confirms or spells it |
+| Similar: one sound away | Ferrer / Ferré, Puig / Puch, Lluna / Luna | Not until the caller confirms or spells it, with the one exception below |
 | Different | | No |
+
+**The exception.** Spelling a name is the most tedious thing a caller is asked for, so it is
+skipped when there is nothing left to doubt: one surname is a sound away, the given name
+was heard right, nobody else on file resembles the name, and either the call comes from
+that client's phone or the pet and the town agree. The given name never gets this room:
+brothers and sisters share both surnames, the landline, the pet and the town, and Joan and
+Joana are one sound apart.
 
 Once a name has been spelled, only its written form counts, with room for one typing
 mistake in a surname on file (`Etseve` for Esteve). Given names get no such room: María and
@@ -90,6 +97,13 @@ not. Each finding became a rule, and a scenario or test that pins it down:
    client who really is on a borrowed phone: about 870 of the 1,200 such calls in the sweep
    were identified before and are now served unverified.
 
+6. **Most spelling was asked of callers there was nothing left to doubt about.** In the
+   sweep 29% of clients were asked to spell their name (41% of those misheard). Letting one
+   slightly-off surname count when the phone, or the pet and town, back it brought that to
+   22% with no false identification, over four clinics and 81,000 calls. The same room
+   for the given name confirmed 6 in 10 non-client brothers and sisters as the client, and
+   "the word heard is not a real name" still confirmed 7 in 100: both were thrown away.
+
 ## Results
 
 Default clinic (seed 42, 400 clients), `uv run vetdesk identity eval`:
@@ -99,7 +113,7 @@ Default clinic (seed 42, 400 clients), `uv run vetdesk identity eval`:
 | False identifications | **0** | **0** |
 | Confirmed without enough evidence | 0 | 0 |
 | Identified, of those who could be | 47 / 49 | 97.6% |
-| Asked more than a perfect listener would | 2 | 0.5% |
+| Asked more than a perfect listener would | 2 | 0.3% |
 
 The sweep is every client calling four ways (own phone, hidden number, giving one surname,
 borrowed phone) at three levels of speech noise, plus 2,000 callers who are not clients.
@@ -121,6 +135,11 @@ soon as they give their name.
   where nearly every client lives in the same town, the street on file is the factor to
   ask for instead. The evaluation reports coincidences separately from resolver mistakes,
   because no amount of careful listening avoids them; only more evidence does.
+- **A near-namesake with the same pet and town.** Somebody whose first surname is one
+  letter from a client's, with the same given name, second surname, pet name and town, is
+  confirmed as that client: in two of three such calls before the exception above, because
+  a spelled surname is allowed one typing mistake on file, and in four of five with it.
+  None turned up among 36,000 random non-clients; the case had to be built on purpose.
 - **Typos in a given name on file** (`Deigo`) are never matched: the caller is treated as
   not a client. That is the safe direction, and it accounts for nearly all the missed
   identifications. `uv run vetdesk legacy inspect` lists these records as

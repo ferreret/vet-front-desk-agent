@@ -23,8 +23,10 @@ compared (rules learnt from measuring, not from intuition):
 The calling number alone never confirms anybody. A number on somebody else's record rules
 the pet and the town out: from another client's phone, nobody is confirmed.
 
-Names that only resemble a record (a likely speech-recognition error) never count until
-the caller has confirmed or spelled them.
+Names that only resemble a record (a likely speech-recognition error) do not count until
+the caller has confirmed or spelled them, with one exception: a single surname a sound
+away, the given name heard right, nobody else on file resembling it, and the phone or the
+pet and town backing it.
 """
 
 from __future__ import annotations
@@ -152,6 +154,9 @@ class IdentityResolver:
         weak = [m for m in matches if m.name_grade == SIMILAR]
         if not evidence.name_verified:
             if not strong:
+                backed = self._one_surname_off(matches, said, on_phone, evidence)
+                if backed is not None:
+                    return backed
                 return self._ask(weak, "confirm_name",
                                  "the name only resembles names on file: confirm or spell it")
             if any(m.phone_on_file or m.pet_grade >= SOUNDS_SAME for m in weak):
@@ -200,6 +205,47 @@ class IdentityResolver:
         else:
             why = "nothing corroborates the name"
         return self._ask(pool, None, why)
+
+    def _one_surname_off(
+        self, matches: list[Candidate], said: SpokenName, on_phone: set[int],
+        evidence: Evidence,
+    ) -> Resolution | None:
+        """A name heard with one surname slightly off, when the rest of the evidence backs it.
+
+        Spelling a name out is the most tedious thing a caller is asked for, and often
+        there is nothing left to doubt: one client on file resembles the name, the given
+        name was heard right and one surname is a sound away, and either the call comes
+        from that client's phone or the pet and the town agree. Then the name counts.
+
+        The given name gets no such room. Brothers and sisters share both surnames, the
+        landline, the pet and the town, and Joan and Joana differ by one sound: measured
+        with relatives who are not clients, a rule that forgave the given name confirmed
+        six in ten of them as the client. Returns None when spelling is still needed.
+        """
+        if len(matches) != 1 or not matches[0].full_name:
+            return None
+        (match,) = matches
+        on_file = match.client.name
+        given = heard_grade(said.given, on_file.given.lower(), True)
+        surnames = sorted([heard_grade(said.surname1, on_file.surname1.lower()),
+                           heard_grade(said.surname2, on_file.surname2.lower())])
+        if given < SOUNDS_SAME or surnames[0] != SIMILAR or surnames[1] < SOUNDS_SAME:
+            return None
+        confirmed = Resolution("resolved", "confirmed", match.client, (match,), None,
+                               "; ".join(match.reasons(False)))
+        if match.phone_on_file:
+            return confirmed if self._phone_confirms(match, on_phone) else None
+        if on_phone:
+            return None  # somebody else's phone: nothing confirms, spelled or not
+        if not evidence.pet_name:
+            return self._ask([match], "pet_name",
+                             "one surname is slightly off: a pet may make spelling needless")
+        if match.pet_grade >= SOUNDS_SAME:
+            if not evidence.town:
+                return self._ask([match], "town", "name and pet agree: the town will settle it")
+            if match.town_matches:
+                return confirmed
+        return None
 
     def _candidate(
         self, client: Client, said: SpokenName, grade: int, on_phone: set[int],

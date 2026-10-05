@@ -134,10 +134,39 @@ def test_castilian_form_of_a_catalan_name_matches(resolver):
 
 
 def test_a_name_that_only_resembles_a_record_must_be_confirmed(resolver):
-    r = resolver.resolve(Evidence(MARGA_MOBILE, "Margalida Ferré Oliver"))
+    # Two surnames off: too much to wave through, even from her own phone.
+    r = resolver.resolve(Evidence(MARGA_MOBILE, "Margalida Ferré Olivé"))
     assert (r.decision, r.ask_for) == ("ask", "confirm_name")
     spelled = Evidence(MARGA_MOBILE, "Margalida Ferrer Oliver", name_verified=True)
     assert _code(resolver.resolve(spelled)) == 1
+
+
+def test_one_surname_slightly_off_counts_when_the_rest_backs_it(resolver):
+    """Spelling is the tedious question. It is skipped when one client resembles the name,
+    only a surname is a sound away, and the phone or the pet and town agree."""
+    heard = "Margalida Ferré Oliver"
+    assert _code(resolver.resolve(Evidence(MARGA_MOBILE, heard))) == 1  # her own phone
+    # A hidden number: the pet and the town are asked for before any spelling.
+    r = resolver.resolve(Evidence(None, heard))
+    assert (r.decision, r.ask_for) == ("ask", "pet_name")
+    r = resolver.resolve(Evidence(None, heard, pet_name="Xispa"))
+    assert (r.decision, r.ask_for) == ("ask", "town")
+    assert _code(resolver.resolve(Evidence(None, heard, pet_name="Xispa", town=TOWN))) == 1
+    # Where they do not back it, the name still has to be spelled.
+    for evidence in (Evidence(None, heard, pet_name="Toby"),
+                     Evidence(None, heard, pet_name="Xispa", town="Port Blau"),
+                     Evidence(ANTONIO_MOBILE, heard, pet_name="Xispa", town=TOWN)):
+        r = resolver.resolve(evidence)
+        assert (r.decision, r.ask_for) == ("ask", "confirm_name"), evidence
+
+
+def test_a_given_name_slightly_off_is_never_waved_through(resolver):
+    """Brothers and sisters share surnames, landline, pet and town: only the name differs."""
+    for evidence in (Evidence(PONS_LANDLINE, "Marta Pons Riera"),
+                     Evidence(None, "Marta Pons Riera", pet_name="Luna", town=TOWN),
+                     Evidence(MARGA_MOBILE, "Margalia Ferrer Oliver")):
+        r = resolver.resolve(evidence)
+        assert (r.decision, r.ask_for, _code(r)) == ("ask", "confirm_name", None), evidence
 
 
 def test_a_pet_name_that_only_resembles_one_on_file_must_be_confirmed(resolver):
@@ -152,7 +181,9 @@ def test_a_pet_name_that_only_resembles_one_on_file_must_be_confirmed(resolver):
 
 
 def test_typing_mistake_in_a_surname_on_file(resolver):
-    r = resolver.resolve(Evidence(DAVID_MOBILE, "David Esteve Canals"))
+    # Heard, the right surname is one sound from the one on file: his own phone backs it.
+    assert _code(resolver.resolve(Evidence(DAVID_MOBILE, "David Esteve Canals"))) == 8
+    r = resolver.resolve(Evidence(None, "David Esteve Canals", pet_name="Toby"))
     assert (r.decision, r.ask_for) == ("ask", "confirm_name")
     spelled = Evidence(DAVID_MOBILE, "David Esteve Canals", name_verified=True)
     r = resolver.resolve(spelled)
