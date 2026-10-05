@@ -153,7 +153,7 @@ def test_every_turn_reports_how_long_the_model_took(clinic, kb):
 def test_the_latency_benchmark_plays_a_whole_call(clinic, kb, scenarios):
     from vetdesk.evals.latency import caller_lines, format_timings, time_call
 
-    scenario = next(s for s in scenarios if s.category == "identity.borrowed_phone")
+    scenario = next(s for s in scenarios if s.category == "identity.hidden_number")
     lines = caller_lines(scenario)
     model = ScriptedClient([Reply("De acuerdo.", usage=Usage(1000, 10)) for _ in lines])
     timing = time_call("claude-haiku-4-5", model, clinic, kb, scenario)

@@ -274,8 +274,10 @@ def _latency(args: argparse.Namespace) -> int:
         return 1
     _load_env()
     kb = load_kb()
-    scenario = next(s for s in scenarios
-                    if s.category == "identity.borrowed_phone" and s.speech.noise == "none")
+    # A client on a hidden number, heard clearly: name, pet and town confirm them, so the
+    # fixed call goes through identification, the agenda and a booking.
+    scenario = next(s for s in scenarios if s.category == "identity.hidden_number"
+                    and s.speech.noise == "none" and s.language == "es")
     timings = []
     for model in args.models.split(","):
         print(f"{model}:")

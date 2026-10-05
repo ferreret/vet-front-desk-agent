@@ -126,7 +126,7 @@ def test_a_refused_effort_is_stepped_down_and_remembered():
 
 def test_a_400_that_no_effort_fixes_is_reported_as_it_came():
     sdk = _Sdk(*[_status_error(openai.BadRequestError, 400, text)
-                 for text in ("boom", "later", "later", "later")],
+                 for text in ("not 'none'", "not 'minimal'", "boom", "boom")],
                _reply(_chunk("Hola."), _chunk(finish="stop")))
     conversation = _start(sdk)
     with pytest.raises(LLMError) as caught:

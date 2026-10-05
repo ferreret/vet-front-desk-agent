@@ -103,11 +103,12 @@ class _Conversation:
             try:
                 stream = owner._client.chat.completions.create(**self.request(effort))
             except openai.BadRequestError as error:
-                refused = refused or error
+                refused = error
                 continue
             owner._efforts = efforts[step:]  # what was refused is not asked for again
             return stream
-        # No effort helped, so the 400 was about something else.
+        # No effort helped, so the 400 is about something else. The last refusal, with the
+        # field left out, is the one that says what: the first only complains of the value.
         raise refused
 
     def _complete(self, messages: list[dict], on_text: OnText | None) -> Reply:
