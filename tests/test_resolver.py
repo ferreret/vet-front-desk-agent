@@ -172,9 +172,17 @@ def test_the_phone_tells_homonyms_apart(resolver):
     assert _code(resolver.resolve(Evidence(ANTONIO_MOBILE, "Antonio García Martínez"))) == 3
 
 
-def test_borrowed_phone_does_not_override_name_and_pet(resolver):
+def test_from_another_clients_phone_nobody_is_confirmed(resolver):
+    """A client on a borrowed phone and a friend who knows her name, pet and town bring the
+    same evidence. The phone does not make her its owner, and does not let her be herself."""
     evidence = Evidence(ANTONIO_MOBILE, "Margalida Ferrer Oliver", pet_name="Xispa", town=TOWN)
-    assert _code(resolver.resolve(evidence)) == 1
+    r = resolver.resolve(evidence)
+    assert (r.decision, r.ask_for, _code(r)) == ("ask", None, None)
+    # It says so as soon as the name is known: there is nothing worth asking for.
+    r = resolver.resolve(Evidence(ANTONIO_MOBILE, "Margalida Ferrer Oliver"))
+    assert (r.decision, r.ask_for) == ("ask", None)
+    hidden = Evidence(None, "Margalida Ferrer Oliver", pet_name="Xispa", town=TOWN)
+    assert _code(resolver.resolve(hidden)) == 1
 
 
 def test_inherited_number_with_a_coinciding_pet_name(resolver):

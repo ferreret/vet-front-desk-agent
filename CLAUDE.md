@@ -110,6 +110,7 @@ Bloques de 90 minutos. Es mejor cerrar una fase entera que dejar tres a medias.
 - Un nombre que solo se parece al de una ficha (error típico del reconocimiento de voz) no cuenta hasta que el cliente lo confirma o lo deletrea.
 - Un nombre que no coincide con nadie significa «no es cliente», diga lo que diga el teléfono.
 - Quien no queda confirmado puede reservar una cita «sin verificar», marcada para recepción, sin leer ni escribir datos de ningún cliente. Cancelar y cambiar exigen `confirmed` **y además llamar desde un teléfono de la ficha** (decidido el 2026-10-05); si no, se toma un recado para recepción.
+- Si el número que llama está en la ficha de **otro** cliente, no se confirma a nadie por nombre, mascota y población (decidido el 2026-10-05): un cliente con el teléfono prestado y un conocido que sabe sus datos aportan las mismas pruebas. Se le atiende «sin verificar».
 - Las pruebas cuentan solo en palabras de quien llama: la herramienta rechaza un nombre, una mascota o una población que el cliente no haya dicho o deletreado.
 
 ## Lenguas (decidido el 2026-10-02)

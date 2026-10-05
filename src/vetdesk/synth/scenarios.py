@@ -89,8 +89,9 @@ NOTES = {
     "surname call from the family landline.",
     "identity.stale_phone_stranger": "The number is still on a client's record but belongs to "
     "someone else now; the caller is not that client.",
-    "identity.borrowed_phone": "A client calls from another client's phone; the number points "
-    "at the wrong person. Name, pet and town settle it.",
+    "identity.borrowed_phone": "A client calls from another client's phone. The number points "
+    "at the wrong person, and from somebody else's phone what the caller knows confirms "
+    "nobody: they book unverified.",
     "identity.changed_number": "The client's current number is not on file; name, pet and "
     "town are.",
     "identity.no_pets_with_phone": "Client with no animals on file: there is no pet to ask "
@@ -544,7 +545,7 @@ class _Generator:
             if lender is None:
                 return None
             return self._book(
-                category, client, self._own_phone(lender), "third_party_client", want="resolved"
+                category, client, self._own_phone(lender), "third_party_client", want="unresolved"
             )
 
         return self._first(self.named, build)

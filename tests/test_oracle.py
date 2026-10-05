@@ -97,9 +97,12 @@ def test_the_phone_tells_homonyms_apart(view):
     assert decide(view, ANTONIO_MOBILE, ANTONIO, None).client_id == "ANT1"
 
 
-def test_borrowed_phone_does_not_override_name_and_pet(view):
+def test_from_another_clients_phone_nobody_is_confirmed(view):
+    """A client on a borrowed phone and a friend who knows her name, pet and town bring the
+    same evidence. The phone does not make her its owner, and does not let her be herself."""
     result = decide(view, ANTONIO_MOBILE, MARGA, "Xispa", TOWN)
-    assert (result.decision, result.client_id) == ("resolved", "MARGA")
+    assert (result.decision, result.client_id) == ("ask", None)
+    assert decide(view, None, MARGA, "Xispa", TOWN).client_id == "MARGA"  # a hidden number
 
 
 def test_inherited_number_with_a_coinciding_pet_name_is_not_a_match(view):

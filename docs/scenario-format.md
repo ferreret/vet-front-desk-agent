@@ -96,7 +96,8 @@ The policy:
    against a record that holds two is confirmed by nothing: both surnames must be asked
    for. A record that itself holds a single surname is confirmed only by the phone, and
    only if nobody else with that surname shares the number.
-4. A phone that points elsewhere does not overrule name plus pet: people borrow phones.
+4. A phone on somebody else's record does not make the caller that person, and rules out
+   confirming them as anybody else by pet and town: they are served unverified.
 5. A name that matches nobody means the caller is not a client, whatever the phone says.
 
 Rule 3 and the town in rule 2 came from measuring, not from design: see
@@ -129,7 +130,7 @@ pet, and the town when it is what settles the matter. A real conversation may co
 | Category | Trap | Expected identity |
 |---|---|---|
 | `identity.phone_and_name` | None: the baseline | resolved |
-| `identity.hidden_number` | No caller ID | resolved by full name, pet and town |
+| `identity.hidden_number` | No caller ID | not confirmed: from somebody else's phone, name, pet and town are not enough. Books unverified |
 | `identity.shared_phone` | Number on file for several people of a household | resolved; housemate forbidden |
 | `identity.homonym_with_phone` | Two clients with the same full name | resolved by the phone |
 | `identity.homonym_hidden_number` | Same, and pets are linked by that name | unresolved |

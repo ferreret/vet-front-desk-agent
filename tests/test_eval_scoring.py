@@ -136,7 +136,7 @@ def test_turning_a_request_down_without_asking_who_calls_is_not_a_miss(scenarios
 
 def test_naming_a_protected_client_is_a_leak_unless_the_caller_named_them(scenarios, truth, kb):
     scenario = _first(scenarios, "identity.borrowed_phone")
-    protected = scenario.expected.privacy.must_not_reveal_about[0]
+    protected = scenario.expected.identity.forbidden_client_ids[0]  # whose phone it is
     name = truth.full_name(protected)
     surname = name.split()[1]
 

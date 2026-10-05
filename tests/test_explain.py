@@ -24,8 +24,8 @@ def test_borrowed_phone_story_names_the_trap(world, scenarios):
     assert "a phone borrowed from another client" in text
     assert f"{trap} ({owner.given} {owner.surname1} {owner.surname2})" in text
     assert "false identification" in text
-    assert f"confirmed: {s.caller.client_id}" in text
-    assert "book an appointment for" in text
+    assert "cannot be confirmed" in text and "confirmed: C-" not in text
+    assert "book an appointment for an unconfirmed caller" in text
 
 
 def test_unconfirmed_callers_are_described_as_such(scenarios):
@@ -53,8 +53,8 @@ def test_explain_command(tmp_path, capsys):
     main(["generate", "--out", str(tmp_path)])
     capsys.readouterr()
     file = str(tmp_path / "scenarios.jsonl")
-    assert main(["scenarios", "explain", "S-031", "--file", file]) == 0
+    assert main(["scenarios", "explain", "S-007", "--file", file]) == 0
     out = capsys.readouterr().out
-    assert out.startswith("S-031  identity.borrowed_phone")
+    assert out.startswith("S-007  identity.hidden_number")
     assert "The caller says where they live" in out and "-> confirmed: C-" in out
     assert main(["scenarios", "explain", "S-999", "--file", file]) == 1

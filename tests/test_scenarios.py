@@ -146,7 +146,9 @@ def test_borrowed_phone_belongs_to_another_client(world, scenarios):
         owners = world.phone_index()[s.call.caller_number]
         assert s.caller.client_id not in owners
         assert set(owners) <= set(s.expected.identity.forbidden_client_ids)
-        assert s.expected.identity.outcome == "resolved"
+        # Not the phone's owner, and not confirmable as themselves from somebody else's phone.
+        assert s.expected.identity.outcome == "unresolved"
+        assert s.identity_trace[-1].expect.decision == "ask"
 
 
 def test_changed_number_is_unknown_to_the_clinic(world, scenarios):
@@ -177,8 +179,7 @@ def test_one_surname_leads_to_a_request_for_both(scenarios):
 
 
 def test_without_the_phone_the_town_settles_it(world, scenarios):
-    for category in ("identity.hidden_number", "identity.borrowed_phone",
-                     "identity.changed_number"):
+    for category in ("identity.hidden_number", "identity.changed_number"):
         for s in _of(scenarios, category):
             last = s.identity_trace[-1]
             assert (last.evidence.type, last.expect.decision) == ("town", "resolved"), s.id

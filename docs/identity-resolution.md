@@ -34,8 +34,11 @@ compared:
 | The record itself holds a single surname | Only the phone, and only if nobody else with that surname shares the number |
 
 The calling number alone never confirms anybody. A name that matches nobody means "not a
-client", whatever the phone says. A phone that points at somebody else does not overrule
-name, pet and town: people borrow phones.
+client", whatever the phone says. A phone that points at somebody else does not make the caller
+that person, and it does not let them be confirmed as anybody else either: a client on a
+borrowed phone and an acquaintance who knows that client's name, pet and town bring exactly
+the same evidence, so from another client's phone nobody is confirmed. They are served
+unverified.
 
 Being confirmed opens the caller's data and lets them book on their record. Cancelling or
 moving an appointment asks for the phone as well: the call has to come from a number on
@@ -79,6 +82,13 @@ not. Each finding became a rule, and a scenario or test that pins it down:
 4. **Two different people do share a full name and a pet name.** Of 220,000 simulated
    callers who were not clients, 8 had the same full name and the same pet name as a
    client. Asking for the town left 3. So a pet now confirms only together with the town.
+5. **What a caller knows, a friend knows.** A caller said an appointment was a friend's;
+   the model passed the friend's name, pet and town as the caller's own and the resolver
+   confirmed the friend. The words were the caller's, so no check on the evidence catches
+   it. The calling number did: it was on the caller's own record, not the friend's. Now a
+   number on somebody else's record rules out confirming by pet and town. The price is the
+   client who really is on a borrowed phone: about 870 of the 1,200 such calls in the sweep
+   were identified before and are now served unverified.
 
 ## Results
 
@@ -88,8 +98,8 @@ Default clinic (seed 42, 400 clients), `uv run vetdesk identity eval`:
 |---|---|---|
 | False identifications | **0** | **0** |
 | Confirmed without enough evidence | 0 | 0 |
-| Identified, of those who could be | 51 / 53 | 97.6% |
-| Asked more than a perfect listener would | 2 | 0.6% |
+| Identified, of those who could be | 47 / 49 | 97.6% |
+| Asked more than a perfect listener would | 2 | 0.5% |
 
 The sweep is every client calling four ways (own phone, hidden number, giving one surname,
 borrowed phone) at three levels of speech noise, plus 2,000 callers who are not clients.

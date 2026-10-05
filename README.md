@@ -107,8 +107,8 @@ Measured with `uv run vetdesk identity eval`, on the default clinic:
 |---|---|---|
 | False identifications | **0** | **0** |
 | Confirmed without enough evidence | 0 | 0 |
-| Identified, of those who could be | 51 / 53 | 97.6% |
-| Asked more than a perfect listener would | 2 | 0.6% |
+| Identified, of those who could be | 47 / 49 | 97.6% |
+| Asked more than a perfect listener would | 2 | 0.5% |
 
 Across eleven generated clinics: 174,567 calls, 0 false identifications, 97.7% identified.
 

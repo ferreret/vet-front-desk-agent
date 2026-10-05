@@ -17,7 +17,9 @@ depends on how much of it could be compared:
 * The record itself holds a single surname: only the phone confirms it, and only when
   nobody else with that surname shares the number. A pet name cannot confirm half a name.
 
-A phone alone never confirms anybody.
+A phone alone never confirms anybody. A phone on somebody else's record rules the pet and
+the town out: a client on a borrowed phone and an acquaintance who knows their name, pet
+and town cannot be told apart.
 """
 
 from __future__ import annotations
@@ -115,6 +117,8 @@ def decide(
         return Decision("not_found", "none", None, ())
     by_the_phone = False
     on_phone = candidates & by_phone
+    # From a number on somebody else's record, what the caller knows confirms nobody.
+    anothers_phone = bool(by_phone) and not on_phone
     if on_phone:
         candidates = on_phone
         by_the_phone = all(view.phone_confirms(name, number, c) for c in on_phone)
@@ -125,6 +129,7 @@ def decide(
         (client_id,) = candidates
         by_pet_and_town = (
             bool(with_pet)
+            and not anothers_phone
             and view.full_name_matched(name, client_id)
             and view.town_matches(town, client_id)
         )
@@ -166,6 +171,7 @@ def trace(
         town and known_pet and len(last.consistent_with) == 1
         and last.consistent_with[0] in view.by_pet(known_pet)
         and view.full_name_matched(known_name, last.consistent_with[0])
+        and not (view.by_phone(number) and last.consistent_with[0] not in view.by_phone(number))
     )
     if town_could_settle_it:
         steps.append(("town", town, decide(view, number, known_name, known_pet, town)))

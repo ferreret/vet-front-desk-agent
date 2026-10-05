@@ -20,7 +20,8 @@ compared (rules learnt from measuring, not from intuition):
 * The record itself holds a single surname: only the phone confirms it, and only when
   nobody else with that surname shares the number. A pet name cannot confirm half a name.
 
-The calling number alone never confirms anybody.
+The calling number alone never confirms anybody. A number on somebody else's record rules
+the pet and the town out: from another client's phone, nobody is confirmed.
 
 Names that only resemble a record (a likely speech-recognition error) never count until
 the caller has confirmed or spelled them.
@@ -165,6 +166,11 @@ class IdentityResolver:
         if with_phone:
             pool = with_phone
             by_the_phone = all(self._phone_confirms(m, on_phone) for m in with_phone)
+        elif on_phone:
+            # The number is on somebody else's record. A client on a borrowed phone and an
+            # acquaintance giving that client's name, pet and town bring the same evidence,
+            # so neither is confirmed: what they know is not enough from another's phone.
+            return self._ask(pool, None, "the calling number is on another client's record")
         with_pet = [m for m in pool if m.pet_grade >= SOUNDS_SAME]
         if with_pet:
             pool = with_pet
