@@ -7,6 +7,8 @@ stored here.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
+from itertools import chain
 
 import httpx
 from google import genai
@@ -20,13 +22,25 @@ _REFUSALS = {"SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "RECITATION"}
 _RETRYABLE = {408, 429, 500, 502, 503, 504}
 
 
-def _thinking(model: str) -> types.ThinkingConfig | None:
-    """As little deliberation as the model allows: these are short spoken turns."""
+def _thinking_ladder(model: str) -> list[types.ThinkingConfig | None]:
+    """Ways of asking for as little deliberation as possible, least first.
+
+    These are short spoken turns. Which setting a model accepts cannot be told from its
+    name (gemini-3.8-flash refuses the MINIMAL level and takes a budget of 0;
+    gemini-3.5-flash-lite is the other way round) and the -latest aliases move, so a
+    conversation walks down this list when the API refuses one.
+    """
     if model.startswith("gemini-2.0"):
-        return None  # no thinking to configure
+        return [None]  # no thinking to configure
+    no_budget = types.ThinkingConfig(thinking_budget=0)
     if model.startswith("gemini-2.5"):
-        return types.ThinkingConfig(thinking_budget=0)
-    return types.ThinkingConfig(thinking_level=types.ThinkingLevel.MINIMAL)
+        return [no_budget, None]
+    return [
+        types.ThinkingConfig(thinking_level=types.ThinkingLevel.MINIMAL),
+        no_budget,
+        types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW),
+        None,
+    ]
 
 
 class GeminiClient:
@@ -39,6 +53,7 @@ class GeminiClient:
     ) -> None:
         self.model = model
         self.max_tokens = max_tokens
+        self._ladder = _thinking_ladder(model)
         try:
             self._client = client or genai.Client()
         except ValueError as error:
@@ -65,21 +80,13 @@ class _Conversation:
             tools=[types.Tool(function_declarations=declarations)],
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
             max_output_tokens=owner.max_tokens,
-            thinking_config=_thinking(owner.model),
         )
         self._contents: list[types.Content] = []  # append-only
         self._calls: dict[str, types.FunctionCall] = {}
 
     def send_user(self, text: str, on_text: OnText | None = None) -> Reply:
         content = types.Content(role="user", parts=[types.Part.from_text(text=text)])
-        return self._spoken(self._complete(content), on_text)
-
-    @staticmethod
-    def _spoken(reply: Reply, on_text: OnText | None) -> Reply:
-        # Not streamed yet: the text is handed over whole, once the reply is complete.
-        if reply.text and on_text:
-            on_text(reply.text)
-        return reply
+        return self._complete(content, on_text)
 
     def send_tool_results(
         self, results: list[ToolResult], on_text: OnText | None = None
@@ -91,14 +98,50 @@ class _Conversation:
                 id=call.id, name=call.name, response=json.loads(result.content)
             )
             parts.append(types.Part(function_response=answer))
-        return self._spoken(self._complete(types.Content(role="tool", parts=parts)), on_text)
+        # Tool results go back as a user turn: the API has no role of its own for them.
+        return self._complete(types.Content(role="user", parts=parts), on_text)
 
-    def _complete(self, content: types.Content) -> Reply:
+    def _open(self) -> Iterator[types.GenerateContentResponse]:
+        """Start the reply as a stream, stepping down the thinking ladder while the model
+        refuses the setting. A refusal comes before any text, so nothing is said twice."""
+        owner = self._owner
+        ladder = owner._ladder
+        refused: errors.APIError | None = None
+        for rung, thinking in enumerate(ladder):
+            try:
+                stream = iter(owner._client.models.generate_content_stream(
+                    model=owner.model,
+                    contents=self._contents,
+                    config=self.config.model_copy(update={"thinking_config": thinking}),
+                ))
+                first = next(stream, None)
+            except errors.APIError as error:
+                if error.code != 400:
+                    raise
+                refused = refused or error
+                continue
+            owner._ladder = ladder[rung:]  # what was refused is not asked for again
+            return chain([] if first is None else [first], stream)
+        # Nothing on the ladder helped, so the 400 was about something else.
+        raise refused
+
+    def _complete(self, content: types.Content, on_text: OnText | None) -> Reply:
         self._contents.append(content)
+        parts: list[types.Part] = []
+        answered, finish, usage = False, "", None
         try:
-            response = self._owner._client.models.generate_content(
-                model=self._owner.model, contents=self._contents, config=self.config
-            )
+            for chunk in self._open():
+                usage = chunk.usage_metadata or usage
+                candidate = chunk.candidates[0] if chunk.candidates else None
+                if candidate is None:
+                    continue
+                answered = True
+                if candidate.finish_reason:
+                    finish = candidate.finish_reason.name
+                for part in (candidate.content.parts or []) if candidate.content else []:
+                    parts.append(part)
+                    if part.text and not part.thought and on_text:
+                        on_text(part.text)
         except errors.APIError as error:
             self._contents.pop()  # leave the history as it was, so the turn can be retried
             raise LLMError(f"{error.code}: {error.message}", error.code in _RETRYABLE) from error
@@ -106,12 +149,10 @@ class _Conversation:
             self._contents.pop()
             raise LLMError("could not reach the provider", True) from error
 
-        candidate = response.candidates[0] if response.candidates else None
-        answer = candidate.content if candidate else None
-        parts = (answer.parts or []) if answer else []
         if parts:
-            # Keep the reply exactly as it came: it may carry signatures the API expects back.
-            self._contents.append(answer)
+            # Keep the parts exactly as they came: they may carry signatures the API
+            # expects back.
+            self._contents.append(types.Content(role="model", parts=parts))
 
         calls = []
         for part in parts:
@@ -120,19 +161,18 @@ class _Conversation:
                 call_id = call.id or f"{call.name}-{len(self._calls) + 1}"
                 self._calls[call_id] = call
                 calls.append(ToolCall(call_id, call.name, dict(call.args or {})))
-        text = " ".join(p.text.strip() for p in parts if p.text and not p.thought).strip()
+        # Pieces of one streamed sentence carry their own spaces.
+        text = "".join(p.text for p in parts if p.text and not p.thought).strip()
 
-        finish = candidate.finish_reason.name if candidate and candidate.finish_reason else ""
         if calls:
             stop = "tool_calls"
-        elif candidate is None or finish in _REFUSALS:
+        elif not answered or finish in _REFUSALS:
             stop = "refusal"
         elif finish == "MAX_TOKENS":
             stop = "max_tokens"
         else:
             stop = "end"
 
-        usage = response.usage_metadata
         cached = (usage.cached_content_token_count or 0) if usage else 0
         prompt = (usage.prompt_token_count or 0) if usage else 0
         produced = ((usage.candidates_token_count or 0) + (usage.thoughts_token_count or 0)

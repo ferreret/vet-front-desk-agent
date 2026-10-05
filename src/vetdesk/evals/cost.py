@@ -6,10 +6,17 @@ from ..llm import Usage
 
 # US dollars per million tokens (input, output), first-party API prices as of 2026-09.
 # Cached input is billed at a tenth of the input price; writing the cache at 1.25 times.
+# The Gemini prices are the list prices in Requesty's catalogue on 2026-10-05; Gemini caches
+# on its own and charges nothing for writing. The -latest aliases move: on that day they
+# pointed at the models priced here.
 PRICES = {
     "claude-sonnet-5-5": (2.0, 10.0),
     "claude-opus-5-5": (4.0, 20.0),
     "claude-haiku-4-5": (1.0, 5.0),
+    "gemini-3.8-flash": (0.75, 3.75),
+    "gemini-flash-latest": (0.75, 3.75),
+    "gemini-3.5-flash-lite": (0.30, 2.50),
+    "gemini-flash-lite-latest": (0.30, 2.50),
 }
 
 

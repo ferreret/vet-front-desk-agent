@@ -34,14 +34,15 @@ class _Sdk:
     def __init__(self, *responses):
         self._responses = list(responses)
         self.requests: list[dict] = []
-        self.models = SimpleNamespace(generate_content=self._generate)
+        self.models = SimpleNamespace(generate_content_stream=self._generate)
 
     def _generate(self, **params):
+        """One queued item per request: an error, a whole reply, or its chunks in a list."""
         self.requests.append({**params, "contents": list(params["contents"])})
         response = self._responses.pop(0)
         if isinstance(response, Exception):
             raise response
-        return response
+        return iter(response if isinstance(response, list) else [response])
 
 
 def _start(sdk, model="gemini-flash-latest"):
@@ -95,13 +96,31 @@ def test_a_tool_round_keeps_the_history_intact():
         ToolResult("list_appointments-2", '{"error": "no"}', True),
     ])
     contents = sdk.requests[1]["contents"]
-    assert [c.role for c in contents] == ["user", "model", "tool"]
-    assert contents[1] is first.candidates[0].content  # the model's turn, untouched
+    assert [c.role for c in contents] == ["user", "model", "user"]
+    said = first.candidates[0].content.parts  # the model's turn, part by part, untouched
+    assert all(kept is part for kept, part in zip(contents[1].parts, said, strict=True))
     answers = [part.function_response for part in contents[2].parts]
     assert [(a.id, a.name, a.response) for a in answers] == [
         ("id-1", "get_pets", {"pets": []}),
         (None, "list_appointments", {"error": "no"}),
     ]
+
+
+def test_text_is_handed_over_as_it_arrives():
+    chunks = [
+        _response(types.Part(text="Los sába"), finish=None),
+        _response(types.Part(text="dos abrimos "), finish=None),
+        _response(types.Part(text="a las diez."), _call("get_pets", "id-1")),
+    ]
+    sdk = _Sdk(chunks, _response(types.Part(text="Listo.")))
+    conversation, heard = _start(sdk), []
+    reply = conversation.send_user("¿Y los sábados?", heard.append)
+    assert heard == ["Los sába", "dos abrimos ", "a las diez."]
+    assert reply.text == "Los sábados abrimos a las diez." and reply.stop == "tool_calls"
+    assert reply.usage.output_tokens == 45  # the last chunk's count, not the sum
+    conversation.send_tool_results([ToolResult("id-1", "{}")])
+    model_turn = sdk.requests[1]["contents"][1]
+    assert model_turn.role == "model" and len(model_turn.parts) == 4
 
 
 def test_thoughts_are_not_spoken():
@@ -118,7 +137,36 @@ def test_blocked_and_cut_off_replies():
     assert _start(_Sdk(cut)).send_user("x").stop == "max_tokens"
 
 
-@pytest.mark.parametrize("code,retryable", [(503, True), (429, True), (400, False), (404, False)])
+def _refusal(message="Thinking level MINIMAL is not supported for this model."):
+    return errors.APIError(400, {"error": {"message": message, "status": "INVALID_ARGUMENT"}})
+
+
+def test_a_refused_thinking_setting_is_stepped_down_and_remembered():
+    sdk = _Sdk(_refusal(), _response(types.Part(text="Hola.")),
+               _response(types.Part(text="Hola.")))
+    client = GeminiClient("gemini-flash-latest", client=sdk)
+    assert client.start("SYSTEM", "CONTEXT", SPECS).send_user("Hola").text == "Hola."
+    asked = [r["config"].thinking_config for r in sdk.requests]
+    assert asked[0].thinking_level == types.ThinkingLevel.MINIMAL
+    assert (asked[1].thinking_budget, asked[1].thinking_level) == (0, None)
+    assert len(sdk.requests[1]["contents"]) == 1  # the same turn, asked again
+    client.start("SYSTEM", "CONTEXT", SPECS).send_user("Hola")
+    assert sdk.requests[2]["config"].thinking_config.thinking_budget == 0  # no second refusal
+
+
+def test_a_400_that_no_thinking_setting_fixes_is_reported_as_it_came():
+    sdk = _Sdk(_refusal("boom"), _refusal("later"), _refusal("later"), _refusal("later"),
+               _response(types.Part(text="Hola.")))
+    conversation = _start(sdk)
+    with pytest.raises(LLMError) as caught:
+        conversation.send_user("Hola")
+    assert not caught.value.retryable and "boom" in str(caught.value)
+    conversation.send_user("Hola")  # the failed turn left no trace, and nothing was unlearnt
+    assert len(sdk.requests[4]["contents"]) == 1
+    assert sdk.requests[4]["config"].thinking_config.thinking_level == types.ThinkingLevel.MINIMAL
+
+
+@pytest.mark.parametrize("code,retryable", [(503, True), (429, True), (404, False)])
 def test_provider_errors_become_llm_errors(code, retryable):
     failure = errors.APIError(code, {"error": {"message": "boom", "status": "X"}})
     sdk = _Sdk(failure, _response(types.Part(text="Hola.")))
