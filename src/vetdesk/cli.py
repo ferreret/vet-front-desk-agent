@@ -16,7 +16,6 @@ import anthropic
 from .agent import FrontDeskAgent
 from .dbguard import ForeignDatabaseError
 from .evals.calls import play
-from .evals.cost import PRICES
 from .evals.identity import Probe, format_report, probes_from_scenarios, run_probe, summarize
 from .evals.judge import judge, transcript
 from .evals.latency import format_timings, time_call
@@ -265,6 +264,12 @@ def _chat(args: argparse.Namespace) -> int:
     print(f"tokens: {total.input_tokens} in, {total.output_tokens} out, "
           f"{total.cache_read_tokens} read from cache")
     return 0
+
+
+# One model per provider, the quickest measured of each: what `vetdesk latency` times when
+# no models are named.
+LATENCY_MODELS = ("claude-sonnet-5-5", "gemini-flash-lite-latest", "gpt-5.4-mini",
+                  "lyceum/glm-5.3-flash")
 
 
 def _latency(args: argparse.Namespace) -> int:
@@ -518,7 +523,7 @@ def main(argv: list[str] | None = None) -> int:
     latency.add_argument("--data", type=Path, default=Path("data"))
     latency.add_argument("--provider", choices=PROVIDERS,
                          help="LLM provider (default: each model's own)")
-    latency.add_argument("--models", default=",".join(PRICES),
+    latency.add_argument("--models", default=",".join(LATENCY_MODELS),
                          help="comma-separated model ids, from any provider")
     latency.set_defaults(run=_latency)
 

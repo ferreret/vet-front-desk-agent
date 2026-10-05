@@ -17,6 +17,12 @@ PRICES = {
     "gemini-flash-latest": (0.75, 3.75),
     "gemini-3.5-flash-lite": (0.30, 2.50),
     "gemini-flash-lite-latest": (0.30, 2.50),
+    # OpenAI, and one model through the Requesty router: same catalogue, same day.
+    "gpt-5.4-mini": (0.75, 4.50),
+    "gpt-5.6-luna": (0.20, 1.20),
+    "gpt-6-luna": (0.10, 0.50),
+    "gpt-6-sol": (2.0, 10.0),
+    "lyceum/glm-5.3-flash": (0.20, 0.50),
 }
 
 
