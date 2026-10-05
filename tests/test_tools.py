@@ -420,6 +420,17 @@ def test_availability_needs_no_identification(clinic, kb):
                  part_of_day="any")[0]["slots"] == []
 
 
+def test_dates_in_the_past_are_refused_not_answered_with_nothing_free(clinic, kb):
+    """A model that gets the year wrong must be told so, not that the week is full."""
+    toolbox = _toolbox(clinic, kb)
+    refused, failed = _call(toolbox, "get_availability", date_from="2025-11-09",
+                            date_to="2025-11-13", part_of_day="afternoon")
+    assert failed and "in the past" in refused["error"] and "2026-11-03" in refused["error"]
+    # A range that starts before today and reaches it is still worth answering.
+    assert not _call(toolbox, "get_availability", date_from="2026-11-01",
+                     date_to="2026-11-06", part_of_day="any")[1]
+
+
 def test_free_times_are_a_sample_over_several_days_and_say_so(clinic, kb):
     """Found by the evaluation harness: given the six earliest times, all on a Monday, the
     model told callers there was nothing else that week."""

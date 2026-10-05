@@ -352,6 +352,13 @@ class Toolbox:
             raise ToolError("ask for a range of at most one month, with date_to after date_from")
         if part_of_day not in ("morning", "afternoon", "any"):
             raise ToolError("part_of_day must be morning, afternoon or any")
+        today = self.now().date()
+        if last < today:
+            # Measured: a model asked for last year's dates, was told nothing was free, and
+            # told a caller the week was full. An empty answer is not the place to hide that.
+            raise ToolError(
+                f"Those dates are in the past. Today is {WEEKDAYS_ES[today.weekday()]} "
+                f"{today.isoformat()}: ask again with the dates the caller means, this year.")
         slots = self.agenda.free_slots(first, last, part_of_day, limit=10_000)
         if not slots:
             return {"slots": [], "note": "Nothing free in that range. Offer other days."}
