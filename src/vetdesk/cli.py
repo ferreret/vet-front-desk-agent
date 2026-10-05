@@ -29,7 +29,7 @@ from .explain import Labels, explain
 from .identity import Evidence, IdentityResolver
 from .kb import load_kb
 from .legacy import LegacySqliteSource
-from .llm import PROVIDERS, LLMError, Usage, create_client, provider_of
+from .llm import DEFAULT_PROVIDER, PROVIDERS, LLMError, Usage, create_client, provider_of
 from .scenario import Scenario, dump_jsonl, load_jsonl
 from .scheduling import SqliteAgenda
 from .synth import GeneratorConfig, generate_world
@@ -204,10 +204,14 @@ def _load_env(path: Path = Path(".env")) -> None:
 
 def _explain_llm_error(error: Exception, provider: str | None, model: str | None) -> None:
     """Say what to do about the usual credential problems."""
-    if (provider or provider_of(model) or "anthropic") != "anthropic":
+    provider = (provider or provider_of(model)
+                or os.environ.get("VETDESK_LLM_PROVIDER", DEFAULT_PROVIDER))
+    key = {"anthropic": "ANTHROPIC_API_KEY", "gemini": "GEMINI_API_KEY",
+           "openai": "OPENAI_API_KEY", "requesty": "REQUESTY_API_KEY"}.get(provider)
+    if key and not os.environ.get(key):
+        print(f"Set {key} in .env to talk to the agent.", file=sys.stderr)
+    elif provider != "anthropic":
         return
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("Set ANTHROPIC_API_KEY in .env to talk to the agent.", file=sys.stderr)
     elif "workspace" in str(error) and not os.environ.get("ANTHROPIC_WORKSPACE_ID"):
         print("This key is not tied to a workspace: set ANTHROPIC_WORKSPACE_ID in .env, "
               "or use a key created inside a workspace.", file=sys.stderr)
@@ -512,8 +516,8 @@ def main(argv: list[str] | None = None) -> int:
     chat.add_argument("--now", type=datetime.fromisoformat,
                       help="when the call happens, e.g. 2026-11-03T10:15 (default: now)")
     chat.add_argument("--provider", choices=PROVIDERS,
-                      help="LLM provider (default: the model's, else anthropic)")
-    chat.add_argument("--model", help="model id, e.g. claude-sonnet-5-5 or gemini-flash-latest")
+                      help="LLM provider (default: the model's, else gemini)")
+    chat.add_argument("--model", help="model id, e.g. gemini-3.5-flash-lite or gpt-5.6-luna")
     chat.add_argument("--verbose", action="store_true", help="show the tool calls")
     chat.set_defaults(run=_chat)
 
@@ -539,7 +543,7 @@ def main(argv: list[str] | None = None) -> int:
                           help="run directory; an existing one is carried on (default: a new "
                                "one under data/runs)")
     eval_run.add_argument("--provider", choices=PROVIDERS,
-                          help="the agent's LLM provider (default: the model's, else anthropic)")
+                          help="the agent's LLM provider (default: the model's, else gemini)")
     eval_run.add_argument("--model", help="the agent's model (default: as `vetdesk chat`)")
     eval_run.add_argument("--caller-model", default="claude-haiku-4-5",
                           help="model that plays the callers")

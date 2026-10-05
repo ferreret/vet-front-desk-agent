@@ -197,3 +197,11 @@ def test_the_model_id_picks_the_provider(monkeypatch):
     assert provider_of("something-else") is None and provider_of(None) is None
     monkeypatch.setenv("GEMINI_API_KEY", "not-a-real-key")
     assert isinstance(create_client(model="gemini-2.5-flash"), GeminiClient)
+
+
+def test_with_nothing_said_the_agent_runs_on_the_model_that_was_measured(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "not-a-real-key")
+    for variable in ("VETDESK_LLM_PROVIDER", "VETDESK_LLM_MODEL"):
+        monkeypatch.delenv(variable, raising=False)
+    client = create_client()
+    assert isinstance(client, GeminiClient) and client.model == "gemini-3.5-flash-lite"

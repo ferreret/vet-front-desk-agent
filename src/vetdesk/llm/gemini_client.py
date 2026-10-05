@@ -16,7 +16,9 @@ from google.genai import errors, types
 
 from .base import LLMError, OnText, Reply, ToolCall, ToolResult, ToolSpec, Usage
 
-DEFAULT_MODEL = "gemini-flash-latest"
+# The model the evaluation was run on, by its own name: the -latest aliases move, and a
+# model nobody measured should not start answering the phone by itself.
+DEFAULT_MODEL = "gemini-3.5-flash-lite"
 
 _REFUSALS = {"SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "RECITATION"}
 _RETRYABLE = {408, 429, 500, 502, 503, 504}

@@ -173,12 +173,12 @@ vetdesk-caller: {{system__caller_id}}
 
 A tunnel to a laptop is for trying things. The image in the `Dockerfile` runs the same
 address anywhere a container runs: it holds the synthetic clinic (built from its seed) and
-no key. It needs two settings in its environment, `ANTHROPIC_API_KEY` and
-`VETDESK_ENDPOINT_KEY`, and refuses to start without the second.
+no key. It needs two settings in its environment, `GEMINI_API_KEY` (the agent's default
+model is Gemini's) and `VETDESK_ENDPOINT_KEY`, and refuses to start without the second.
 
 ```bash
 docker build -t vetdesk-endpoint .
-docker run --rm -p 8013:8013 -e ANTHROPIC_API_KEY=... -e VETDESK_ENDPOINT_KEY=... vetdesk-endpoint
+docker run --rm -p 8013:8013 -e GEMINI_API_KEY=... -e VETDESK_ENDPOINT_KEY=... vetdesk-endpoint
 ```
 
 ### What a call costs and how long it waits

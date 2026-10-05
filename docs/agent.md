@@ -79,22 +79,25 @@ or what the tools returned, get back text and tool calls. Each provider is one a
 and the conversation object keeps the provider's own message history, so reasoning blocks
 and cache markers never leak into the agent.
 
-- `AnthropicClient`: Claude models. Default `claude-sonnet-5-5`, low effort, thinking off,
-  answers streamed; `VETDESK_LLM_MODEL`, `VETDESK_LLM_EFFORT` and `VETDESK_LLM_THINKING`
-  change that.
 - `GeminiClient`: Gemini models, with thinking kept to the minimum each model allows.
+  **The default**: `gemini-3.5-flash-lite`, chosen on 2026-10-05 by playing the same
+  scenarios with models from four providers ([evaluation.md](evaluation.md)). Named by
+  its own id and not by the `-latest` alias, which moves.
+- `AnthropicClient`: Claude models (`--model claude-sonnet-5-5`), low effort, thinking off,
+  answers streamed; `VETDESK_LLM_EFFORT` and `VETDESK_LLM_THINKING` change that. The
+  first two full evaluation runs were made on it. The evaluation's simulated callers and
+  judge are still Claude models.
   Which setting that is cannot be told from a model's name, so the adapter steps down a
-  list when the API refuses one. Run against the live API since 2026-10-05.
+  list when the API refuses one.
 - `OpenAICompatClient`: anything that speaks OpenAI's chat-completions format. That is
   OpenAI's own models (`--model gpt-...`) and, at another address, the Requesty router,
   which reaches DeepSeek, GLM, Qwen, MiniMax and others (`--model zai/glm-5.3-flash`: the
-  router's ids name who serves the model). Tested against a stand-in; **not yet run
-  against the live APIs**.
+  router's ids name who serves the model). Run against both since 2026-10-05.
 - `ScriptedClient` is a model that follows a script. The agent's tests run on it: no
   network, no cost, repeatable.
 
 Adding a provider means writing one adapter and registering it in `create_client`. The
-model id picks the provider: `--model gemini-flash-latest` needs nothing else.
+model id picks the provider: `--model gpt-5.6-luna` needs nothing else.
 
 ## Trying it
 

@@ -17,6 +17,10 @@ from .base import (
 )
 
 PROVIDERS = ("anthropic", "gemini", "openai", "requesty")
+# Chosen by measuring (2026-10-05): the same scenarios played with models from four
+# providers. Gemini's small model was the only one answering inside the 1.5 s a phone call
+# allows, and what it got wrong was moved into code. See docs/evaluation.md.
+DEFAULT_PROVIDER = "gemini"
 
 
 def provider_of(model: str | None) -> str | None:
@@ -41,8 +45,8 @@ def create_client(
 ) -> LLMClient:
     """Build the client for a provider. Adding a provider means adding one adapter here.
 
-    Defaults come from VETDESK_LLM_PROVIDER, VETDESK_LLM_MODEL, VETDESK_LLM_EFFORT and
-    VETDESK_LLM_THINKING (off by default, on the models that allow switching it off). A
+    Defaults come from VETDESK_LLM_PROVIDER and VETDESK_LLM_MODEL and, for Claude models,
+    VETDESK_LLM_EFFORT and VETDESK_LLM_THINKING (off by default, where it can be). A
     model id that names its provider (claude-..., gemini-..., gpt-..., or the router's
     served-by/model form) needs no provider. `effort`
     and `thinking` override the environment, for uses other than answering the phone (a
@@ -50,7 +54,7 @@ def create_client(
     """
     model = model or os.environ.get("VETDESK_LLM_MODEL")
     provider = (provider or provider_of(model)
-                or os.environ.get("VETDESK_LLM_PROVIDER", "anthropic"))
+                or os.environ.get("VETDESK_LLM_PROVIDER", DEFAULT_PROVIDER))
     if provider == "anthropic":
         from .anthropic_client import DEFAULT_EFFORT, DEFAULT_MODEL, AnthropicClient
 
@@ -72,6 +76,6 @@ def create_client(
 
 
 __all__ = [
-    "PROVIDERS", "Conversation", "LLMClient", "LLMError", "OnText", "Reply", "ToolCall",
-    "ToolResult", "ToolSpec", "Usage", "create_client", "provider_of",
+    "DEFAULT_PROVIDER", "PROVIDERS", "Conversation", "LLMClient", "LLMError", "OnText", "Reply",
+    "ToolCall", "ToolResult", "ToolSpec", "Usage", "create_client", "provider_of",
 ]
