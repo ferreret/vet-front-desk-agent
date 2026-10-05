@@ -196,6 +196,33 @@ def test_what_the_agent_says_before_a_tool_is_heard_before_the_tool_runs(clinic,
     assert turn.first_words is not None and turn.first_words <= turn.seconds + 1
 
 
+def test_the_waiting_phrase_is_for_the_agenda_not_for_every_tool(clinic, kb):
+    """Said before working out who is calling too, a caller heard it six times in a call."""
+    who = _tool("identify_client", **{**NOTHING, "name": "Ana Mas Riera"})
+    look = _tool("get_availability", date_from="2026-11-09", date_to="2026-11-13",
+                 part_of_day="morning")
+    phrases = {"es": "Un momento, por favor.", "ca": "Un moment, si us plau."}
+
+    asked = _call(ScriptedClient([who, Reply("¿Para qué animal es la cita?")]), clinic, kb)
+    assert asked.say("Soy Ana Mas Riera.", waiting_phrase=phrases).text \
+        == "¿Para qué animal es la cita?"
+
+    # Who is calling first, then the agenda, all without a word: the phrase comes before
+    # the agenda is looked at, once, and in the caller's language.
+    heard = []
+    both = _call(ScriptedClient([who, look, Reply("Tinc dilluns al matí.")]), clinic, kb)
+    turn = both.say("Bon dia, soc Ana Mas Riera, voldria hora la setmana que ve.",
+                    heard.append, waiting_phrase=phrases)
+    assert turn.text == "Un moment, si us plau. Tinc dilluns al matí."
+    assert heard[0] == "Un moment, si us plau." and len(heard) == 2
+
+    # A model that speaks for itself before the agenda is not talked over.
+    spoke = Reply("Un momento, lo miro.", look.tool_calls, "tool_calls")
+    own = _call(ScriptedClient([spoke, Reply("Tengo el lunes.")]), clinic, kb)
+    assert own.say("Quiero una cita el lunes.", waiting_phrase=phrases).text \
+        == "Un momento, lo miro. Tengo el lunes."
+
+
 def test_a_turn_that_ends_on_a_waiting_phrase_is_made_to_go_on(clinic, kb):
     """"Un momento, lo miro", and nothing looked up: on the phone, a dead line."""
     from vetdesk.agent.agent import STILL_WAITING

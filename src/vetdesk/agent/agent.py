@@ -17,6 +17,9 @@ from .prompt import call_context, greeting, system_prompt
 from .tools import SPECS, CallSession, Toolbox, ToolEvent
 
 MAX_TOOL_ROUNDS = 6
+# The tools a person would say "one moment" before: looking at the agenda, and changing it.
+LOOKS_THINGS_UP = frozenset({"get_availability", "book_appointment", "list_appointments",
+                             "cancel_appointment", "reschedule_appointment"})
 
 # What a model says to buy time, in the two languages the agent speaks. A turn that ends on
 # one of these, with no question and little else, has promised something and done nothing.
@@ -94,10 +97,13 @@ class Call:
         agent says before running a tool ("un momento, lo miro") is heard before the tool
         runs, not after.
 
-        `waiting_phrase` is said when the model reaches for a tool without a word. Measured
-        over 82 calls, it does so in a third of the turns that use a tool, and those are the
-        four-second silences. On a voice line the caller hears this instead. Given one phrase
-        per language, the one for the caller's language is said.
+        `waiting_phrase` is said when the model reaches for the agenda without a word.
+        Measured over 82 calls, a model uses a tool in silence in a third of the turns that
+        use one, and with a slow model those were four-second silences. On a voice line the
+        caller hears this instead. Only before the agenda: said before working out who is
+        calling too, a caller heard "un momento, por favor" six times in one call, twice in
+        front of "¿me dice su nombre?". Given one phrase per language, the one for the
+        caller's language is said.
         """
         self._toolbox.heard(text)
         asked = text
@@ -131,14 +137,15 @@ class Call:
 
         reply = timed(self._conversation.send_user, asked)
         spoken, usage, requests = [reply.text], reply.usage, 1
-        if reply.tool_calls and not reply.text and waiting_phrase:
-            new_request = True
-            heard(waiting_phrase)
-            spoken.append(waiting_phrase)
 
         def use_tools() -> None:
-            nonlocal reply, usage, requests
+            nonlocal reply, usage, requests, new_request
             while reply.tool_calls:
+                looking_up = any(call.name in LOOKS_THINGS_UP for call in reply.tool_calls)
+                if waiting_phrase and looking_up and not said_something:
+                    new_request = True
+                    heard(waiting_phrase)
+                    spoken.append(waiting_phrase)
                 if requests <= MAX_TOOL_ROUNDS:
                     results = [self._toolbox.run(call) for call in reply.tool_calls]
                 elif requests == MAX_TOOL_ROUNDS + 1:
