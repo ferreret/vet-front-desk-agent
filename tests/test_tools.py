@@ -38,6 +38,8 @@ def _call(toolbox, tool, /, **arguments):
 
 
 def _identify(toolbox, **given):
+    if given.get("town"):
+        toolbox.heard(f"Vivo en {given['town']}.")  # a town counts only once the caller says it
     return _call(toolbox, "identify_client", **{**NOTHING, **given})[0]
 
 
@@ -218,6 +220,32 @@ def test_a_pets_name_counts_as_confirmed_only_if_repeated_or_spelled(clinic, kb)
     assert "error" not in _identify(spelled, pet_name="Lluna", pet_confirmed=True)
     # Unconfirmed, a name needs no backing: the resolver keeps its doubts.
     assert "error" not in _identify(_toolbox(clinic, kb), pet_name="Yuna")
+
+
+def test_a_town_the_caller_never_said_is_not_evidence(clinic, kb, scenarios):
+    scenario = next(s for s in scenarios if s.category == "identity.hidden_number"
+                    and s.speech.noise == "none")
+    toolbox = _toolbox(clinic, kb)
+    _identify(toolbox, name=scenario.caller.says_name)
+    assert _identify(toolbox, pet_name=scenario.caller.pets[0].name)["ask_for"] == "town"
+    # The model fills the town in by itself: the right one, as it happens.
+    guess = {**NOTHING, "town": scenario.caller.town}
+    refused, failed = _call(toolbox, "identify_client", **guess)
+    assert failed and "has not said that town" in refused["error"]
+    assert toolbox.session.client is None and toolbox.session.evidence.town is None
+    toolbox.heard(f"Visc a {scenario.caller.town.upper()}, al centre.")
+    confirmed, failed = _call(toolbox, "identify_client", **guess)
+    assert not failed and confirmed["status"] == "confirmed"
+
+
+def test_a_field_left_out_means_not_said(clinic, kb, scenarios):
+    scenario = _by_phone(scenarios)
+    toolbox = _toolbox(clinic, kb, scenario.call.caller_number)
+    result, failed = _call(toolbox, "identify_client", name=scenario.caller.says_name)
+    assert not failed and "status" in result
+    evidence = toolbox.session.evidence
+    assert evidence.client_name == scenario.caller.says_name and not evidence.name_verified
+    assert evidence.town is None and not evidence.pet_verified
 
 
 # --- what a confirmed caller can do ---------------------------------------------------------------
@@ -415,5 +443,5 @@ def test_bad_calls_are_answered_not_raised(clinic, kb):
     assert _call(toolbox, "get_availability", date_from="2026-11-13", date_to="2026-11-09",
                  part_of_day="any")[1]
     assert _call(toolbox, "book_appointment", start=SLOT)[1]  # missing arguments
-    assert _call(toolbox, "identify_client", name="Ana")[1]
+    assert _call(toolbox, "identify_client", name="Ana", surname="Mas")[1]  # no such field
     assert [event.is_error for event in toolbox.session.events] == [True] * 5

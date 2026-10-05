@@ -79,6 +79,10 @@ NOT_REPEATED = (
     "pet_confirmed is true, but the caller has neither spelled that name nor said it "
     "twice. Ask them to repeat or spell the pet's name."
 )
+NOT_SAID = (
+    "The caller has not said that town. Pass a town only as the caller said it, and null "
+    "until they have. If the town is needed, ask which town they live in."
+)
 ASK = {
     "client_name": "Ask for their first name and both surnames.",
     "full_name": "One surname is not enough. Ask for both surnames.",
@@ -212,14 +216,23 @@ class Toolbox:
         self.session.lines_with.update(set(fold(text).split()))
 
     def _vouched_for(self, name: str | None, spelled: bool, pet: str | None,
-                     repeated: bool) -> None:
+                     repeated: bool, town: str | None) -> None:
         """Refuse a claim the caller's own words do not back.
 
         `name_spelled` and `pet_confirmed` tell the resolver to stop doubting a name. The
         model sets them, and measured over 82 calls it vouched for names it had put back
         together wrong ("Rossellón" for R-O-S-S-E-L-L-Ó). So the claim is checked here,
         against what the caller actually said.
+
+        The town is checked too. It is one of the things that confirm a caller, and two
+        models have been measured filling it in with the clinic's own town, taken from its
+        address, when the caller had named none.
         """
+        if town:
+            words = fold(town).split()
+            said = all(self.session.lines_with[w] for w in words)
+            if not (said or was_spelled(town, self.session.spelled)):
+                raise ToolError(NOT_SAID)
         if spelled and name and not was_spelled(name, self.session.spelled):
             said = ", ".join(self.session.spelled)
             raise ToolError(NOT_SPELLED.format(
@@ -246,15 +259,17 @@ class Toolbox:
 
     def _identify_client(
         self,
-        name: str | None,
-        name_spelled: bool,
-        pet_name: str | None,
-        pet_confirmed: bool,
-        town: str | None,
+        # Not every provider sends a field it has nothing for. Left out means not said,
+        # which is the safe reading; an error here was what made a model fill in the town.
+        name: str | None = None,
+        name_spelled: bool = False,
+        pet_name: str | None = None,
+        pet_confirmed: bool = False,
+        town: str | None = None,
     ) -> dict:
         session = self.session
         if session.client is None:
-            self._vouched_for(name, name_spelled, pet_name, pet_confirmed)
+            self._vouched_for(name, name_spelled, pet_name, pet_confirmed, town)
             evidence = session.evidence
             if name:
                 same = name == evidence.client_name and evidence.name_verified
