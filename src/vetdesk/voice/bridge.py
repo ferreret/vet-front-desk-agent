@@ -64,7 +64,7 @@ class Line:
     async def answer(
         self,
         heard: str,
-        language: str = "es",
+        language: str | None = None,
         on_turn: Callable[[Turn], None] | None = None,
         turn: int | None = None,
     ) -> AsyncIterator[str]:
@@ -72,6 +72,10 @@ class Line:
 
         `turn` numbers the caller's lines, when the platform can tell: asked again for the
         same line of the same turn, the agent repeats what it said instead of redoing it.
+
+        `language` is for a platform that reports what its recogniser heard. Without it the
+        stock phrases follow the language the call itself has worked out from the caller's
+        words: a platform that says nothing must not mean Spanish for everybody.
         """
         loop = asyncio.get_running_loop()
         pieces: asyncio.Queue[str | None] = asyncio.Queue()
@@ -83,11 +87,12 @@ class Line:
 
         def work() -> None:
             try:
-                answer = self.call.say(heard, say, waiting_phrase=WAITING[language])
+                phrase = WAITING if language is None else WAITING[language]
+                answer = self.call.say(heard, say, waiting_phrase=phrase)
                 if on_turn:
                     loop.call_soon_threadsafe(on_turn, answer)
             except Exception:  # the model or the network failed: say so, do not go silent
-                say(TROUBLE[language])
+                say(TROUBLE[language or self.call.language])
             finally:
                 loop.call_soon_threadsafe(pieces.put_nowait, None)
 

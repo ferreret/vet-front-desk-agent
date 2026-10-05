@@ -147,8 +147,8 @@ def test_a_runaway_model_is_stopped_and_made_to_speak(clinic, kb):
 
 def test_the_agent_never_goes_silent(clinic, kb):
     assert _call(ScriptedClient([Reply("", stop="refusal")]), clinic, kb).say("x").text \
-        == CANNOT_HELP
-    assert _call(ScriptedClient([Reply("")]), clinic, kb).say("x").text == DID_NOT_FOLLOW
+        == CANNOT_HELP["es"]
+    assert _call(ScriptedClient([Reply("")]), clinic, kb).say("x").text == DID_NOT_FOLLOW["es"]
     cut = _call(ScriptedClient([Reply("Le cuento que", stop="max_tokens")]), clinic, kb)
     assert cut.say("x").text == "Le cuento que"
 
@@ -230,7 +230,31 @@ def test_the_agent_is_nudged_once_and_only_when_left_waiting(clinic, kb):
     assert _call(plain, clinic, kb).say("Gracias.").requests == 1
 
 
+def test_the_model_is_told_the_callers_language_when_their_words_show_it(clinic, kb):
+    """Greeted in Catalan, a model went on in Spanish. Code tells the languages apart."""
+    from vetdesk.agent.agent import LANGUAGE_NOTE
+
+    model = ScriptedClient([Reply("Bona tarda."), Reply("Digui'm."), Reply("Sí."),
+                            Reply("Claro.")])
+    call = _call(model, clinic, kb)
+    assert call.language == "es"  # the clinic answers the phone in Spanish
+    call.say("Hola, bona tarda.")
+    sent = model.transcript.user_messages
+    assert call.language == "ca" and sent[0] == f"Hola, bona tarda.\n\n{LANGUAGE_NOTE['ca']}"
+    call.say("Voldria demanar hora per al meu gos.")
+    call.say("Joan Feliu Plana.")  # a name tells nothing: the call stays in Catalan
+    assert sent[1:] == ["Voldria demanar hora per al meu gos.", "Joan Feliu Plana."]
+    assert call.language == "ca"
+    call.say("Perdone, mejor en castellano, por favor.")
+    assert call.language == "es" and sent[3].endswith(LANGUAGE_NOTE["es"])
+    # The note is the phone system's: it is not what the caller said.
+    assert "phone" not in call.session.lines_with and "system" not in call.session.lines_with
+    # The agent's own lines follow the call's language too.
+    refused = _call(ScriptedClient([Reply("", stop="refusal")]), clinic, kb)
+    assert refused.say("Bon dia, vull una cosa estranya.").text == CANNOT_HELP["ca"]
+
+
 def test_fallback_lines_are_spoken_too(clinic, kb):
     heard = []
     _call(ScriptedClient([Reply("", stop="refusal")]), clinic, kb).say("x", heard.append)
-    assert heard == [CANNOT_HELP]
+    assert heard == [CANNOT_HELP["es"]]

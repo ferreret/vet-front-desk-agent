@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 
 from ..kb import KnowledgeBase
+from ..language import spoken_language
 from ..legacy.models import Clinic
 from ..llm import Conversation, LLMClient, LLMError, OnText, ToolResult, Usage
 from ..scheduling import Agenda
@@ -32,11 +33,23 @@ def left_waiting(text: str) -> bool:
     """Whether what the model said is only a request to wait."""
     return len(text.split()) <= 8 and "?" not in text and bool(_WAITING.search(text))
 
-# Said when the model cannot produce a turn. Spanish, the clinic's default language.
-DID_NOT_FOLLOW = "Perdone, no le he entendido bien. ¿Me lo puede repetir?"
+# Said when the model cannot produce a turn, in the language of the call.
+DID_NOT_FOLLOW = {"es": "Perdone, no le he entendido bien. ¿Me lo puede repetir?",
+                  "ca": "Perdoni, no l'he entès bé. M'ho pot repetir?"}
 TOO_MANY_STEPS = '{"error": "Too many steps in one turn. Answer the caller now."}'
-CANNOT_HELP = ("Perdone, con eso no le puedo ayudar por teléfono. Si quiere, tomo nota y "
-               "recepción le llama.")
+CANNOT_HELP = {"es": "Perdone, con eso no le puedo ayudar por teléfono. Si quiere, tomo nota "
+                     "y recepción le llama.",
+               "ca": "Perdoni, amb això no el puc ajudar per telèfon. Si vol, en prenc nota i "
+                     "recepció li trucarà."}
+# Told to the model when the caller's words show which language they speak and it is not
+# the one the call was going on in. Left to itself, a model greeted in Catalan went on in
+# Spanish in a third of its answers.
+LANGUAGE_NOTE = {
+    "ca": "(Note from the phone system, not from the caller: the caller is speaking Catalan. "
+          "Answer in Catalan from now on, every sentence, until they change language.)",
+    "es": "(Note from the phone system, not from the caller: the caller is speaking Spanish. "
+          "Answer in Spanish from now on, every sentence, until they change language.)",
+}
 
 
 @dataclass(frozen=True)
@@ -63,13 +76,17 @@ class Call:
         self._conversation = conversation
         self._toolbox = toolbox
         self.greeting = greeting
+        # The language the call is going on in: the clinic answers the phone in Spanish, and
+        # the caller's own words change it.
+        self.language = "es"
 
     @property
     def session(self) -> CallSession:
         return self._toolbox.session
 
     def say(
-        self, text: str, on_text: OnText | None = None, waiting_phrase: str | None = None
+        self, text: str, on_text: OnText | None = None,
+        waiting_phrase: str | Mapping[str, str] | None = None,
     ) -> Turn:
         """The caller says something; the agent answers, using its tools as needed.
 
@@ -79,9 +96,17 @@ class Call:
 
         `waiting_phrase` is said when the model reaches for a tool without a word. Measured
         over 82 calls, it does so in a third of the turns that use a tool, and those are the
-        four-second silences. On a voice line the caller hears this instead.
+        four-second silences. On a voice line the caller hears this instead. Given one phrase
+        per language, the one for the caller's language is said.
         """
         self._toolbox.heard(text)
+        asked = text
+        language = spoken_language(text)
+        if language and language != self.language:
+            self.language = language
+            asked = f"{text}\n\n{LANGUAGE_NOTE[language]}"
+        if isinstance(waiting_phrase, Mapping):
+            waiting_phrase = waiting_phrase.get(self.language)
         events_before = len(self.session.events)
         latencies: list[float] = []
         turn_started = time.perf_counter()
@@ -104,7 +129,7 @@ class Call:
             latencies.append(time.perf_counter() - started)
             return answer
 
-        reply = timed(self._conversation.send_user, text)
+        reply = timed(self._conversation.send_user, asked)
         spoken, usage, requests = [reply.text], reply.usage, 1
         if reply.tool_calls and not reply.text and waiting_phrase:
             new_request = True
@@ -139,7 +164,8 @@ class Call:
             use_tools()
 
         answer = " ".join(part for part in spoken if part)
-        fallback = CANNOT_HELP if reply.stop == "refusal" else "" if answer else DID_NOT_FOLLOW
+        fallback = (CANNOT_HELP[self.language] if reply.stop == "refusal"
+                    else "" if answer else DID_NOT_FOLLOW[self.language])
         if fallback:  # refused, cut off or empty: never go silent
             new_request = True
             heard(fallback)

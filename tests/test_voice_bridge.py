@@ -147,5 +147,18 @@ def test_the_language_to_speak_follows_what_was_heard(code, language):
     assert language_of(code) == language
 
 
+def test_without_a_language_from_the_platform_the_stock_phrases_follow_the_caller(clinic, kb):
+    """ElevenLabs asks for answers and says nothing of the language heard: a caller who
+    speaks Catalan must not be told "un momento, por favor"."""
+    model = ScriptedClient([Reply("", (LOOKUP,), "tool_calls"), Reply("Tinc dilluns al matí.")])
+    call = _call(model, clinic, kb)
+
+    async def run():
+        return [piece async for piece in Line(call).answer("Bon dia, voldria demanar hora.")]
+
+    assert asyncio.run(run())[0] == WAITING["ca"]
+    assert call.language == "ca"
+
+
 def test_every_language_has_both_stock_phrases():
     assert set(WAITING) == set(TROUBLE) == {"es", "ca", "en", "fr", "de", "nl", "it"}

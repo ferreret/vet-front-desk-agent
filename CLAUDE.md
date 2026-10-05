@@ -42,7 +42,7 @@ Lo que funcionaba y conviene repetir, como idea y no como código:
 - **Frases de espera** antes de cada consulta, para tapar la latencia.
 - **Datos de uno en uno**, esperando la respuesta antes de pedir el siguiente.
 - **Repetir el teléfono** para confirmarlo y deletrear los correos.
-- **Detección de idioma** al vuelo.
+- **Detección de idioma** al vuelo. (Desde el 2026-10-05 la hace el código, por las palabras de quien llama, entre castellano y catalán: dejada al modelo, uno contestó en castellano a quien hablaba catalán en un tercio de las respuestas.)
 
 ## ⛔ Reglas duras
 
