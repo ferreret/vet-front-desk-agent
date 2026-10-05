@@ -104,10 +104,12 @@ def pet_grade(said: str, names_on_file: list[str], verified: bool) -> tuple[int,
     best, matched = NO_MATCH, None
     said = said.lower().strip()
     for name in names_on_file:
-        if verified:
-            grade = EXACT if fold(name) == fold(said) else NO_MATCH
-        else:
-            grade = heard_grade(said, name.lower())
+        grade = heard_grade(said, name.lower())
+        if verified and grade < SOUNDS_SAME:
+            # Confirmed, a name that only resembles this one is a different name. One that
+            # sounds the same still is this one: a caller who repeats "Kira" is heard as
+            # "Quira" both times, and confirming must never make a match worse.
+            grade = NO_MATCH
         if grade > best:
             best, matched = grade, name
     return best, matched

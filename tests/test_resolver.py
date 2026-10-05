@@ -180,6 +180,14 @@ def test_a_pet_name_that_only_resembles_one_on_file_must_be_confirmed(resolver):
     assert resolver.resolve(denied).decision == "ask"
 
 
+def test_confirming_a_pet_name_never_makes_the_match_worse(resolver):
+    """Repeated, "Kira" is heard as "Quira" both times: the same name by ear."""
+    for verified in (False, True):
+        heard = Evidence(None, "David Etseve Canals", pet_name="Quira", pet_verified=verified,
+                         town=TOWN)
+        assert _code(resolver.resolve(heard)) == 8, verified
+
+
 def test_typing_mistake_in_a_surname_on_file(resolver):
     # Heard, the right surname is one sound from the one on file: his own phone backs it.
     assert _code(resolver.resolve(Evidence(DAVID_MOBILE, "David Esteve Canals"))) == 8
