@@ -194,6 +194,19 @@ From ElevenLabs' own records of the first three calls (13 turns), through the tu
 The model is most of the wait. Our own clock put the same first words at 1.8 to 2.3 s, so
 the tunnel costs a few tenths of a second, which a server would save.
 
+On 2026-10-05 the same address moved to a server and the agent to Gemini 3.5 Flash Lite.
+One call, a whole booking in eight turns, again from ElevenLabs' records:
+
+| | Tunnel, Claude Sonnet 5.5 (13 turns) | Server, Gemini 3.5 Flash Lite (8 turns) |
+|---|---|---|
+| From the caller falling silent to the agent's voice, median | 3.2 s | **1.9 s** |
+| the same, slowest turn | 6.7 s | 2.4 s |
+| of which: our address answering its first words | 1.9 s | 1.1 s |
+| of which: the voice starting | 0.13 s | 0.12 s |
+
+One call each side, so the difference is an indication and not a measurement; and two
+things changed at once, the model and where the address runs.
+
 ElevenLabs charged 150 credits a minute for these calls, at the reduced rate it applies to
 test calls from its dashboard, and nothing for the model, since it is ours. The model's
 cost was not recorded for these calls (it is logged per answer since); in the evaluation
