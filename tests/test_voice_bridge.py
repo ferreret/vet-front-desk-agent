@@ -2,6 +2,7 @@
 
 import asyncio
 import threading
+import time
 from datetime import datetime
 
 import pytest
@@ -72,21 +73,62 @@ def test_what_is_said_before_a_tool_reaches_the_caller_while_the_turn_is_still_r
     assert in_time == [True]
 
 
-def test_a_tool_called_in_silence_gets_a_waiting_phrase(clinic, kb):
-    """Measured: in a third of the turns that use a tool the model says nothing first."""
-    silent = [Reply("", (LOOKUP,), "tool_calls"), Reply("Tengo hueco el lunes.")]
-    pieces, turns = _spoken(_call(ScriptedClient(list(silent)), clinic, kb), "Quiero una cita")
-    assert pieces == [WAITING["es"], " Tengo hueco el lunes."]
-    assert turns[0].text == f"{WAITING['es']} Tengo hueco el lunes."
+def _slow(reply, seconds=0.3):
+    """A step of the script that takes its time, as a model on a bad afternoon does."""
+    def step(transcript):
+        time.sleep(seconds)
+        return reply
+    return step
 
-    pieces, _ = _spoken(_call(ScriptedClient(list(silent)), clinic, kb), "Vull una cita", "ca")
-    assert pieces[0] == WAITING["ca"]
 
-    # A model that speaks for itself is not spoken over, and text mode has no filler.
-    talks = ScriptedClient([Reply("Lo miro.", (LOOKUP,), "tool_calls"), Reply("El lunes.")])
-    assert _spoken(_call(talks, clinic, kb), "Quiero una cita")[0] == ["Lo miro.", " El lunes."]
-    assert _call(ScriptedClient(list(silent)), clinic, kb).say("Quiero una cita").text == \
-        "Tengo hueco el lunes."
+def _waited(call, heard, patience, language=None):
+    async def collect():
+        return [piece async for piece in Line(call, patience).answer(heard, language)]
+
+    return asyncio.run(collect())
+
+
+def test_the_waiting_phrase_is_said_by_the_clock(clinic, kb):
+    """Not by what the agent is doing: said before every tool, a caller heard it six times
+    in a call; said only before the agenda, working out who was calling left four seconds
+    of silence."""
+    slow = ScriptedClient([_slow(Reply("", (LOOKUP,), "tool_calls")), Reply("Tengo el lunes.")])
+    pieces = _waited(_call(slow, clinic, kb), "Quiero una cita", patience=0.05)
+    assert pieces == [WAITING["es"] + " ", "Tengo el lunes."]
+
+    # In time, nothing is added: neither to a plain answer nor to a quick look at the agenda.
+    quick = ScriptedClient([Reply("", (LOOKUP,), "tool_calls"), Reply("Tengo el lunes.")])
+    assert _waited(_call(quick, clinic, kb), "Quiero una cita", patience=5) == ["Tengo el lunes."]
+
+    # A slow answer with no tool at all is covered too.
+    thinking = ScriptedClient([_slow(Reply("¿Me dice su nombre y sus dos apellidos?"))])
+    pieces = _waited(_call(thinking, clinic, kb), "Quiero una cita", patience=0.05)
+    assert pieces == [WAITING["es"] + " ", "¿Me dice su nombre y sus dos apellidos?"]
+
+
+def test_the_waiting_phrase_is_in_the_callers_language(clinic, kb):
+    """ElevenLabs asks for answers and says nothing of the language heard: a caller who
+    speaks Catalan must not be told "un momento, por favor"."""
+    slow = ScriptedClient([_slow(Reply("Tinc dilluns al matí."))])
+    call = _call(slow, clinic, kb)
+    pieces = _waited(call, "Bon dia, voldria demanar hora.", patience=0.05)
+    assert pieces[0] == WAITING["ca"] + " " and call.language == "ca"
+    # A platform that does report the language heard is believed.
+    told = ScriptedClient([_slow(Reply("I have Monday."))])
+    assert _waited(_call(told, clinic, kb), "Hello", 0.05, "en")[0] == WAITING["en"] + " "
+
+
+def test_an_answer_asked_for_again_repeats_the_waiting_phrase_it_was_given(clinic, kb):
+    slow = ScriptedClient([_slow(Reply("Tengo el lunes."))])
+    line = Line(_call(slow, clinic, kb), patience=0.05)
+
+    async def twice():
+        first = [piece async for piece in line.answer("Quiero una cita", turn=1)]
+        again = [piece async for piece in line.answer("Quiero una cita", turn=1)]
+        return first, again
+
+    first, again = asyncio.run(twice())
+    assert first == again == [WAITING["es"] + " ", "Tengo el lunes."]
 
 
 def test_a_broken_model_does_not_leave_the_caller_in_silence(clinic, kb):
@@ -145,19 +187,6 @@ def test_tools_run_on_the_worker_thread(clinic, kb):
 ])
 def test_the_language_to_speak_follows_what_was_heard(code, language):
     assert language_of(code) == language
-
-
-def test_without_a_language_from_the_platform_the_stock_phrases_follow_the_caller(clinic, kb):
-    """ElevenLabs asks for answers and says nothing of the language heard: a caller who
-    speaks Catalan must not be told "un momento, por favor"."""
-    model = ScriptedClient([Reply("", (LOOKUP,), "tool_calls"), Reply("Tinc dilluns al matí.")])
-    call = _call(model, clinic, kb)
-
-    async def run():
-        return [piece async for piece in Line(call).answer("Bon dia, voldria demanar hora.")]
-
-    assert asyncio.run(run())[0] == WAITING["ca"]
-    assert call.language == "ca"
 
 
 def test_every_language_has_both_stock_phrases():

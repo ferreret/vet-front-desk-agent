@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -17,9 +17,6 @@ from .prompt import call_context, greeting, system_prompt
 from .tools import SPECS, CallSession, Toolbox, ToolEvent
 
 MAX_TOOL_ROUNDS = 6
-# The tools a person would say "one moment" before: looking at the agenda, and changing it.
-LOOKS_THINGS_UP = frozenset({"get_availability", "book_appointment", "list_appointments",
-                             "cancel_appointment", "reschedule_appointment"})
 
 # What a model says to buy time, in the two languages the agent speaks. A turn that ends on
 # one of these, with no question and little else, has promised something and done nothing.
@@ -87,23 +84,12 @@ class Call:
     def session(self) -> CallSession:
         return self._toolbox.session
 
-    def say(
-        self, text: str, on_text: OnText | None = None,
-        waiting_phrase: str | Mapping[str, str] | None = None,
-    ) -> Turn:
+    def say(self, text: str, on_text: OnText | None = None) -> Turn:
         """The caller says something; the agent answers, using its tools as needed.
 
         `on_text` receives the answer piece by piece as the model writes it, so what the
         agent says before running a tool ("un momento, lo miro") is heard before the tool
         runs, not after.
-
-        `waiting_phrase` is said when the model reaches for the agenda without a word.
-        Measured over 82 calls, a model uses a tool in silence in a third of the turns that
-        use one, and with a slow model those were four-second silences. On a voice line the
-        caller hears this instead. Only before the agenda: said before working out who is
-        calling too, a caller heard "un momento, por favor" six times in one call, twice in
-        front of "¿me dice su nombre?". Given one phrase per language, the one for the
-        caller's language is said.
         """
         self._toolbox.heard(text)
         asked = text
@@ -111,8 +97,6 @@ class Call:
         if language and language != self.language:
             self.language = language
             asked = f"{text}\n\n{LANGUAGE_NOTE[language]}"
-        if isinstance(waiting_phrase, Mapping):
-            waiting_phrase = waiting_phrase.get(self.language)
         events_before = len(self.session.events)
         latencies: list[float] = []
         turn_started = time.perf_counter()
@@ -139,13 +123,8 @@ class Call:
         spoken, usage, requests = [reply.text], reply.usage, 1
 
         def use_tools() -> None:
-            nonlocal reply, usage, requests, new_request
+            nonlocal reply, usage, requests
             while reply.tool_calls:
-                looking_up = any(call.name in LOOKS_THINGS_UP for call in reply.tool_calls)
-                if waiting_phrase and looking_up and not said_something:
-                    new_request = True
-                    heard(waiting_phrase)
-                    spoken.append(waiting_phrase)
                 if requests <= MAX_TOOL_ROUNDS:
                     results = [self._toolbox.run(call) for call in reply.tool_calls]
                 elif requests == MAX_TOOL_ROUNDS + 1:

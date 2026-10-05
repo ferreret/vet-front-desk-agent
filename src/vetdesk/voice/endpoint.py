@@ -46,7 +46,7 @@ from ..legacy import LegacySqliteSource
 from ..legacy.normalize import parse_phones
 from ..llm import create_client
 from ..scheduling import SqliteAgenda
-from .bridge import Line
+from .bridge import WAITING, Line
 
 log = logging.getLogger("vetdesk.endpoint")
 
@@ -106,6 +106,18 @@ def _chunk(request_id: str, model: str, delta: dict, finish: str | None = None) 
     return f"data: {json.dumps(body, ensure_ascii=False)}\n\n".encode()
 
 
+def _buffer_words(piece: str) -> str:
+    """The waiting phrase as this platform wants a filler: ending in "... ".
+
+    Sent as an ordinary sentence, the platform held it back until the next words arrived:
+    in its own records the phrase left here at 1.0 s and was spoken at 2.5 s, with the
+    answer. Its documentation asks for an ellipsis and a space to start speaking at once.
+    """
+    if piece.strip() in WAITING.values():
+        return piece.strip().rstrip(".") + "... "
+    return piece
+
+
 def build_app(switchboard: Switchboard, key: str, model: str = "") -> web.Application:
     """`model` is the agent's own model, named only to put a price on each answer."""
     agent_model = model
@@ -145,6 +157,7 @@ def build_app(switchboard: Switchboard, key: str, model: str = "") -> web.Applic
                 answer, first = [], None
                 async for piece in line.answer(said[-1], on_turn=spent, turn=len(said)):
                     first = first if first is not None else time.perf_counter() - started
+                    piece = _buffer_words(piece)
                     answer.append(piece)
                     await response.write(_chunk(request_id, model, {"content": piece}))
                 log.info("agent (first words %.1f s, all %.1f s): %s", first or 0,

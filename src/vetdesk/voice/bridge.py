@@ -10,11 +10,16 @@ No voice library is imported here, so it is tested without one.
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import AsyncIterator, Callable
 
 from ..agent.agent import Call, Turn
 
-# Said before a tool when the model itself says nothing: on the phone, silence is a dead line.
+# Said when the caller has been waiting a while and has heard nothing: on the phone, silence
+# is a dead line. By the clock, not by what the agent is doing. Said before every tool, a
+# caller heard it six times in one call; said only before the agenda, the turn that works
+# out who is calling left four seconds of silence.
+WAIT_BEFORE_PHRASE = float(os.environ.get("VETDESK_WAIT_PHRASE_AFTER", "1.5"))
 WAITING = {
     "es": "Un momento, por favor.",
     "ca": "Un moment, si us plau.",
@@ -49,8 +54,10 @@ def language_of(code: str | None) -> str:
 class Line:
     """One call on a voice line. It answers one thing at a time, and each thing once."""
 
-    def __init__(self, call: Call) -> None:
+    def __init__(self, call: Call, patience: float = WAIT_BEFORE_PHRASE) -> None:
         self.call = call
+        # Seconds of nothing said before the waiting phrase is.
+        self.patience = patience
         # A caller can talk over the agent, and the pipeline then asks for a new answer
         # while the turn it dropped is still running its tools. The conversation with the
         # model cannot take two turns at once, so the new one waits for the old to finish.
@@ -87,8 +94,7 @@ class Line:
 
         def work() -> None:
             try:
-                phrase = WAITING if language is None else WAITING[language]
-                answer = self.call.say(heard, say, waiting_phrase=phrase)
+                answer = self.call.say(heard, say)
                 if on_turn:
                     loop.call_soon_threadsafe(on_turn, answer)
             except Exception:  # the model or the network failed: say so, do not go silent
@@ -108,5 +114,17 @@ class Line:
         # Released when the turn ends, not when the listener leaves: an interrupted answer
         # stops being heard at once, but its turn runs on to keep the conversation whole.
         loop.run_in_executor(None, work).add_done_callback(lambda _: self._busy.release())
-        while (piece := await pieces.get()) is not None:
+        try:
+            piece = await asyncio.wait_for(pieces.get(), self.patience)
+        except TimeoutError:
+            # Nothing yet. If the first words are not already on their way, ask for a moment,
+            # in the language the call has worked out by now. The space after it is what
+            # lets a voice start on the phrase without waiting for the next word.
+            piece = WAITING[language or self.call.language] + " "
+            if not said:
+                said.append(piece)
+                yield piece
+            piece = await pieces.get()
+        while piece is not None:
             yield piece
+            piece = await pieces.get()

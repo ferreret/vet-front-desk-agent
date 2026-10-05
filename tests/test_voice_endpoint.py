@@ -108,7 +108,7 @@ def test_one_conversation_is_one_call_however_often_it_is_resent(clinic, kb):
     second = _messages("Quiero una cita", "Para mi perra Kira")
     answers = _ask(app, first, second)
     assert [_spoken(stream) for _, _, stream in answers] == [
-        "¿Para qué animal?", "Un momento, por favor. Tengo hueco el lunes."]
+        "¿Para qué animal?", "Tengo hueco el lunes."]
     assert calls == [None]  # one call, not two
     assert model.transcript.user_messages == ["Quiero una cita", "Para mi perra Kira"]
 
@@ -119,8 +119,7 @@ def test_a_line_asked_for_twice_is_answered_once(clinic, kb):
     model, _, app = _front_desk(steps, clinic, kb)
     request = _messages("Quiero una cita")
     answers = _ask(app, request, request)
-    assert _spoken(answers[0][2]) == _spoken(answers[1][2]) == \
-        "Un momento, por favor. Tengo hueco el lunes."
+    assert _spoken(answers[0][2]) == _spoken(answers[1][2]) == "Tengo hueco el lunes."
     assert model.transcript.user_messages == ["Quiero una cita"]
     assert len(model.transcript.tool_results) == 1
 
@@ -160,3 +159,15 @@ def test_a_request_that_is_not_a_chat_is_refused(clinic, kb):
             return bad.status, ok.status
 
     assert asyncio.run(run()) == (400, 200)
+
+
+def test_the_waiting_phrase_leaves_as_the_platform_wants_a_filler():
+    """An ordinary sentence was held back until the next words came. An ellipsis and a
+    space is what makes the platform start speaking."""
+    from vetdesk.voice.bridge import WAITING
+    from vetdesk.voice.endpoint import _buffer_words
+
+    assert _buffer_words(WAITING["es"] + " ") == "Un momento, por favor... "
+    assert _buffer_words(WAITING["ca"] + " ") == "Un moment, si us plau... "
+    assert _buffer_words("Tengo el lunes.") == "Tengo el lunes."
+    assert _buffer_words(" Un momento, lo miro.") == " Un momento, lo miro."  # the model's own
