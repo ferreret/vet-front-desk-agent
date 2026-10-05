@@ -183,6 +183,32 @@ back together wrong, the tool refused it, and the caller was identified on the n
 what they were meant to. **A third full run has not been made**, so there is no complete
 measurement of the agent as it stands now.
 
+### Choosing the model (2026-10-05)
+
+The same scenarios, played with other models as the agent. A fixed call timed ten models
+from four providers; the four quickest then played the sixteen hardest scenarios (heavy
+recognition noise, namesakes, borrowed phones, cancelling, emergencies), without a judge:
+
+| 16 calls | Gemini 3.5 Flash Lite | GPT-5.4 mini | GPT-5.6 Luna | GLM 5.3 Flash (EU host) |
+|---|---|---|---|---|
+| False identifications | 0 | 0 | 0 | 0 |
+| Identified, of those who could be | 6 of 6 | 5 of 6 | 6 of 6 | 6 of 6 |
+| Booked, cancelled or moved as asked | 12 of 12 | 11 of 12 | 12 of 12 | 12 of 12 |
+| First words: median; within 1.5 s | 1.2 s; 92% | 1.4 s; 75% | 1.8 s; 27% | 2.0 s; 34% |
+| Model cost per call | $0.012 | $0.007 | $0.002 | $0.003 |
+
+Then a third full run, Gemini 3.5 Flash Lite with the judge: 0 false identifications, 40 of
+42 identified, 60 of 63 tasks done, first words at 1.2 s median and within 1.5 s in 94% of
+435 answers. Four failures, none about identity: a transfer promised once, a closed clinic
+recommended in an emergency, the clinic's own phone saved as the caller's, and a policy
+explained that should not have been. The first three were fixed and played again
+seventeen times with no failure; the last is open.
+
+What this comparison is not: one call per scenario and model, the hard sixteen chosen by
+hand, and the columns of the full runs differ in the identity rules, which changed that
+day. The account of the day, with what each model got wrong and the rules that came out of
+it, is in [sessions/2026-10-05.md](sessions/2026-10-05.md) (in Spanish).
+
 ### What is open
 
 - **A third full run**, for the reason just given.
