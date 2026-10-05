@@ -196,6 +196,40 @@ def test_what_the_agent_says_before_a_tool_is_heard_before_the_tool_runs(clinic,
     assert turn.first_words is not None and turn.first_words <= turn.seconds + 1
 
 
+def test_a_turn_that_ends_on_a_waiting_phrase_is_made_to_go_on(clinic, kb):
+    """"Un momento, lo miro", and nothing looked up: on the phone, a dead line."""
+    from vetdesk.agent.agent import STILL_WAITING
+
+    look = _tool("get_availability", date_from="2026-11-09", date_to="2026-11-13",
+                 part_of_day="morning")
+    model = ScriptedClient([Reply("Un momento, lo miro."), look,
+                            Reply("Tengo el lunes a las nueve y media.")])
+    call, heard = _call(model, clinic, kb), []
+    turn = call.say("Quería una cita la semana que viene por la mañana.", heard.append)
+    assert turn.text == "Un momento, lo miro. Tengo el lunes a las nueve y media."
+    assert "".join(heard) == turn.text and turn.requests == 3
+    assert [event.name for event in turn.events] == ["get_availability"]
+    # The nudge reaches the model, and is not taken for something the caller said.
+    assert model.transcript.user_messages[1] == STILL_WAITING
+    assert "silence" not in call.session.lines_with and "caller" not in call.session.lines_with
+
+
+def test_the_agent_is_nudged_once_and_only_when_left_waiting(clinic, kb):
+    from vetdesk.agent.agent import left_waiting
+
+    stubborn = ScriptedClient([Reply("Un moment, ho miro."), Reply("Un moment.")])
+    turn = _call(stubborn, clinic, kb).say("Vull una cita.")
+    assert turn.text == "Un moment, ho miro. Un moment." and turn.requests == 2
+    assert left_waiting("Gracias, Lucía. Un momento, lo miro.")
+    assert left_waiting("Ara mateix ho comprovo.")
+    for answer in ("De nada, adiós.", "¿Me espera un momento?", "Abrimos de diez a una.",
+                   "Un momento, lo miro. Tengo el lunes a las nueve y media, el martes a las "
+                   "once o el miércoles a las diez."):
+        assert not left_waiting(answer), answer
+    plain = ScriptedClient([Reply("De nada, adiós.")])
+    assert _call(plain, clinic, kb).say("Gracias.").requests == 1
+
+
 def test_fallback_lines_are_spoken_too(clinic, kb):
     heard = []
     _call(ScriptedClient([Reply("", stop="refusal")]), clinic, kb).say("x", heard.append)

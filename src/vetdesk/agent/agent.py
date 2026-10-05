@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -15,6 +16,21 @@ from .prompt import call_context, greeting, system_prompt
 from .tools import SPECS, CallSession, Toolbox, ToolEvent
 
 MAX_TOOL_ROUNDS = 6
+
+# What a model says to buy time, in the two languages the agent speaks. A turn that ends on
+# one of these, with no question and little else, has promised something and done nothing.
+_WAITING = re.compile(
+    r"\b(un momento?|un moment|un segundo|un segon|un instante?|un instant|enseguida|"
+    r"de seguida|ahora mismo|ara mateix|(lo|ho) (miro|compruebo|comprovo|consulto)|"
+    r"d[eé]jeme|deixi'm|perm[ií]tame|permeti'm)\b", re.IGNORECASE)
+STILL_WAITING = ("(Note from the phone system, not from the caller: you said you would look "
+                 "something up and stopped. The caller is waiting in silence. Do it now with "
+                 "your tools and give them the answer, without apologising.)")
+
+
+def left_waiting(text: str) -> bool:
+    """Whether what the model said is only a request to wait."""
+    return len(text.split()) <= 8 and "?" not in text and bool(_WAITING.search(text))
 
 # Said when the model cannot produce a turn. Spanish, the clinic's default language.
 DID_NOT_FOLLOW = "Perdone, no le he entendido bien. ¿Me lo puede repetir?"
@@ -94,18 +110,33 @@ class Call:
             new_request = True
             heard(waiting_phrase)
             spoken.append(waiting_phrase)
-        while reply.tool_calls:
-            if requests <= MAX_TOOL_ROUNDS:
-                results = [self._toolbox.run(call) for call in reply.tool_calls]
-            elif requests == MAX_TOOL_ROUNDS + 1:
-                # Too many rounds for one turn: answer the calls without running them, so
-                # the conversation stays well formed, and make the model speak.
-                results = [ToolResult(call.id, TOO_MANY_STEPS, True) for call in reply.tool_calls]
-            else:
-                raise LLMError("the model keeps calling tools instead of answering")
-            reply = timed(self._conversation.send_tool_results, results)
+
+        def use_tools() -> None:
+            nonlocal reply, usage, requests
+            while reply.tool_calls:
+                if requests <= MAX_TOOL_ROUNDS:
+                    results = [self._toolbox.run(call) for call in reply.tool_calls]
+                elif requests == MAX_TOOL_ROUNDS + 1:
+                    # Too many rounds for one turn: answer the calls without running them,
+                    # so the conversation stays well formed, and make the model speak.
+                    results = [ToolResult(call.id, TOO_MANY_STEPS, True)
+                               for call in reply.tool_calls]
+                else:
+                    raise LLMError("the model keeps calling tools instead of answering")
+                reply = timed(self._conversation.send_tool_results, results)
+                spoken.append(reply.text)
+                usage, requests = usage + reply.usage, requests + 1
+
+        use_tools()
+        if reply.stop == "end" and left_waiting(reply.text):
+            # "Un momento, lo miro", and the turn is over with nothing looked up. Measured:
+            # one model did it in 11 of 435 answers. On the phone that is a dead line until
+            # the caller speaks again, so the model is told once to do what it said. The
+            # note is not the caller's: it is no evidence of who they are.
+            reply = timed(self._conversation.send_user, STILL_WAITING)
             spoken.append(reply.text)
             usage, requests = usage + reply.usage, requests + 1
+            use_tools()
 
         answer = " ".join(part for part in spoken if part)
         fallback = CANNOT_HELP if reply.stop == "refusal" else "" if answer else DID_NOT_FOLLOW
