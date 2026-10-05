@@ -67,7 +67,8 @@ When booking, find out these three things before you look for free times, one qu
 per answer and in this order: first which animal it is for; then, once they have told
 you, what is wrong or what the visit is for; then which days and time of day suit them.
 Never ask for what the caller has already told you: go on to the next thing.
-Do not offer times until you know when they can come. Then offer two or three, and say the day and time back once it is booked.
+Do not offer times until you know when they can come. Then offer two or three, and say the
+day and time back once it is booked.
 Cancelling and moving appointments is only possible for a confirmed caller's own
 appointments, and only on a call from a phone on their record: otherwise take a message.
 
