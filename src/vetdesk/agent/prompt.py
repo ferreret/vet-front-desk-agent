@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from ..kb import KnowledgeBase
-from ..kb.model import WEEKDAYS_ES
+from ..kb.model import WEEKDAYS_ES, spoken_phone
 
 INSTRUCTIONS = """\
 You are the phone front desk of {clinic}, a veterinary clinic. You are on a phone call:
@@ -43,12 +43,16 @@ share phones, numbers change hands, and people call from someone else's phone.
   appointment under the name and phone they give you, or take a message.
 - General questions (opening hours, prices, services, the address) need no
   identification. Just answer them.
-- In an emergency, give the emergency number straight away. Do not ask who is calling.
+- In an emergency, do not ask who is calling. Say at once what "This call" tells you to
+  say in an emergency: it depends on whether the clinic is open right now.
 
 # What you can do
-Only what your tools do. You cannot transfer a call or put anyone through: if the caller
-wants a person, say so plainly, offer to take a message with take_message, and tell them
-reception will call back. Never promise an action that no tool performs.
+Only what your tools do. You cannot transfer a call or put anyone through, and nobody else
+will pick up this call. When the caller wants a person, say just that, in their language:
+"No puedo pasarle la llamada, pero le tomo nota y recepción le llamará" or "No li puc
+passar la trucada, però en prenc nota i recepció li trucarà". Then take the message with
+take_message. Never say that you are passing them, or their call, to anybody. Never
+promise an action that no tool performs.
 
 When booking, find out which animal it is for, why, and which days and time of day suit
 the caller, before you look for free times: do not offer times until you know when they
@@ -87,10 +91,22 @@ def greeting(kb: KnowledgeBase, now: datetime) -> str:
 def call_context(kb: KnowledgeBase, now: datetime, caller_number: str | None, said: str) -> str:
     """What is specific to this call: the time, the calling number, the greeting given."""
     number = caller_number or "hidden (no caller ID)"
-    status = "open" if kb.is_open(now) else "closed"
+    is_open = kb.is_open(now)
+    status = "open" if is_open else "closed"
+    # What to do in an emergency depends on the hour, and a model told both cases sent a
+    # caller to the closed clinic at three in the morning. It gets the one that applies.
+    emergency = spoken_phone(kb.emergency.phone)
+    if is_open:
+        urgent = (f"they can come straight to the clinic, or call the emergency number, "
+                  f"{emergency}, to say they are on their way.")
+    else:
+        urgent = (f"the clinic is closed, so they must call the emergency number, "
+                  f"{emergency}, where the vet on call answers. Do not tell them to come to "
+                  f"the clinic.")
     return (
         "# This call\n"
         f"It is {WEEKDAYS_ES[now.weekday()]}, {now:%Y-%m-%d %H:%M}. The clinic is {status} "
-        f"right now.\nCalling number: {number}.\n"
+        f"right now.\nIf the caller has an emergency: {urgent}\n"
+        f"Calling number: {number}.\n"
         f'You have already answered the phone with: "{said}"'
     )

@@ -84,6 +84,10 @@ NOT_SAID = {
     "town": "The caller has not said that town. Pass a town only as the caller said it, "
     "and null until they have. If the town is needed, ask which town they live in.",
 }
+OWN_NUMBER = (
+    "That is one of the clinic's own numbers, not the caller's. Ask the caller for a phone "
+    "number where reception can reach them, repeat it back, and call again."
+)
 NOT_FROM_THEIR_PHONE = (
     "Appointments can only be cancelled or moved on a call from a phone on the caller's "
     "record, and this call is not. Tell them you cannot do it from this number, and offer "
@@ -398,11 +402,11 @@ class Toolbox:
                         "This caller is not confirmed: contact_name and contact_phone are "
                         "required. Ask for them, repeat the phone back, and call again."
                     )
-                phones, _ = parse_phones(contact_phone)
-                if not phones:
+                phone = self._callback(contact_phone)
+                if phone is None:
                     raise ToolError("contact_phone is not a valid phone number. Ask again.")
                 booked = self.agenda.book(
-                    when, reason, pet_name, contact_name=contact_name, contact_phone=phones[0]
+                    when, reason, pet_name, contact_name=contact_name, contact_phone=phone
                 )
         except AgendaError as error:
             raise ToolError(f"{error}. Check get_availability and offer another time.") from error
@@ -458,9 +462,19 @@ class Toolbox:
 
     # --- handoff --------------------------------------------------------------------------------
 
-    def _take_message(self, message: str, contact_name: str, contact_phone: str | None) -> dict:
+    def _callback(self, contact_phone: str | None) -> str | None:
+        """The number given to reach the caller on, unless it is the clinic's own.
+
+        Measured: a caller on a hidden number left a message, the model filled in the
+        clinic's phone as theirs and told them reception would call back.
+        """
         phones, _ = parse_phones(contact_phone or "")
-        phone = phones[0] if phones else self.session.caller_number
+        if phones and phones[0] in (self.kb.clinic.phone, self.kb.emergency.phone):
+            raise ToolError(OWN_NUMBER)
+        return phones[0] if phones else None
+
+    def _take_message(self, message: str, contact_name: str, contact_phone: str | None) -> dict:
+        phone = self._callback(contact_phone) or self.session.caller_number
         if phone is None:
             raise ToolError("There is no number to call back: the caller ID is hidden. "
                             "Ask for a phone number, repeat it back, and call again.")

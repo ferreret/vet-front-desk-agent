@@ -54,6 +54,17 @@ def test_the_model_gets_the_clinic_facts_and_the_call_context(clinic, kb):
     assert len(transcript.tools) == 8
 
 
+def test_what_to_do_in_an_emergency_depends_on_the_hour_and_code_decides(kb):
+    from vetdesk.agent.prompt import call_context
+
+    open_now = call_context(kb, datetime(2026, 11, 3, 10, 15), None, "Hola")
+    assert "come straight to the clinic" in open_now and "600 555 020" in open_now
+    closed = call_context(kb, datetime(2026, 11, 8, 3, 20), None, "Hola")  # a Sunday night
+    assert "The clinic is closed" in closed and "600 555 020" in closed
+    assert "Do not tell them to come to the clinic" in closed
+    assert "come straight" not in closed
+
+
 def test_the_system_prompt_is_the_same_for_every_call(clinic, kb):
     first, second = ScriptedClient([]), ScriptedClient([])
     _call(first, clinic, kb, "+34600111222")

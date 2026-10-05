@@ -490,6 +490,20 @@ def test_messages_for_reception(clinic, kb):
     assert known.session.messages[0].contact_phone == "+34600999888"
 
 
+def test_the_clinics_own_number_is_not_where_to_reach_a_caller(clinic, kb):
+    """A model with no number for the caller fills in one it does know: the clinic's."""
+    toolbox = _toolbox(clinic, kb)  # a hidden number
+    for own in (kb.clinic.phone, "971 555 010", kb.emergency.phone):
+        refused, failed = _call(toolbox, "take_message", message="Que la llamen",
+                                contact_name="Ana", contact_phone=own)
+        assert failed and "clinic's own numbers" in refused["error"], own
+        refused, failed = _call(toolbox, "book_appointment", start=SLOT, reason="revisión",
+                                pet_name="Toby", contact_name="Ana", contact_phone=own)
+        assert failed and "clinic's own numbers" in refused["error"], own
+    assert toolbox.session.messages == []
+    assert all(event.is_error for event in toolbox.session.events)
+
+
 # --- a model that gets things wrong ---------------------------------------------------------------
 
 
