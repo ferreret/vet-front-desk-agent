@@ -17,8 +17,7 @@ from vetdesk.kb import load_kb
 from vetdesk.llm import LLMError, Reply, ToolCall, Usage
 from vetdesk.llm.scripted import ScriptedClient
 
-NOTHING = {"name": None, "name_spelled": False, "pet_name": None, "pet_confirmed": False,
-           "town": None}
+NOTHING = {"name": None, "name_spelled": False, "pet_name": None, "town": None}
 BYE = Reply("Gracias, adiós.", (ToolCall("h", HANG_UP.name, {"outcome": "done"}),), "tool_calls")
 GIVE_UP = Reply("Pues nada, adiós.", (ToolCall("h", HANG_UP.name, {"outcome": "gave_up"}),),
                 "tool_calls")

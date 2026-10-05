@@ -14,8 +14,7 @@ from vetdesk.llm.scripted import ScriptedClient
 from vetdesk.scheduling import SqliteAgenda
 
 NOW = datetime(2026, 11, 3, 10, 15)
-NOTHING = {"name": None, "name_spelled": False, "pet_name": None, "pet_confirmed": False,
-           "town": None}
+NOTHING = {"name": None, "name_spelled": False, "pet_name": None, "town": None}
 
 
 @pytest.fixture(scope="module")

@@ -19,7 +19,7 @@ from datetime import date, datetime
 
 from ..identity import Evidence, IdentityResolver, Resolution
 from ..identity.matching import SOUNDS_SAME, pet_grade
-from ..identity.spelling import spelled_words, was_spelled
+from ..identity.spelling import SPELLED_WORD, spelled_words, was_spelled
 from ..kb import KnowledgeBase
 from ..kb.model import WEEKDAYS_ES
 from ..legacy.models import Client, Clinic
@@ -75,10 +75,6 @@ NOT_SPELLED = (
     "{spelled} Pass the name exactly as it was spelled, every word of it. If they spelled "
     "only part of it, or nothing, ask them to spell their full name."
 )
-NOT_REPEATED = (
-    "pet_confirmed is true, but the caller has neither spelled that name nor said it "
-    "twice. Ask them to repeat or spell the pet's name."
-)
 NOT_SAID = {
     "name": "The caller has not said that name ({missing} was never said). Pass the name "
     "exactly as you heard it, even if it looks misheard: do not correct it. If it may be "
@@ -100,7 +96,7 @@ ASK = {
     "their full name, then call identify_client again with name_spelled=true.",
     "pet_name": "Ask for the name of one of their pets.",
     "confirm_pet": "The pet's name was not understood well enough. Ask them to repeat or "
-    "spell it, then call identify_client again with pet_confirmed=true.",
+    "spell it, then call identify_client again with what they say.",
     "town": "Ask which town they live in.",
 }
 UNCONFIRMED = (
@@ -142,9 +138,8 @@ SPECS = [
             "name": {**_NULLABLE_TEXT, "description": "First name and surnames, as heard."},
             "name_spelled": {"type": "boolean",
                              "description": "True only if the caller spelled the name out."},
-            "pet_name": {**_NULLABLE_TEXT, "description": "Name of one of their pets."},
-            "pet_confirmed": {"type": "boolean",
-                              "description": "True only if they repeated or spelled it."},
+            "pet_name": {**_NULLABLE_TEXT,
+                         "description": "Name of one of their pets, as heard."},
             "town": {**_NULLABLE_TEXT, "description": "The town they say they live in."},
         }),
     ),
@@ -228,13 +223,13 @@ class Toolbox:
         self.session.lines_with.update(set(fold(text).split()))
 
     def _vouched_for(self, name: str | None, spelled: bool, pet: str | None,
-                     repeated: bool, town: str | None) -> None:
+                     town: str | None) -> None:
         """Refuse a claim the caller's own words do not back.
 
-        `name_spelled` and `pet_confirmed` tell the resolver to stop doubting a name. The
-        model sets them, and measured over 82 calls it vouched for names it had put back
-        together wrong ("Rossellón" for R-O-S-S-E-L-L-Ó). So the claim is checked here,
-        against what the caller actually said.
+        `name_spelled` tells the resolver to stop doubting a name. The model sets it, and
+        measured over 82 calls it vouched for names it had put back together wrong
+        ("Rossellón" for R-O-S-S-E-L-L-Ó). So the claim is checked here, against what the
+        caller actually said.
 
         The evidence itself is checked too: a name, a pet's name or a town counts only in
         the caller's own words. Two models have been measured filling the town in with the
@@ -245,10 +240,6 @@ class Toolbox:
             said = ", ".join(self.session.spelled)
             raise ToolError(NOT_SPELLED.format(
                 spelled=f"They spelled: {said}." if said else "They have spelled nothing."))
-        if repeated and pet:
-            said_twice = all(self.session.lines_with[w] >= 2 for w in fold(pet).split())
-            if not (said_twice or was_spelled(pet, self.session.spelled)):
-                raise ToolError(NOT_REPEATED)
         spelt = {fold(word) for word in self.session.spelled}
         for which, value in (("name", name), ("pet_name", pet), ("town", town)):
             if not value or was_spelled(value, self.session.spelled):
@@ -280,12 +271,21 @@ class Toolbox:
         name: str | None = None,
         name_spelled: bool = False,
         pet_name: str | None = None,
-        pet_confirmed: bool = False,
         town: str | None = None,
     ) -> dict:
         session = self.session
         if session.client is None:
-            self._vouched_for(name, name_spelled, pet_name, pet_confirmed, town)
+            name, pet_name, town = _given(name), _given(pet_name), _given(town)
+            if name:
+                # A model may hand the spelling over as it came: "X-I-S-C-A R-U-I-Z".
+                name = SPELLED_WORD.sub(lambda letters: letters.group().replace("-", ""), name)
+                name_spelled = name_spelled or was_spelled(name, session.spelled)
+            self._vouched_for(name, name_spelled, pet_name, town)
+            # Whether a pet's name was repeated or spelled is read off the caller's words,
+            # not asked of the model: one model said yes on first hearing in half its calls.
+            pet_confirmed = bool(pet_name) and (
+                all(session.lines_with[w] >= 2 for w in fold(pet_name).split())
+                or was_spelled(pet_name, session.spelled))
             evidence = session.evidence
             if name:
                 same = name == evidence.client_name and evidence.name_verified
@@ -471,6 +471,13 @@ class Toolbox:
         return {"status": "message_taken",
                 "instructions": "Tell the caller reception will call them back. Do not "
                 "promise when, and do not say you are transferring the call."}
+
+
+def _given(value: str | None) -> str | None:
+    """What a model passed for a field, with its ways of saying "nothing" read as nothing."""
+    if value is None or value.strip().lower() in ("", "null", "none"):
+        return None
+    return value.strip()
 
 
 def _display(client: Client) -> str:

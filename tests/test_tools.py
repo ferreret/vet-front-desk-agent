@@ -19,8 +19,7 @@ from vetdesk.scheduling import Appointment, SqliteAgenda
 
 NOW = datetime(2026, 11, 3, 10, 15)
 SLOT = "2026-11-09T09:30"
-NOTHING = {"name": None, "name_spelled": False, "pet_name": None, "pet_confirmed": False,
-           "town": None}
+NOTHING = {"name": None, "name_spelled": False, "pet_name": None, "town": None}
 
 
 @pytest.fixture(scope="module")
@@ -209,18 +208,35 @@ def test_the_model_cannot_vouch_for_a_name_the_caller_did_not_spell(clinic, kb, 
 
 
 def test_a_pets_name_counts_as_confirmed_only_if_repeated_or_spelled(clinic, kb):
+    """The tool reads it off the caller's words: there is no flag for the model to set."""
+    def passed(toolbox, pet):
+        assert not _call(toolbox, "identify_client", **{**NOTHING, "pet_name": pet})[1]
+        return toolbox.session.evidence.pet_verified
+
     toolbox = _toolbox(clinic, kb)
     toolbox.heard("Es para Yuna.")
-    refused, failed = _call(toolbox, "identify_client", **{**NOTHING, "pet_name": "Yuna",
-                                                           "pet_confirmed": True})
-    assert failed and "neither spelled that name nor said it twice" in refused["error"]
+    assert not passed(toolbox, "Yuna")
     toolbox.heard("Sí, Yuna.")
-    assert "error" not in _identify(toolbox, pet_name="Yuna", pet_confirmed=True)
+    assert passed(toolbox, "Yuna")
     spelled = _toolbox(clinic, kb)
-    spelled.heard("L-L-U-N-A")
-    assert "error" not in _identify(spelled, pet_name="Lluna", pet_confirmed=True)
-    # Unconfirmed, a name needs no backing: the resolver keeps its doubts.
-    assert "error" not in _identify(_toolbox(clinic, kb), pet_name="Yuna")
+    spelled.heard("Para Lluna: L-L-U-N-A")
+    assert passed(spelled, "Lluna")
+    assert "pet_confirmed" not in SPECS[0].parameters["properties"]
+
+
+def test_what_a_model_passes_is_read_generously(clinic, kb, scenarios):
+    """The word "null" for nothing, and a spelling handed over letter by letter."""
+    scenario = _by_phone(scenarios)
+    toolbox = _toolbox(clinic, kb, scenario.call.caller_number)
+    result, failed = _call(toolbox, "identify_client",
+                           **{**NOTHING, "name": "null", "town": "None", "pet_name": ""})
+    assert not failed and result["ask_for"] == "client_name"
+    name = scenario.caller.says_name
+    letters = " ".join("-".join(word.upper()) for word in name.split())
+    toolbox.heard(letters)
+    assert not _call(toolbox, "identify_client", **{**NOTHING, "name": letters})[1]
+    evidence = toolbox.session.evidence
+    assert fold(evidence.client_name) == fold(name) and evidence.name_verified
 
 
 def test_a_town_the_caller_never_said_is_not_evidence(clinic, kb, scenarios):
