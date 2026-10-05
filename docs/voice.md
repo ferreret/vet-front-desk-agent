@@ -226,14 +226,16 @@ line cannot behave differently from what was measured in text.
 
 ## What the voice line adds to the agent
 
-- **A waiting phrase of its own, said by the clock.** If the caller has heard nothing
-  1.5 s after the agent was asked (`VETDESK_WAIT_PHRASE_AFTER`), it says "un momento, por
-  favor" in the caller's language. Two earlier rules were measured and dropped. Said before
-  every tool the model used in silence, a caller heard it six times in one call, twice in
-  front of a plain question. Said only before the agenda, the turn that works out who is
-  calling left 3.9 s of silence. For ElevenLabs the phrase leaves ending in "... ": sent as
-  an ordinary sentence it was held back until the next words came, and never covered a
-  wait.
+- **A filler for long waits, said by whoever can say it at once.** Three versions of a
+  waiting phrase of our own were measured on calls and dropped. Said before every tool the
+  model used in silence, a caller heard "un momento, por favor" six times in one call. Said
+  only before the agenda, the turn that works out who is calling left 3.9 s of silence. Said
+  by the clock, it still did not cover the wait: ElevenLabs holds back whatever it is sent
+  until more text follows, so the phrase left our address at 2.0 s and was spoken at 2.8 s,
+  with the answer. On that route the platform's own filler is used instead (its "soft
+  timeout": after 2 s without an answer it says "Mmm...", no word of any language, since
+  the agent is set up in Spanish only). The phrase by the clock, in the caller's language,
+  remains for the LiveKit route, where nothing else fills a silence.
 - **One turn at a time.** A caller can talk over the agent. The answer stops being heard at
   once, but the turn it belonged to runs on, so that a tool that was called still gets its
   result into the conversation; the next answer waits for it.

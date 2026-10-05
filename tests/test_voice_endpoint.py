@@ -161,13 +161,24 @@ def test_a_request_that_is_not_a_chat_is_refused(clinic, kb):
     assert asyncio.run(run()) == (400, 200)
 
 
-def test_the_waiting_phrase_leaves_as_the_platform_wants_a_filler():
-    """An ordinary sentence was held back until the next words came. An ellipsis and a
-    space is what makes the platform start speaking."""
-    from vetdesk.voice.bridge import WAITING
-    from vetdesk.voice.endpoint import _buffer_words
+def test_no_waiting_phrase_of_ours_on_this_route(clinic, kb):
+    """The platform fills its own silences; a phrase from here was only ever spoken late."""
+    import time
 
-    assert _buffer_words(WAITING["es"] + " ") == "Un momento, por favor... "
-    assert _buffer_words(WAITING["ca"] + " ") == "Un moment, si us plau... "
-    assert _buffer_words("Tengo el lunes.") == "Tengo el lunes."
-    assert _buffer_words(" Un momento, lo miro.") == " Un momento, lo miro."  # the model's own
+    def slow(transcript):
+        time.sleep(0.2)
+        return Reply("Tengo hueco el lunes.")
+
+    _, _, app = _front_desk([slow], clinic, kb)
+    (_, _, stream), = _ask(app, _messages("Quiero una cita"))
+    assert _spoken(stream) == "Tengo hueco el lunes."
+
+
+def test_the_platform_is_asked_to_fill_long_waits_itself(monkeypatch):
+    from vetdesk.voice.elevenlabs_agent import config
+
+    monkeypatch.setenv("VETDESK_TTS_VOICE", "voice")
+    turn = config("https://example.test", "secret")["conversation_config"]["turn"]
+    assert turn["soft_timeout_config"] == {"timeout_seconds": 2.0, "message": "Mmm...",
+                                           "use_llm_generated_message": False}
+    assert turn["speculative_turn"] is False

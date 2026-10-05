@@ -54,9 +54,10 @@ def language_of(code: str | None) -> str:
 class Line:
     """One call on a voice line. It answers one thing at a time, and each thing once."""
 
-    def __init__(self, call: Call, patience: float = WAIT_BEFORE_PHRASE) -> None:
+    def __init__(self, call: Call, patience: float | None = WAIT_BEFORE_PHRASE) -> None:
         self.call = call
-        # Seconds of nothing said before the waiting phrase is.
+        # Seconds of nothing said before the waiting phrase is. None: never, for a platform
+        # that fills its own silences.
         self.patience = patience
         # A caller can talk over the agent, and the pipeline then asks for a new answer
         # while the turn it dropped is still running its tools. The conversation with the
