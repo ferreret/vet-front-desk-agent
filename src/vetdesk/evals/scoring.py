@@ -126,7 +126,9 @@ def _evidence(record: CallRecord) -> tuple[list[str], list[str]]:
                 value = given.get(field)
                 if value and _tokens(value) - heard - spelled_tokens \
                         and not was_spelled(value, spelled):
-                    not_heard.append(f"turn {turn}: {field} {value!r}")
+                    # The tool turns these away too, since it started checking them.
+                    refused = " (refused by the tool)" if tool.is_error else ""
+                    not_heard.append(f"turn {turn}: {field} {value!r}{refused}")
             name, pet = given.get("name"), given.get("pet_name")
             claims = []
             if given.get("name_spelled") and name and not was_spelled(name, spelled):

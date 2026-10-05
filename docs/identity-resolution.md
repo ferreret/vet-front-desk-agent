@@ -37,6 +37,11 @@ The calling number alone never confirms anybody. A name that matches nobody mean
 client", whatever the phone says. A phone that points at somebody else does not overrule
 name, pet and town: people borrow phones.
 
+Being confirmed opens the caller's data and lets them book on their record. Cancelling or
+moving an appointment asks for the phone as well: the call has to come from a number on
+that record (see [agent.md](agent.md)). What a caller knows can be known by somebody else;
+what cannot be undone asks for something they have.
+
 ## Names arrive through speech recognition
 
 Each word of a name is graded against the record:

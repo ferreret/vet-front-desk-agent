@@ -24,6 +24,14 @@ that the identity resolver has confirmed the caller. Until then:
   stop the resolver doubting a name: `name_spelled` and `pet_confirmed`. Each is checked
   against the caller's own words, and a claim they do not back is refused. In text, a
   name counts as spelled when written as letters joined by hyphens: `M-A-R-T-A P-O-N-S`.
+- The evidence itself has to be in the caller's words too. A name, a pet's name or a town
+  the caller never said is refused: two models were measured filling in the town with the
+  clinic's own, read off its address, and one turning a misheard "Yoaquín" into "Joaquín".
+- Cancelling and moving need more than being confirmed: the call has to come from a phone
+  on the caller's record. Name, pet and town are things a friend knows. Measured: a caller
+  said an appointment was a friend's, the model passed the friend's details as the
+  caller's own, and the friend's appointment was cancelled. Without the phone the agent
+  takes a message for reception.
 
 The same rule holds for what the caller will act on. Days and times reach the model
 already in words, in Spanish and Catalan, built by code; phone numbers come as they are
@@ -42,7 +50,7 @@ appears in any answer before confirmation.
 | `book_appointment` | No: an unconfirmed caller books under the name and phone they give, flagged for reception |
 | `take_message` | No |
 | `get_pets`, `list_appointments` | Yes |
-| `cancel_appointment`, `reschedule_appointment` | Yes, and only the caller's own |
+| `cancel_appointment`, `reschedule_appointment` | Yes, only the caller's own, and only on a call from a phone on their record |
 
 There is deliberately **no tool to transfer a call**. The 2025 pilot promised "I'll put
 you through to reception" without being able to. This agent cannot promise what it cannot

@@ -79,9 +79,19 @@ NOT_REPEATED = (
     "pet_confirmed is true, but the caller has neither spelled that name nor said it "
     "twice. Ask them to repeat or spell the pet's name."
 )
-NOT_SAID = (
-    "The caller has not said that town. Pass a town only as the caller said it, and null "
-    "until they have. If the town is needed, ask which town they live in."
+NOT_SAID = {
+    "name": "The caller has not said that name ({missing} was never said). Pass the name "
+    "exactly as you heard it, even if it looks misheard: do not correct it. If it may be "
+    "wrong, ask them to spell it.",
+    "pet_name": "The caller has not said that pet's name ({missing} was never said). Pass "
+    "it exactly as you heard it, without correcting it, or ask them to repeat or spell it.",
+    "town": "The caller has not said that town. Pass a town only as the caller said it, "
+    "and null until they have. If the town is needed, ask which town they live in.",
+}
+NOT_FROM_THEIR_PHONE = (
+    "Appointments can only be cancelled or moved on a call from a phone on the caller's "
+    "record, and this call is not. Tell them you cannot do it from this number, and offer "
+    "to take a message so that reception calls them back (take_message)."
 )
 ASK = {
     "client_name": "Ask for their first name and both surnames.",
@@ -172,12 +182,14 @@ SPECS = [
     ),
     ToolSpec(
         "cancel_appointment",
-        "Cancel one of the confirmed caller's own appointments.",
+        "Cancel one of the confirmed caller's own appointments. Only on a call from a phone "
+        "on their record.",
         _schema({"appointment_id": {"type": "string"}}),
     ),
     ToolSpec(
         "reschedule_appointment",
-        "Move one of the confirmed caller's own appointments to a free time.",
+        "Move one of the confirmed caller's own appointments to a free time. Only on a call "
+        "from a phone on their record.",
         _schema({
             "appointment_id": {"type": "string"},
             "new_start": {"type": "string", "description": "YYYY-MM-DDTHH:MM."},
@@ -224,15 +236,11 @@ class Toolbox:
         together wrong ("Rossellón" for R-O-S-S-E-L-L-Ó). So the claim is checked here,
         against what the caller actually said.
 
-        The town is checked too. It is one of the things that confirm a caller, and two
-        models have been measured filling it in with the clinic's own town, taken from its
-        address, when the caller had named none.
+        The evidence itself is checked too: a name, a pet's name or a town counts only in
+        the caller's own words. Two models have been measured filling the town in with the
+        clinic's own, taken from its address, and one turning a misheard "Yoaquín" into
+        "Joaquín", which the resolver then took for a name heard clearly.
         """
-        if town:
-            words = fold(town).split()
-            said = all(self.session.lines_with[w] for w in words)
-            if not (said or was_spelled(town, self.session.spelled)):
-                raise ToolError(NOT_SAID)
         if spelled and name and not was_spelled(name, self.session.spelled):
             said = ", ".join(self.session.spelled)
             raise ToolError(NOT_SPELLED.format(
@@ -241,6 +249,14 @@ class Toolbox:
             said_twice = all(self.session.lines_with[w] >= 2 for w in fold(pet).split())
             if not (said_twice or was_spelled(pet, self.session.spelled)):
                 raise ToolError(NOT_REPEATED)
+        spelt = {fold(word) for word in self.session.spelled}
+        for which, value in (("name", name), ("pet_name", pet), ("town", town)):
+            if not value or was_spelled(value, self.session.spelled):
+                continue
+            missing = [w for w in fold(value).split()
+                       if not self.session.lines_with[w] and w not in spelt]
+            if missing:
+                raise ToolError(NOT_SAID[which].format(missing=", ".join(missing)))
 
     def run(self, call: ToolCall) -> ToolResult:
         handler = getattr(self, f"_{call.name}", None)
@@ -284,12 +300,14 @@ class Toolbox:
             if session.resolution.decision == "resolved":
                 session.client = session.resolution.client
         if session.client is not None:
-            return {
-                "status": "confirmed",
-                "client_name": _display(session.client),
-                "instructions": "The caller is confirmed. Their data and appointments are "
-                "now available through the other tools.",
-            }
+            instructions = ("The caller is confirmed. Their data and appointments are now "
+                            "available through the other tools.")
+            if not self._on_their_phone():
+                instructions += (" This call is not from a phone on their record, so their "
+                                 "appointments cannot be cancelled or moved on it: if they "
+                                 "ask for that, take a message for reception instead.")
+            return {"status": "confirmed", "client_name": _display(session.client),
+                    "instructions": instructions}
         resolution = session.resolution
         if resolution.decision == "not_found":
             return {"status": "not_a_client", "instructions": NOT_A_CLIENT}
@@ -407,12 +425,31 @@ class Toolbox:
         client = self._confirmed()
         return {"appointments": [_summary(a) for a in self.agenda.for_client(client.code)]}
 
-    def _cancel_appointment(self, appointment_id: str) -> dict:
+    def _on_their_phone(self) -> bool:
+        """Whether the call comes from a phone on the confirmed caller's record."""
+        client = self.session.client
+        on_phone = self.clinic.clients_by_phone(self.session.caller_number)
+        return client is not None and any(c.code == client.code for c in on_phone)
+
+    def _may_change(self, appointment_id: str) -> None:
+        """Cancelling and moving need the phone as well as the name.
+
+        A name, a pet and a town are things a friend knows. Measured: a caller said the
+        appointment was a friend's, the model passed the friend's details as the caller's,
+        the resolver confirmed the friend and the appointment was cancelled. What cannot be
+        undone therefore asks for something the caller has, not only something they know.
+        """
+        self._confirmed()
+        if not self._on_their_phone():
+            raise ToolError(NOT_FROM_THEIR_PHONE)
         self._own(appointment_id)
+
+    def _cancel_appointment(self, appointment_id: str) -> dict:
+        self._may_change(appointment_id)
         return {"status": "cancelled", **_summary(self.agenda.cancel(appointment_id))}
 
     def _reschedule_appointment(self, appointment_id: str, new_start: str) -> dict:
-        self._own(appointment_id)
+        self._may_change(appointment_id)
         try:
             moved = self.agenda.reschedule(appointment_id, _moment(new_start))
         except AgendaError as error:

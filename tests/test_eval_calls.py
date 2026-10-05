@@ -215,7 +215,7 @@ def test_an_agent_that_claims_a_spelling_it_never_got_is_caught(scenarios, clini
     assert record.exchanges[0].tools[0].is_error and record.confirmed_client_code is None
     assert verdict.unsupported_verifications == []
     assert verdict.evidence_not_heard == [
-        f"turn 1: name {said!r}",
+        f"turn 1: name {said!r} (refused by the tool)",
         f"turn 1: name_spelled for {said!r}, never spelled (refused by the tool)"]
     assert not any("verification not given" in failure for failure in verdict.failures)
 

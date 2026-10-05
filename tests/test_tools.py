@@ -38,8 +38,9 @@ def _call(toolbox, tool, /, **arguments):
 
 
 def _identify(toolbox, **given):
-    if given.get("town"):
-        toolbox.heard(f"Vivo en {given['town']}.")  # a town counts only once the caller says it
+    for said in ("name", "pet_name", "town"):  # evidence counts only in the caller's words
+        if given.get(said):
+            toolbox.heard(given[said])
     return _call(toolbox, "identify_client", **{**NOTHING, **given})[0]
 
 
@@ -238,9 +239,25 @@ def test_a_town_the_caller_never_said_is_not_evidence(clinic, kb, scenarios):
     assert not failed and confirmed["status"] == "confirmed"
 
 
+def test_a_name_the_model_corrected_is_not_what_the_caller_said(clinic, kb):
+    toolbox = _toolbox(clinic, kb)
+    toolbox.heard("Me llamo Yoaquín Ortega Roca, llamo por mi gata Yuna.")
+    fixed, failed = _call(toolbox, "identify_client", **{**NOTHING, "name": "Joaquín Ortega Roca"})
+    assert failed and "joaquin was never said" in fixed["error"]
+    fixed, failed = _call(toolbox, "identify_client", **{**NOTHING, "pet_name": "Lluna"})
+    assert failed and "lluna was never said" in fixed["error"]
+    assert toolbox.session.evidence.client_name is None
+    as_heard = {**NOTHING, "name": "Yoaquín Ortega Roca", "pet_name": "Yuna"}
+    assert not _call(toolbox, "identify_client", **as_heard)[1]
+    # Spelled out, the words need not have been said whole.
+    toolbox.heard("J-O-A-Q-U-Í-N")
+    assert not _call(toolbox, "identify_client", **{**NOTHING, "name": "Joaquín Ortega Roca"})[1]
+
+
 def test_a_field_left_out_means_not_said(clinic, kb, scenarios):
     scenario = _by_phone(scenarios)
     toolbox = _toolbox(clinic, kb, scenario.call.caller_number)
+    toolbox.heard(f"Soy {scenario.caller.says_name}.")
     result, failed = _call(toolbox, "identify_client", name=scenario.caller.says_name)
     assert not failed and "status" in result
     evidence = toolbox.session.evidence
@@ -328,6 +345,31 @@ def test_cancelling_and_moving_own_appointments(confirmed):
     cancelled, failed = _call(toolbox, "cancel_appointment", appointment_id=own.appointment_id)
     assert not failed and cancelled["status"] == "cancelled"
     assert _call(toolbox, "list_appointments")[0] == {"appointments": []}
+    assert "take a message" not in _identify(toolbox)["instructions"]  # their own phone
+
+
+def test_cancelling_and_moving_need_a_call_from_a_phone_on_the_record(clinic, kb, scenarios):
+    """Name, pet and town are things a friend knows: enough to be served, not to undo."""
+    scenario = next(s for s in scenarios if s.category == "identity.hidden_number"
+                    and s.speech.noise == "none")
+    toolbox = _toolbox(clinic, kb)  # a hidden number
+    _identify(toolbox, name=scenario.caller.says_name)
+    _identify(toolbox, pet_name=scenario.caller.pets[0].name)
+    confirmed = _identify(toolbox, town=scenario.caller.town)
+    assert confirmed["status"] == "confirmed" and "take a message" in confirmed["instructions"]
+    own = toolbox.agenda.book(datetime(2026, 11, 10, 17, 0), "revisión",
+                              scenario.caller.pets[0].name,
+                              client_code=toolbox.session.client.code)
+    listed, _ = _call(toolbox, "list_appointments")
+    assert [a["appointment_id"] for a in listed["appointments"]] == [own.appointment_id]
+    refused, failed = _call(toolbox, "cancel_appointment", appointment_id=own.appointment_id)
+    assert failed and "take_message" in refused["error"]
+    # The same answer for an appointment that is not theirs or does not exist.
+    assert _call(toolbox, "cancel_appointment", appointment_id="AP-0999")[0] == refused
+    assert _call(toolbox, "reschedule_appointment", appointment_id=own.appointment_id,
+                 new_start="2026-11-11T11:00") == (refused, True)
+    kept = toolbox.agenda.get(own.appointment_id)
+    assert kept.status == "booked" and kept.start == datetime(2026, 11, 10, 17, 0)
 
 
 def test_somebody_elses_appointment_cannot_be_touched_or_detected(confirmed):
