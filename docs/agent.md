@@ -80,8 +80,13 @@ and cache markers never leak into the agent.
   answers streamed; `VETDESK_LLM_MODEL`, `VETDESK_LLM_EFFORT` and `VETDESK_LLM_THINKING`
   change that.
 - `GeminiClient`: Gemini models, with thinking kept to the minimum each model allows.
-  Written from the SDK's documentation and tested against a stand-in; **not yet run against
-  the live API**.
+  Which setting that is cannot be told from a model's name, so the adapter steps down a
+  list when the API refuses one. Run against the live API since 2026-10-05.
+- `OpenAICompatClient`: anything that speaks OpenAI's chat-completions format. That is
+  OpenAI's own models (`--model gpt-...`) and, at another address, the Requesty router,
+  which reaches DeepSeek, GLM, Qwen, MiniMax and others (`--model zai/glm-5.3-flash`: the
+  router's ids name who serves the model). Tested against a stand-in; **not yet run
+  against the live APIs**.
 - `ScriptedClient` is a model that follows a script. The agent's tests run on it: no
   network, no cost, repeatable.
 

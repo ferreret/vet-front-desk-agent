@@ -2091,6 +2091,7 @@ source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
     { name = "google-genai" },
+    { name = "openai" },
     { name = "pydantic" },
 ]
 
@@ -2116,6 +2117,7 @@ requires-dist = [
     { name = "anthropic", specifier = ">=1.11.0" },
     { name = "google-genai", specifier = ">=2.26.0" },
     { name = "livekit-agents", extras = ["elevenlabs", "silero"], marker = "extra == 'voice'", specifier = "~=1.5" },
+    { name = "openai", specifier = ">=2.54" },
     { name = "pydantic", specifier = ">=2.7" },
 ]
 provides-extras = ["endpoint", "voice"]

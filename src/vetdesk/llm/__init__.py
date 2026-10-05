@@ -16,7 +16,7 @@ from .base import (
     Usage,
 )
 
-PROVIDERS = ("anthropic", "gemini")
+PROVIDERS = ("anthropic", "gemini", "openai", "requesty")
 
 
 def provider_of(model: str | None) -> str | None:
@@ -25,6 +25,10 @@ def provider_of(model: str | None) -> str | None:
         return "anthropic"
     if model and model.startswith("gemini"):
         return "gemini"
+    if model and "/" in model:
+        return "requesty"  # the router's ids name who serves the model: zai/glm-5.3-flash
+    if model and model.startswith(("gpt-", "o1", "o3", "o4")):
+        return "openai"
     return None
 
 
@@ -39,7 +43,8 @@ def create_client(
 
     Defaults come from VETDESK_LLM_PROVIDER, VETDESK_LLM_MODEL, VETDESK_LLM_EFFORT and
     VETDESK_LLM_THINKING (off by default, on the models that allow switching it off). A
-    model id that names its provider (claude-..., gemini-...) needs no provider. `effort`
+    model id that names its provider (claude-..., gemini-..., gpt-..., or the router's
+    served-by/model form) needs no provider. `effort`
     and `thinking` override the environment, for uses other than answering the phone (a
     judge reading a transcript is in no hurry).
     """
@@ -57,6 +62,12 @@ def create_client(
         from .gemini_client import DEFAULT_MODEL, GeminiClient
 
         return GeminiClient(model or DEFAULT_MODEL)
+    if provider in ("openai", "requesty"):
+        from .openai_client import DEFAULT_MODEL, OpenAICompatClient
+
+        if provider == "requesty" and not model:
+            raise LLMError("the router needs a model id, e.g. zai/glm-5.3-flash")
+        return OpenAICompatClient(model or DEFAULT_MODEL, provider=provider)
     raise LLMError(f"unknown provider {provider!r}; available: {', '.join(PROVIDERS)}")
 
 

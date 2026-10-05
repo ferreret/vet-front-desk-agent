@@ -133,7 +133,8 @@ A language model with eight tools, talking in text for now (`vetdesk chat`).
   and prices live in a single file that refuses to load with a placeholder, a malformed
   phone number or a gap in the opening hours. The prompt and the agenda are built from it.
 - **Any provider.** The agent talks to a small interface; each provider is one adapter.
-  There are two: Claude and Gemini.
+  There are three: Claude, Gemini, and one for anything that speaks OpenAI's chat format
+  (OpenAI itself, and other models through a router).
 
 Tools, barrier, agenda, knowledge base and the agent loop are tested without a model.
 More in [docs/agent.md](docs/agent.md).
