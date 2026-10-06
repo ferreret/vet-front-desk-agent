@@ -33,6 +33,13 @@ from vetdesk.language import spoken_language
     ("Santa Aina del Camp.", None),
     ("Visc a Pinar del Mar.", "ca"),
     ("Vivo en Santa Aina del Camp.", "es"),
+    # A name spelled out: "i" and "y" are letters before they are words.
+    ("M-A-R-T-A S-O-L-E-R V-I-D-A-L", None),
+    ("Y-O-L-A-N-D-A R-E-Y", None),
+    ("M A R I A", None),
+    ("Joan Feliu i Plana.", None),
+    ("El meu gos i el meu gat.", "ca"),
+    ("Mi perro y mi gato.", "es"),
     ("", None),
 ])
 def test_the_language_of_a_line(line, language):
