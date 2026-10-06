@@ -330,10 +330,12 @@ def test_appointments_made_before_the_call_are_in_the_agenda(scenarios, clinic, 
     agent = ScriptedClient([
         _tool("identify_client", **{**NOTHING, "name": scenario.caller.says_name}),
         _tool("list_appointments"),
+        Reply("Tiene una cita el martes. ¿Es la que quiere anular?"),
         _tool("cancel_appointment", appointment_id=booked.appointment_id),
         Reply("Cancelada."), Reply("Adiós."),
     ])
-    caller = _caller(scenario, f"Soy {scenario.caller.says_name}, quiero anular mi cita.", BYE)
+    caller = _caller(scenario, f"Soy {scenario.caller.says_name}, quiero anular mi cita.",
+                     "Sí, esa.", BYE)
     record = _play(scenario, agent, caller, clinic, kb, truth)
     listed = record.exchanges[0].tools[1].result["appointments"]
     assert [a["appointment_id"] for a in listed] == [booked.appointment_id]

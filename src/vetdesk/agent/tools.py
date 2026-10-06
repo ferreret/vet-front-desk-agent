@@ -67,6 +67,11 @@ class CallSession:
     # Every word the caller has said, in whatever alphabet: what a reason for a visit is
     # checked against. The names above are compared in Latin letters, as they are on file.
     said: set[str] = field(default_factory=set)
+    # How many lines the caller has said, and at which of them each of their appointments
+    # was read out to the model: one is only cancelled or moved after the caller has
+    # heard which it is and has spoken again.
+    lines: int = 0
+    told: dict[str, int] = field(default_factory=dict)
     events: list[ToolEvent] = field(default_factory=list)
     messages: list[Message] = field(default_factory=list)
 
@@ -260,6 +265,7 @@ class Toolbox:
         self.session.spelled += spelled_words(text)
         self.session.lines_with.update(set(fold(text).split()))
         self.session.said.update(fold_any(text).split())
+        self.session.lines += 1
 
     def _vouched_for(self, name: str | None, spelled: bool, pet: str | None,
                      town: str | None) -> None:
@@ -496,7 +502,10 @@ class Toolbox:
 
     def _list_appointments(self) -> dict:
         client = self._confirmed()
-        return {"appointments": [self._summary(a) for a in self.agenda.for_client(client.code)]}
+        upcoming = self.agenda.for_client(client.code)
+        for appointment in upcoming:
+            self.session.told.setdefault(appointment.appointment_id, self.session.lines)
+        return {"appointments": [self._summary(a) for a in upcoming]}
 
     def _on_their_phone(self) -> bool:
         """Whether the call comes from a phone on the confirmed caller's record."""
@@ -517,12 +526,28 @@ class Toolbox:
             raise ToolError(NOT_FROM_THEIR_PHONE)
         self._own(appointment_id)
 
+    def _heard_which(self, appointment_id: str, doing: str) -> None:
+        """Refuse to cancel or move an appointment the caller has not been told about.
+
+        Heard on the first call from a real phone: "quería anular una cita", a name, and
+        the one appointment on the record was cancelled in the same breath. It was the
+        right one; with two on the record, or a caller who meant to move it, it would not
+        have been. The caller hears which appointment it is, and says so, first.
+        """
+        if self.session.told.get(appointment_id, self.session.lines) >= self.session.lines:
+            raise ToolError(
+                f"Not yet. First tell the caller which appointment this is, with its day and "
+                f"time and the animal, and ask whether that is the one to {doing}. Call this "
+                f"tool again once they have said yes.")
+
     def _cancel_appointment(self, appointment_id: str) -> dict:
         self._may_change(appointment_id)
+        self._heard_which(appointment_id, "cancel")
         return {"status": "cancelled", **self._summary(self.agenda.cancel(appointment_id))}
 
     def _reschedule_appointment(self, appointment_id: str, new_start: str) -> dict:
         self._may_change(appointment_id)
+        self._heard_which(appointment_id, "move")
         try:
             moved = self.agenda.reschedule(appointment_id, _moment(new_start))
         except AgendaError as error:

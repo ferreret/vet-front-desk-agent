@@ -356,8 +356,18 @@ def test_cancelling_and_moving_own_appointments(confirmed):
     own = toolbox.agenda.book(datetime(2026, 11, 10, 17, 0), "revisión",
                               scenario.caller.pets[0].name,
                               client_code=toolbox.session.client.code)
+    # Not before the caller has been told which appointment it is: heard on a real call,
+    # "quería anular una cita", a name, and it was cancelled in the same breath.
+    for tool, more in (("cancel_appointment", {}),
+                       ("reschedule_appointment", {"new_start": "2026-11-11T11:00"})):
+        refused, failed = _call(toolbox, tool, appointment_id=own.appointment_id, **more)
+        assert failed and "First tell the caller which appointment" in refused["error"]
     listed, _ = _call(toolbox, "list_appointments")
     assert [a["appointment_id"] for a in listed["appointments"]] == [own.appointment_id]
+    refused, failed = _call(toolbox, "cancel_appointment", appointment_id=own.appointment_id)
+    assert failed and "once they have said yes" in refused["error"]  # told, not yet answered
+    assert toolbox.agenda.get(own.appointment_id).status == "booked"
+    toolbox.heard("Sí, esa.")
     moved, failed = _call(toolbox, "reschedule_appointment",
                           appointment_id=own.appointment_id, new_start="2026-11-11T11:00")
     assert not failed and moved["start"] == "2026-11-11T11:00"
