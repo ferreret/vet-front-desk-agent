@@ -61,10 +61,13 @@ share phones, numbers change hands, and people call from someone else's phone.
   in figures as it is written there.
 
 # What you can do
-Only what your tools do. You cannot transfer a call or put anyone through, and nobody else
-will pick up this call. When the caller wants a person, say just the set phrase for
-that. Then take the message with
-take_message. Never say that you are passing them, or their call, to anybody. Never
+Only what your tools do. When the caller wants a person, it depends on whether you have
+the tool transfer_to_reception, which is there only while somebody at the clinic can take
+the call. If you have it, use it, with a line on who is calling and what they want, and
+then say what it tells you to say and nothing else. If you do not have it, you cannot
+transfer the call or put anyone through, and nobody else will pick it up: say just the set
+phrase for that, then take the message with take_message. Never say that you are passing
+them, or their call, to anybody unless transfer_to_reception has just told you to. Never
 promise an action that no tool performs.
 
 When booking, once you have asked who is calling, find out these three things before you
@@ -158,6 +161,21 @@ EMERGENCY = {
 }
 
 
+# What a caller hears while their call is put through to a person. It is not among the set
+# phrases the model is given: it reaches the model only in the answer of the tool that
+# transfers, so it cannot be said without the transfer happening. Promising "le paso con
+# recepción" with nothing behind it is what the 2025 pilot did.
+THROUGH = {
+    "es": "Le paso con recepción, un momento, por favor.",
+    "ca": "Li passo amb recepció, un moment, si us plau.",
+    "en": "I'll put you through to reception, one moment, please.",
+    "de": "Ich verbinde Sie mit der Rezeption, einen Moment bitte.",
+    "fr": "Je vous passe la réception, un instant, s'il vous plaît.",
+    "it": "Le passo la reception, un momento, per favore.",
+    "ru": "Соединяю вас с регистратурой, одну минуту, пожалуйста.",
+}
+
+
 def emergency_sentence(kb: KnowledgeBase, now: datetime, language: str) -> str:
     """What to tell a caller with an emergency, right now, in their language."""
     when_open, when_closed = EMERGENCY[language]
@@ -192,19 +210,25 @@ def greeting(kb: KnowledgeBase, now: datetime) -> str:
     return GREETINGS[part].format(clinic=kb.clinic.name)
 
 
-def call_context(kb: KnowledgeBase, now: datetime, caller_number: str | None, said: str) -> str:
-    """What is specific to this call: the time, the calling number, the greeting given."""
+def call_context(kb: KnowledgeBase, now: datetime, caller_number: str | None, said: str,
+                 can_transfer: bool = False) -> str:
+    """What is specific to this call: the time, the calling number, the greeting given,
+    and whether a caller can be put through to a person right now."""
     number = caller_number or "hidden (no caller ID)"
     is_open = kb.is_open(now)
     status = "open" if is_open else "closed"
     # What to do in an emergency depends on the hour, and a model told both cases sent a
     # caller to the closed clinic at three in the morning. It gets the one that applies.
     closed = "" if is_open else " The clinic is closed: do not tell them to come to it."
+    through = ("A caller can be put through to a person right now: you have"
+               if can_transfer else
+               "No caller can be put through to a person on this call: you do not have")
     return (
         "# This call\n"
         f"It is {WEEKDAYS_ES[now.weekday()]}, {now:%Y-%m-%d %H:%M}. The clinic is {status} "
         f"right now.\n"
         f"Calling number: {number}.\n"
+        f"{through} transfer_to_reception.\n"
         f'You have already answered the phone with: "{said}"\n'
         f"The call starts in Spanish. {set_phrases('es')}\n"
         f'{in_an_emergency(kb, now, "es")}{closed}'

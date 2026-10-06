@@ -98,6 +98,14 @@ def message(text: str, contact_name: str, contact_phone: str | None,
         ("📞", f"Teléfono: {_phone(contact_phone)}", _phone(contact_phone)), who], said=text)
 
 
+def put_through(summary: str, client_name: str | None, caller_number: str | None) -> Notice:
+    who = ("👤", f"Cliente: {client_name}", client_name) if client_name else \
+        ("❔", "Sin identificar", "")
+    return _notice("put_through", "📲", "LLAMADA PASADA A RECEPCIÓN", [
+        ("📞", f"Llaman desde: {_phone(caller_number)}", _phone(caller_number)), who],
+        said=summary)
+
+
 def emergency(now: datetime, caller_number: str | None, said: str) -> Notice:
     return _notice("emergency", "🚨", f"URGENCIA a las {now:%H:%M}", [
         ("📞", f"Llamaban desde: {_phone(caller_number)}", _phone(caller_number))],

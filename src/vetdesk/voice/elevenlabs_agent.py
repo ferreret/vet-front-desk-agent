@@ -49,6 +49,23 @@ def _remember(name: str, value: str, path: Path = Path(".env")) -> None:
         env.write(f"\n{name}={value}\n")
 
 
+def _transfer() -> dict:
+    """The platform's tool for putting a call through, when there is a number to put it
+    through to. Our address decides when (a caller wants a person, the clinic is open);
+    the platform does the dialling. The number comes from the environment, never from here."""
+    number = os.environ.get("VETDESK_TRANSFER_TO", "").strip()
+    if not number:
+        return {}
+    return {"transfer_to_number": {
+        "type": "system", "name": "transfer_to_number",
+        "params": {"system_tool_type": "transfer_to_number", "enable_client_message": True,
+                   "transfers": [{
+                       "transfer_destination": {"type": "phone", "phone_number": number},
+                       "condition": "Only when asked for by the custom model.",
+                       "transfer_type": "conference"}]},
+    }}
+
+
 def config(url: str, secret_id: str) -> dict:
     """The whole of what lives at ElevenLabs."""
     kb = load_kb()
@@ -74,6 +91,7 @@ def config(url: str, secret_id: str) -> dict:
                         # that the call is over; only the platform can put the phone down.
                         "end_call": {"type": "system", "name": "end_call",
                                      "params": {"system_tool_type": "end_call"}},
+                        **_transfer(),
                     },
                 },
                 "first_message": f"Clínica veterinaria {kb.clinic.name}, dígame.",

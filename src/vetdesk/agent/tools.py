@@ -28,6 +28,7 @@ from ..legacy.normalize import fold, fold_any, osa_distance, parse_phones
 from ..llm import ToolCall, ToolResult, ToolSpec
 from ..scheduling import Agenda, AgendaError, Appointment
 from ..spoken import say
+from .prompt import THROUGH
 
 
 class ToolError(Exception):
@@ -76,6 +77,9 @@ class CallSession:
     # What reception has to hear about this call: see `notices`. Whoever carries the call
     # takes them from here and sends them on.
     notices: list[notices.Notice] = field(default_factory=list)
+    # Set when the call is to be put through to a person: the line for whoever picks up.
+    # Whoever carries the call does the putting through; here it is only asked for.
+    transfer: str | None = None
     events: list[ToolEvent] = field(default_factory=list)
     messages: list[Message] = field(default_factory=list)
 
@@ -259,8 +263,10 @@ class Toolbox:
         agenda: Agenda,
         now: Callable[[], datetime],
         caller_number: str | None,
+        can_transfer: bool = False,
     ) -> None:
         self.clinic, self.kb, self.agenda, self.now = clinic, kb, agenda, now
+        self.can_transfer = can_transfer  # whether a person can take this call right now
         self.resolver = IdentityResolver(clinic)
         self.session = CallSession(caller_number, Evidence(caller_number=caller_number))
 
@@ -601,6 +607,20 @@ class Toolbox:
             raise ToolError(OWN_NUMBER)
         return phones[0] if phones else None
 
+    def _transfer_to_reception(self, summary: str) -> dict:
+        if not self.can_transfer:
+            raise ToolError("There is no tool called transfer_to_reception on this call: "
+                            "nobody can take it. Say the set phrase for when they want a "
+                            "person and take a message.")
+        session = self.session
+        if session.transfer is None:
+            session.transfer = summary
+            session.notices.append(notices.put_through(
+                summary, self._client_name(), session.caller_number))
+        return {"status": "putting_through", "say": THROUGH[session.language],
+                "instructions": "The call is being put through now. Say exactly what `say` "
+                                "holds, and nothing else."}
+
     def _take_message(self, message: str, contact_name: str, contact_phone: str | None) -> dict:
         phone = self._callback(contact_phone) or self.session.caller_number
         if phone is None:
@@ -615,6 +635,19 @@ class Toolbox:
         return {"status": "message_taken",
                 "instructions": "Tell the caller reception will call them back. Do not "
                 "promise when, and do not say you are transferring the call."}
+
+
+# Offered to the model only on a call that can be put through: see `Toolbox.can_transfer`.
+TRANSFER = ToolSpec(
+    "transfer_to_reception",
+    "Put the caller through to a person at the clinic. Only when the caller wants to speak "
+    "to a person. The call leaves you: there is nothing more to do afterwards.",
+    _schema({
+        "summary": {"type": "string",
+                    "description": "One line for whoever picks up, in Spanish: who is "
+                                   "calling, if they said, and what they want."},
+    }),
+)
 
 
 def given(value: str | None) -> str | None:

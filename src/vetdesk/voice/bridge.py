@@ -156,6 +156,7 @@ class Line:
         language: str | None = None,
         on_turn: Callable[[Turn], None] | None = None,
         turn: int | None = None,
+        note: bool = False,
     ) -> AsyncIterator[str]:
         """What the agent says to `heard`, piece by piece, as soon as each piece exists.
 
@@ -171,7 +172,7 @@ class Line:
         stock phrases follow the language the call itself has worked out from the caller's
         words: a platform that says nothing must not mean Spanish for everybody.
         """
-        if silence(heard):
+        if silence(heard) and not note:
             # Silence, not a line: nothing for the model, and nothing to keep as said.
             gone = self._quiet > 0 or bool(_FAREWELL.search("".join(self._last)))
             phrase = (GOODBYE if gone else STILL_THERE)[language or self.call.language]
@@ -189,7 +190,7 @@ class Line:
 
         def work() -> None:
             try:
-                answer = self.call.say(heard, say)
+                answer = self.call.say(heard, say, note)
                 if on_turn:
                     loop.call_soon_threadsafe(on_turn, answer)
             except Exception:  # the model or the network failed: say so, do not go silent

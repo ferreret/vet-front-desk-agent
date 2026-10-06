@@ -49,6 +49,7 @@ from aiohttp import web
 
 from ..agent import FrontDeskAgent
 from ..agent.agent import Call, Turn
+from ..agent.prompt import THROUGH
 from ..evals.cost import cost
 from ..kb import KnowledgeBase, load_kb, why_not
 from ..language import SPOKEN
@@ -82,6 +83,13 @@ LANGUAGE_TOOL, FIRST_LANGUAGE = "language_detection", "es"
 # The platform's tool for hanging up. Our address can say goodbye; only the platform can
 # put the phone down.
 END_TOOL = "end_call"
+# The platform's tool for putting a call through to a phone number, and the setting that
+# holds the number a person answers at. Without the number nothing is ever put through.
+TRANSFER_TOOL, TRANSFER_TO = "transfer_to_number", "VETDESK_TRANSFER_TO"
+# Told to the model when the platform could not put the call through after all.
+NOT_PUT_THROUGH = ("(Note from the phone system, not from the caller: the call could not be "
+                   "put through, nobody picked up. Tell the caller so, in a few words, and "
+                   "offer to take a message with take_message.)")
 
 
 def _text(content) -> str:
@@ -102,7 +110,7 @@ class Switchboard:
         # Real numbers that call as a number of the made-up clinic: see `stand_ins`.
         self._stand_ins = stand_ins or {}
 
-    def line(self, messages: list[dict]) -> Line:
+    def line(self, messages: list[dict], can_transfer: bool = False) -> Line:
         system = " \n".join(_text(m.get("content")) for m in messages if m.get("role") == "system")
         found = _CONVERSATION.search(system)
         if found and "{{" not in found.group(1):
@@ -131,7 +139,9 @@ class Switchboard:
             # is sent until more text follows, so the phrase never covered a wait: it was
             # spoken with the answer, in front of it. The platform's own filler does the
             # job (the soft timeout set in `elevenlabs_agent`).
-            line = Line(self._start_call(number), patience=None)
+            call = self._start_call(number, True) if can_transfer else \
+                self._start_call(number)
+            line = Line(call, patience=None)
             line.listening_in = FIRST_LANGUAGE
             self._lines[conversation] = (line, now)
         line, _ = self._lines[conversation]
@@ -151,8 +161,8 @@ class Desk:
         self._make, self._agenda, self.file = make, agenda, file
         self._agent = make(kb)
 
-    def start_call(self, number: str | None) -> Call:
-        return self._agent.start_call(number)
+    def start_call(self, number: str | None, can_transfer: bool = False) -> Call:
+        return self._agent.start_call(number, can_transfer)
 
     def replace(self, text: str) -> None:
         kb = self.file.replace(text)  # raises, and changes nothing, if the text is wrong
@@ -205,12 +215,15 @@ def _chunk(request_id: str, model: str, delta: dict, finish: str | None = None) 
 
 def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | None = None,
               admin_key: str = "",
-              tell: Callable[[Notice], None] | None = None) -> web.Application:
+              tell: Callable[[Notice], None] | None = None,
+              transfer_to: str = "") -> web.Application:
     """`model` is the agent's own model, named only to put a price on each answer. With a
     `desk` whose information is in a file and an `admin_key`, that information can be read
     and replaced through the server. `tell` is how reception is told what happens on a
-    call: see `notices`."""
+    call: see `notices`. `transfer_to` is the number a person answers at, to put calls
+    through to."""
     agent_model = model
+    put_through: set[int] = set()  # the lines the platform has been told to put through
     waiting: set[asyncio.Future] = set()  # answers being worked out for a request to come
 
     def spent(turn: Turn) -> None:
@@ -254,7 +267,7 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
         except (ValueError, KeyError, TypeError):
             return web.json_response({"error": {"message": "expected chat messages"}},
                                      status=400)
-        line = switchboard.line(messages)
+        line = switchboard.line(messages, bool(transfer_to) and _offers(body, TRANSFER_TOOL))
         said = [_text(m.get("content")) for m in messages if m.get("role") == "user"]
         request_id = "chatcmpl-" + secrets.token_hex(8)
         model = str(body.get("model", "vetdesk"))
@@ -282,23 +295,44 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                                  language=language)
             else:
                 after_a_tool = messages[-1].get("role") == "tool"
+                heard, turn, note = said[-1], len(said), False
                 if after_a_tool:
-                    log.info("the platform answered a tool of its own: %s",
-                             _text(messages[-1].get("content"))[:200])
-                log.info("caller: %s", said[-1])
+                    result = _text(messages[-1].get("content"))
+                    log.info("the platform answered a tool of its own: %s", result[:200])
+                    if id(line) in put_through and "error" in result.lower():
+                        # Nobody picked up. The caller is still with us and the model
+                        # believes they are gone: it is told, and takes it from there.
+                        put_through.discard(id(line))
+                        line.call.session.transfer = None
+                        heard, turn, note = NOT_PUT_THROUGH, None, True
+                log.info("caller: %s", heard)
                 # A call may be over after this line (nothing said, or a goodbye). Then
                 # the answer is not said piece by piece but kept whole: if it is a
                 # goodbye too, the platform is handed it to say and told to hang up.
                 closing = _offers(body, END_TOOL) and not after_a_tool and may_end(said[-1])
+                session = line.call.session
                 answer, first = [], None
-                async for piece in line.answer(said[-1], on_turn=finished(line), turn=len(said)):
+                async for piece in line.answer(heard, on_turn=finished(line), turn=turn,
+                                               note=note):
                     first = first if first is not None else time.perf_counter() - started
                     answer.append(piece)
-                    if not closing:
+                    # A model calls its tools before it speaks, so by its first words it
+                    # is known whether this turn asked for the call to be put through. If
+                    # it did, the platform says the words itself, with its own tool.
+                    if not closing and not session.transfer:
                         await response.write(_chunk(request_id, model, {"content": piece}))
                 text = "".join(answer)
                 log.info("agent (first words %.1f s, all %.1f s): %s", first or 0,
                          time.perf_counter() - started, text)
+                if session.transfer and transfer_to and id(line) not in put_through:
+                    put_through.add(id(line))
+                    log.info("the caller wants a person: the platform is told to put the "
+                             "call through")
+                    return await use(response, request_id, model, TRANSFER_TOOL,
+                                     reason="the caller asked to speak to a person",
+                                     transfer_number=transfer_to,
+                                     client_message=THROUGH[session.language],
+                                     agent_message=session.transfer)
                 if closing and is_goodbye(text):
                     log.info("the goodbyes are said: the platform is told to hang up")
                     return await use(response, request_id, model, END_TOOL,
@@ -424,8 +458,12 @@ def main() -> None:
     reception = Telegram(token, chat) if token and chat else None
     log.info("reception is told what happens %s",
              "on Telegram" if reception else "nowhere: no Telegram chat is set")
+    numbers, _ = parse_phones(os.environ.get(TRANSFER_TO, ""))
+    log.info("a caller who wants a person %s", "is put through while the clinic is open"
+             if numbers else "leaves a message: no number to put calls through to is set")
     app = build_app(switchboard, key, getattr(llm, "model", ""), desk,
-                    os.environ.get(ADMIN_KEY, ""), reception.send if reception else None)
+                    os.environ.get(ADMIN_KEY, ""), reception.send if reception else None,
+                    numbers[0] if numbers else "")
     print(f"The front desk answers at http://{args.host}:{args.port}/v1/chat/completions")
     web.run_app(app, host=args.host, port=args.port, print=None)
 

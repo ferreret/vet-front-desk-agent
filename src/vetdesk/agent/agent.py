@@ -23,7 +23,7 @@ from .prompt import (
     set_phrases,
     system_prompt,
 )
-from .tools import SPECS, CallSession, Toolbox, ToolEvent
+from .tools import SPECS, TRANSFER, CallSession, Toolbox, ToolEvent
 
 MAX_TOOL_ROUNDS = 6
 
@@ -150,30 +150,35 @@ class Call:
         told = spoken_language(text, least=1 if self._lines < SETTLING_LINES else 2)
         return told if told in self._languages else self.language
 
-    def say(self, text: str, on_text: OnText | None = None) -> Turn:
+    def say(self, text: str, on_text: OnText | None = None, note: bool = False) -> Turn:
         """The caller says something; the agent answers, using its tools as needed.
 
         `on_text` receives the answer piece by piece as the model writes it, so what the
         agent says before running a tool ("un momento, lo miro") is heard before the tool
         runs, not after.
+
+        With `note`, `text` is not the caller's: it is whoever carries the call telling the
+        model something (a call that could not be put through). It is no evidence of who
+        is calling and tells nothing of their language.
         """
         self._before_last = None
         before = (self._conversation.mark(), self.language, self._lines)
-        self._toolbox.heard(text)
         asked = text
-        language = self.hears(text)
-        self._lines += 1
-        if language != self.language:
-            self.language = language
-            asked = f"{text}\n\n{LANGUAGE_NOTE[language]}"
-            if urgent := self._emergency(language):
-                asked = f"{asked[:-1]} {urgent})"
-        elif language != "es" and spoken_language(text) is None:
-            # A line that tells no language: a name, a town, a number. Seen in French and
-            # in Russian: given "Maria Ma Sala" and nothing else, the model answered in
-            # Italian. It is reminded which language the call is in. Not in Spanish, the
-            # language the call starts in and the instructions say so.
-            asked = f"{text}\n\n{STILL_IN[language]}"
+        if not note:
+            self._toolbox.heard(text)
+            language = self.hears(text)
+            self._lines += 1
+            if language != self.language:
+                self.language = language
+                asked = f"{text}\n\n{LANGUAGE_NOTE[language]}"
+                if urgent := self._emergency(language):
+                    asked = f"{asked[:-1]} {urgent})"
+            elif language != "es" and spoken_language(text) is None:
+                # A line that tells no language: a name, a town, a number. Seen in French
+                # and in Russian: given "Maria Ma Sala" and nothing else, the model
+                # answered in Italian. It is reminded which language the call is in. Not
+                # in Spanish, the language the call starts in and the instructions say so.
+                asked = f"{text}\n\n{STILL_IN[language]}"
         self.session.language = self.language  # what the tools hand over to be said
         events_before = len(self.session.events)
         latencies: list[float] = []
@@ -231,7 +236,10 @@ class Call:
         ran_on = room < 0 and not reply.tool_calls
         if ran_on:
             spoken[-1], room = kept(spoken[-1]), MAX_SPOKEN
-        if (reply.stop == "end" and left_waiting(reply.text)) or ran_on:
+        # "Le paso con recepción, un momento" is not a promise left hanging: the call is
+        # on its way to a person.
+        left = reply.stop == "end" and left_waiting(reply.text) and not self.session.transfer
+        if left or ran_on:
             # "Un momento, lo miro", and the turn is over with nothing looked up. Measured:
             # one model did it in 11 of 435 answers. On the phone that is a dead line until
             # the caller speaks again, so the model is told once to do what it said. The
@@ -286,12 +294,20 @@ class FrontDeskAgent:
         self._llm, self._clinic, self._kb, self._agenda, self._now = llm, clinic, kb, agenda, now
         self._system = system_prompt(kb)
 
-    def start_call(self, caller_number: str | None) -> Call:
-        """Pick up the phone. `caller_number` is None when the caller ID is hidden."""
+    def start_call(self, caller_number: str | None, can_transfer: bool = False) -> Call:
+        """Pick up the phone. `caller_number` is None when the caller ID is hidden.
+
+        `can_transfer`: whoever carries the call is able to put it through to a person.
+        The agent offers it only while the clinic is open: a phone that rings in an empty
+        clinic is worse than a message taken.
+        """
         now = self._now()
         hello = greeting(self._kb, now)
-        toolbox = Toolbox(self._clinic, self._kb, self._agenda, self._now, caller_number)
-        context = call_context(self._kb, now, caller_number, hello)
-        return Call(self._llm.start(self._system, context, SPECS), toolbox, hello,
+        can_transfer = can_transfer and self._kb.is_open(now)
+        toolbox = Toolbox(self._clinic, self._kb, self._agenda, self._now, caller_number,
+                          can_transfer)
+        context = call_context(self._kb, now, caller_number, hello, can_transfer)
+        tools = [*SPECS, TRANSFER] if can_transfer else SPECS
+        return Call(self._llm.start(self._system, context, tools), toolbox, hello,
                     lambda language: in_an_emergency(self._kb, now, language),
                     tuple(self._kb.clinic.languages), spoken_phone(self._kb.emergency.phone))
