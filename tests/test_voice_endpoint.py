@@ -124,13 +124,23 @@ def test_a_line_asked_for_twice_is_answered_once(clinic, kb):
     assert len(model.transcript.tool_results) == 1
 
 
-def test_a_line_sent_again_in_other_words_is_answered_once(clinic, kb):
+def test_a_line_sent_again_in_other_words_is_one_line(clinic, kb):
     """The platform's recogniser rewrites a line it has just sent and asks again: the same
-    place in the conversation, other words. It is one line, and it is answered once."""
-    model, _, app = _front_desk([Reply("¿Me dice su teléfono?")], clinic, kb)
-    answers = _ask(app, _messages("Once i mitja."), _messages("Once y media."))
-    assert _spoken(answers[0][2]) == _spoken(answers[1][2]) == "¿Me dice su teléfono?"
-    assert model.transcript.user_messages == ["Once i mitja."]
+    place in the conversation, other words. The model keeps one line, the last written."""
+    model, _, app = _front_desk([Reply("Buenos días."), Reply("Bon dia.")], clinic, kb)
+    answers = _ask(app, _messages("Hola, buen día."), _messages("Hola, bon dia."))
+    assert [_spoken(stream) for _, _, stream in answers] == ["Buenos días.", "Bon dia."]
+    assert len(model.transcript.user_messages) == 1
+    assert model.transcript.user_messages[0].startswith("Hola, bon dia.")
+
+
+def test_a_line_sent_again_after_a_tool_ran_is_not_run_again(clinic, kb):
+    steps = [Reply("", (LOOKUP,), "tool_calls"), Reply("Tengo hueco el lunes.")]
+    model, _, app = _front_desk(steps, clinic, kb)
+    answers = _ask(app, _messages("La semana que viene."), _messages("La setmana que ve."))
+    assert _spoken(answers[0][2]) == _spoken(answers[1][2]) == "Tengo hueco el lunes."
+    assert model.transcript.user_messages == ["La semana que viene."]
+    assert len(model.transcript.tool_results) == 1
 
 
 def test_two_conversations_are_two_calls(clinic, kb):

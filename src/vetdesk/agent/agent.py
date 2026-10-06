@@ -79,6 +79,9 @@ class Call:
         # The language the call is going on in: the clinic answers the phone in Spanish, and
         # the caller's own words change it.
         self.language = "es"
+        # How things stood before the caller's last line, while that line can still be
+        # taken back: see `take_back`.
+        self._before_last: tuple[int, str] | None = None
 
     @property
     def session(self) -> CallSession:
@@ -91,6 +94,8 @@ class Call:
         agent says before running a tool ("un momento, lo miro") is heard before the tool
         runs, not after.
         """
+        self._before_last = None
+        before = (self._conversation.mark(), self.language)
         self._toolbox.heard(text)
         asked = text
         language = spoken_language(text)
@@ -157,7 +162,24 @@ class Call:
             heard(fallback)
             answer = fallback
         events = tuple(self.session.events[events_before:])
+        if not events:
+            self._before_last = before
         return Turn(answer, events, usage, requests, tuple(latencies), first_words)
+
+    def take_back(self) -> bool:
+        """Undo the caller's last line and the answer to it, as if neither had been said.
+
+        For a voice line whose recogniser hands a line over and, a moment later, hands it
+        over again written better: "Hola, buen día." and then "Hola, bon dia.". Only a turn
+        that ran no tool can be taken back, and only once: a booking made stays made, and
+        then the answer already given is the one to repeat. False when it cannot be done.
+        """
+        if self._before_last is None:
+            return False
+        mark, self.language = self._before_last
+        self._conversation.rewind(mark)
+        self._before_last = None
+        return True
 
 
 class FrontDeskAgent:

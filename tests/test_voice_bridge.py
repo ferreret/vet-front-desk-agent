@@ -131,28 +131,67 @@ def test_an_answer_asked_for_again_repeats_the_waiting_phrase_it_was_given(clini
     assert first == again == [WAITING["es"] + " ", "Tengo el lunes."]
 
 
-def test_a_line_heard_again_a_moment_later_is_the_same_line(clinic, kb):
-    """Heard on a call in Catalan: the recogniser handed "Once i mitja." over, then "Once y
-    media." half a second later. Answered as two lines, the agent asked for the phone and
-    then scolded the caller for not giving it."""
-    model = ScriptedClient([Reply("¿Me dice su teléfono?"), Reply("Reservado.")])
+def test_a_line_heard_again_a_moment_later_is_answered_as_last_written(clinic, kb):
+    """Heard on a call in Catalan: the recogniser handed "Hola, buen día." over, then "Hola,
+    bon dia." half a second later, and the platform kept the second. The first answer is
+    taken back, as if it had never been asked for: the caller is answered in Catalan."""
+    model = ScriptedClient([Reply("Buenos días. ¿En qué puedo ayudarle?"),
+                            Reply("Bon dia. En què el puc ajudar?"), Reply("Digui'm el nom.")])
     now = [100.0]
-    line = Line(_call(model, clinic, kb), patience=None, clock=lambda: now[0])
+    call = _call(model, clinic, kb)
+    line = Line(call, patience=None, clock=lambda: now[0])
 
-    async def call():
-        first = [piece async for piece in line.answer("Once i mitja.", turn=4)]
+    async def play():
+        first = [piece async for piece in line.answer("Hola, buen día.", turn=1)]
+        now[0] += 0.5
+        again = [piece async for piece in line.answer("Hola, bon dia.", turn=1)]
+        now[0] += 0.2
+        same = [piece async for piece in line.answer("Hola, bon dia.", turn=1)]
+        now[0] += 6
+        following = [piece async for piece in line.answer("Vull una cita.", turn=2)]
+        return first, again, same, following
+
+    first, again, same, following = asyncio.run(play())
+    assert first == ["Buenos días. ¿En qué puedo ayudarle?"]
+    assert again == same == ["Bon dia. En què el puc ajudar?"]
+    assert following == ["Digui'm el nom."] and call.language == "ca"
+    # The model was never told "Hola, buen día.": its conversation holds the line once.
+    heard = model.transcript.user_messages
+    assert len(heard) == 2 and heard[0].startswith("Hola, bon dia.\n\n(Note from the phone")
+    assert heard[1] == "Vull una cita."
+
+
+def test_a_line_heard_again_after_a_tool_ran_keeps_its_answer(clinic, kb):
+    """A phone number came as "934879642." and then as nine words. The booking was made on
+    the first: it is not taken back, and what was said about it is said again."""
+    model = ScriptedClient([Reply("", (LOOKUP,), "tool_calls"), Reply("Tengo el lunes.")])
+    now = [100.0]
+    call = _call(model, clinic, kb)
+    line = Line(call, patience=None, clock=lambda: now[0])
+
+    async def play():
+        first = [piece async for piece in line.answer("La semana que viene.", turn=3)]
         now[0] += 0.9
-        again = [piece async for piece in line.answer("Once y media.", turn=4)]
-        now[0] += 0.4
-        third = [piece async for piece in line.answer("Once i mitja.", turn=4)]
-        now[0] += 8
-        following = [piece async for piece in line.answer("655 623 964.", turn=5)]
-        return first, again, third, following
+        return first, [piece async for piece in line.answer("La setmana que ve.", turn=3)]
 
-    first, again, third, following = asyncio.run(call())
-    assert first == again == third == ["¿Me dice su teléfono?"]
-    assert following == ["Reservado."]
-    assert model.transcript.user_messages == ["Once i mitja.", "655 623 964."]
+    first, again = asyncio.run(play())
+    assert first == again == ["Tengo el lunes."]
+    assert model.transcript.user_messages == ["La semana que viene."]
+    assert len(model.transcript.tool_results) == 1 and not call.take_back()
+
+
+def test_a_line_can_be_taken_back_once_and_only_if_no_tool_ran(clinic, kb):
+    model = ScriptedClient([Reply("Dígame."), Reply("Digui."), Reply("", (LOOKUP,), "tool_calls"),
+                            Reply("Tinc dilluns.")])
+    call = _call(model, clinic, kb)
+    assert not call.take_back()  # nothing said yet
+    call.say("Hola, bon dia.")
+    assert call.language == "ca" and call.take_back()
+    assert call.language == "es" and model.transcript.user_messages == []
+    assert not call.take_back()  # once
+    call.say("Hola, bon dia.")
+    call.say("Vull una cita la setmana que ve.")
+    assert not call.take_back() and len(model.transcript.user_messages) == 2
 
 
 def test_other_words_for_the_same_turn_long_after_are_a_new_line(clinic, kb):

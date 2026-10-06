@@ -67,6 +67,12 @@ class _Conversation:
                 function["strict"] = True  # not every model behind the router takes it
             self._tools.append({"type": "function", "function": function})
 
+    def mark(self) -> int:
+        return len(self._messages)
+
+    def rewind(self, mark: int) -> None:
+        del self._messages[mark:]
+
     def send_user(self, text: str, on_text: OnText | None = None) -> Reply:
         return self._complete([{"role": "user", "content": text}], on_text)
 

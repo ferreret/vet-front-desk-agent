@@ -81,6 +81,14 @@ class Conversation(Protocol):
         self, results: list[ToolResult], on_text: OnText | None = None
     ) -> Reply: ...
 
+    def mark(self) -> int:
+        """A point in the conversation, to come back to with `rewind`."""
+        ...
+
+    def rewind(self, mark: int) -> None:
+        """Forget everything since `mark`: a line that was heard wrong is taken back."""
+        ...
+
 
 class LLMClient(Protocol):
     def start(self, system: str, context: str, tools: list[ToolSpec]) -> Conversation:

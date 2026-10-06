@@ -56,11 +56,13 @@ def language_of(code: str | None) -> str:
 
 
 # A recogniser goes on listening after it has handed a line over, and a moment later may
-# hand the same line over again, written differently: "Once i mitja." and then "Once y
-# media."; "655623964." and then the nine digits as words. The platform drops the answer
+# hand the same line over again, written differently: "Hola, buen día." and then "Hola,
+# bon dia."; "655623964." and then the nine digits as words. The platform drops the answer
 # it was getting and asks again. Seen in four turns of ten on a call in Catalan, 0.4 to
 # 1.0 seconds apart. Asked for the same turn again within this many seconds, the words are
-# the same line heard twice, however they are written.
+# the same line heard twice, however they are written. The second writing is the one the
+# platform keeps, so it is the one answered when the first answer did nothing but talk;
+# when the first answer ran a tool (a booking), that answer stands and is repeated.
 HEARD_AGAIN_WITHIN = 3.0
 
 
@@ -99,6 +101,8 @@ class Line:
         The same turn written differently a moment later is the same line heard again (see
         `HEARD_AGAIN_WITHIN`): answered as a new line, the agent took "Once y media" for a
         caller who had not answered the question it had just asked about "Once i mitja".
+        The first answer is taken back and the line answered as now written, unless that
+        answer ran a tool: then it is repeated.
 
         `language` is for a platform that reports what its recogniser heard. Without it the
         stock phrases follow the language the call itself has worked out from the caller's
@@ -124,16 +128,21 @@ class Line:
 
         await self._busy.acquire()
         before = self._answered.get(turn) if turn is not None else None
-        again = before is not None and (
-            before[0] == heard or self._clock() - before[2] <= HEARD_AGAIN_WITHIN)
-        if again:
+        same_words = before is not None and before[0] == heard
+        again = same_words or (
+            before is not None and self._clock() - before[2] <= HEARD_AGAIN_WITHIN)
+        # The lock is held, so the first answer has finished and can be taken back whole.
+        if again and (same_words or not self.call.take_back()):
             self._busy.release()
-            if before[0] != heard:
-                log.info("turn %d heard again as %r: answered as first heard, %r",
+            if not same_words:
+                log.info("turn %d heard again as %r: a tool ran on %r, so that answer stands",
                          turn, heard, before[0])
             for piece in before[1]:
                 yield piece
             return
+        if again:
+            log.info("turn %d heard again as %r: %r and its answer taken back",
+                     turn, heard, before[0])
         if turn is not None:
             self._answered[turn] = (heard, said, self._clock())
         # Released when the turn ends, not when the listener leaves: an interrupted answer

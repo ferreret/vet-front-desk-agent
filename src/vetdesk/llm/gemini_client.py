@@ -83,8 +83,15 @@ class _Conversation:
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
             max_output_tokens=owner.max_tokens,
         )
-        self._contents: list[types.Content] = []  # append-only
+        # Earlier turns are never edited; the last ones can be taken back whole.
+        self._contents: list[types.Content] = []
         self._calls: dict[str, types.FunctionCall] = {}
+
+    def mark(self) -> int:
+        return len(self._contents)
+
+    def rewind(self, mark: int) -> None:
+        del self._contents[mark:]
 
     def send_user(self, text: str, on_text: OnText | None = None) -> Reply:
         content = types.Content(role="user", parts=[types.Part.from_text(text=text)])

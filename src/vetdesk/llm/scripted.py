@@ -44,6 +44,12 @@ class ScriptedClient:
             on_text(reply.text)
         return reply
 
+    def mark(self) -> int:
+        return len(self.transcript.user_messages)
+
+    def rewind(self, mark: int) -> None:
+        del self.transcript.user_messages[mark:]
+
     def send_user(self, text: str, on_text: OnText | None = None) -> Reply:
         self.transcript.user_messages.append(text)
         return self._reply(on_text)

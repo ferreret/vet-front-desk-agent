@@ -76,7 +76,14 @@ class _Conversation:
              "strict": True}
             for t in tools
         ]
-        self._messages: list[dict] = []  # append-only: earlier turns are never edited
+        # Earlier turns are never edited; the last ones can be taken back whole.
+        self._messages: list[dict] = []
+
+    def mark(self) -> int:
+        return len(self._messages)
+
+    def rewind(self, mark: int) -> None:
+        del self._messages[mark:]
 
     def send_user(self, text: str, on_text: OnText | None = None) -> Reply:
         return self._complete({"role": "user", "content": text}, on_text)
