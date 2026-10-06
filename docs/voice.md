@@ -290,9 +290,12 @@ our address decides, in code, and calls the tool.
 
 - **Hanging up.** After "que tenga un buen día" the line stayed open until the caller put
   the phone down. When a line may end a call (the caller's goodbye, or silence) the answer
-  is kept whole instead of being said piece by piece; if it is a goodbye too, the platform
-  is handed it to say and told to hang up (`end_call`). Tried by typing to the agent: the
-  call ended by itself, "end_call tool was called".
+  is kept whole instead of being said piece by piece; if it is a goodbye too, it is said
+  and the platform is told to hang up (`end_call`). Tried by typing to the agent: the
+  call ended by itself, "end_call tool was called". On the first phone call the line
+  closed and no goodbye was heard: the platform did not say the farewell it had been
+  handed with the tool, as it had not said the message before a transfer. The goodbye is
+  now the agent's own words, said ahead of the tool call, which waits for them.
 - **Putting a call through to a person.** The 2025 pilot said "le paso con recepción" and
   could not; this agent has said, truthfully, that it cannot, and taken a message. Now it
   can, when there is a number to put calls through to (`VETDESK_TRANSFER_TO`) and the

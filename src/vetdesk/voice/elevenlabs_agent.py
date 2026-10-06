@@ -92,8 +92,10 @@ def config(url: str, secret_id: str) -> dict:
                                        "only_at_conversation_start": False},
                         },
                         # To hang up. Our address says the goodbye and decides, in code,
-                        # that the call is over; only the platform can put the phone down.
+                        # that the call is over; only the platform can put the phone down,
+                        # and it waits for the goodbye to be said before it does.
                         "end_call": {"type": "system", "name": "end_call",
+                                     "force_pre_tool_speech": True,
                                      "params": {"system_tool_type": "end_call"}},
                         **_transfer(),
                     },

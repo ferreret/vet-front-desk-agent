@@ -174,8 +174,9 @@ CHANGE_LANGUAGE = [{"type": "function", "function": {
                                                     "language": {"type": "string"}}}}}]
 
 
-def _tool_call(stream: str) -> dict | None:
-    """The tool call an answer consists of, if it is one: (name, arguments), no words."""
+def _tool_call(stream: str, after: str = "") -> dict | None:
+    """The tool call an answer consists of, if it is one: (name, arguments), and no words
+    but those said ahead of it (`after`)."""
     chunks = [json.loads(line[6:]) for line in stream.splitlines()
               if line.startswith("data: ") and line != "data: [DONE]"]
     calls = [call for chunk in chunks
@@ -183,7 +184,9 @@ def _tool_call(stream: str) -> dict | None:
     if not calls:
         return None
     assert chunks[-1]["choices"][0]["finish_reason"] == "tool_calls"
-    assert not any(chunk["choices"][0]["delta"].get("content") for chunk in chunks)
+    words = [chunk["choices"][0]["delta"].get("content") or "" for chunk in chunks]
+    assert "".join(words) == after
+    assert not any(words[words.index(after) + 1:]) if after else True  # said first
     (call,) = calls
     return {"name": call["function"]["name"], **json.loads(call["function"]["arguments"])}
 
@@ -243,9 +246,10 @@ def test_when_the_goodbyes_are_said_the_platform_is_told_to_hang_up(clinic, kb):
     bye = _messages("¿A qué hora abrís?", "Vale, eso es todo, gracias. Adiós.")
     answers = [stream for _, _, stream in _ask(app, asked, bye, tools=HANG_UP)]
     assert _tool_call(answers[0]) is None and _spoken(answers[0]) == "Abrimos a las nueve y media."
-    assert _tool_call(answers[1]) == {
-        "name": "end_call", "reason": "the caller and the agent have said goodbye",
-        "message": "De nada. Que tenga un buen día."}
+    # The goodbye is said by us, ahead of the tool: on a phone call the platform hung up
+    # without saying the farewell it had been handed with it.
+    assert _tool_call(answers[1], after="De nada. Que tenga un buen día.") == {
+        "name": "end_call", "reason": "the caller and the agent have said goodbye"}
     # A goodbye that the agent does not take for one ends nothing: it is said, as ever.
     model, _, app = _front_desk([Reply("¿Para qué día la quiere?")], clinic, kb)
     (_, _, stream), = _ask(app, _messages("Adiós, digo, quería una cita."), tools=HANG_UP)
@@ -259,7 +263,7 @@ def test_silence_after_the_goodbyes_hangs_up_and_a_first_silence_does_not(clinic
     still = _messages("¿A qué hora abrís?", "...", "...")
     answers = [stream for _, _, stream in _ask(app, asked, quiet, still, tools=HANG_UP)]
     assert _tool_call(answers[1]) is None and _spoken(answers[1]) == "¿Sigue ahí?"
-    assert _tool_call(answers[2])["message"] == "Gracias por llamar. Adiós."
+    assert _tool_call(answers[2], after="Gracias por llamar. Adiós.")["name"] == "end_call"
     assert len(model.transcript.user_messages) == 1  # silence never reached the model
 
 
@@ -343,3 +347,4 @@ def test_the_platform_agent_can_be_told_to_change_language(monkeypatch):
     tools = settings["agent"]["prompt"]["built_in_tools"]
     assert tools["language_detection"]["params"]["system_tool_type"] == "language_detection"
     assert tools["end_call"]["params"] == {"system_tool_type": "end_call"}
+    assert tools["end_call"]["force_pre_tool_speech"] is True

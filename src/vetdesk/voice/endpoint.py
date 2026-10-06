@@ -342,9 +342,10 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                                      agent_message=session.transfer)
                 if closing and is_goodbye(text):
                     log.info("the goodbyes are said: the platform is told to hang up")
-                    return await use(response, request_id, model, END_TOOL,
-                                     reason="the caller and the agent have said goodbye",
-                                     message=text)
+                    # Ours to say too, before the tool: handed to the tool as its
+                    # farewell, on a phone call it was not said and the line just closed.
+                    return await use(response, request_id, model, END_TOOL, say=text,
+                                     reason="the caller and the agent have said goodbye")
                 if closing:
                     await response.write(_chunk(request_id, model, {"content": text}))
             await response.write(_chunk(request_id, model, {}, "stop"))
