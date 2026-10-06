@@ -123,6 +123,52 @@ def test_text_is_handed_over_as_it_arrives():
     assert model_turn.role == "model" and len(model_turn.parts) == 4
 
 
+WRITTEN = "<call:default_api:identify_client{name:Raquel López,name_spelled:false}/>"
+
+
+def test_a_tool_call_written_out_as_text_is_asked_for_again():
+    """Seen on 2026-10-06: the model wrote its call instead of making it, went on doing so
+    for the rest of the call, and told the caller "queda anotado" with nothing booked."""
+    sdk = _Sdk(_response(types.Part(text=WRITTEN)),
+               _response(_call("identify_client", "id-1", town="Port Blau")),
+               _response(types.Part(text="¿Cómo se llama su mascota?")))
+    conversation, heard = _start(sdk), []
+    reply = conversation.send_user("Raquel López.", heard.append)
+    assert reply.stop == "tool_calls" and reply.text == "" and heard == []
+    assert [call.name for call in reply.tool_calls] == ["identify_client"]
+    assert reply.usage.output_tokens == 90  # both tries were paid for
+    # The written call never reaches the history: only the call that was made.
+    conversation.send_tool_results([ToolResult("id-1", "{}")])
+    contents = sdk.requests[2]["contents"]
+    assert [c.role for c in contents] == ["user", "model", "user"]
+    assert contents[1].parts[0].function_call.name == "identify_client"
+    assert sdk.requests[0]["contents"] == sdk.requests[1]["contents"]  # asked the same again
+
+
+def test_what_was_said_before_a_written_call_is_not_said_twice():
+    chunks = [_response(types.Part(text="Un momento, "), finish=None),
+              _response(types.Part(text="lo miro. <call:default_api:get_availability"),
+                        finish=None),
+              _response(types.Part(text="{date_from:2026-11-09}/>"))]
+    again = _response(types.Part(text="Un momento, lo miro."), _call("get_availability", "id-2"))
+    conversation, heard = _start(_Sdk(chunks, again)), []
+    reply = conversation.send_user("La semana que viene.", heard.append)
+    assert "".join(heard) == "Un momento, lo miro. " and "<" not in reply.text
+    assert reply.stop == "tool_calls" and reply.text == "Un momento, lo miro."
+
+
+def test_a_model_that_keeps_writing_its_calls_is_given_up_on_cleanly():
+    sdk = _Sdk(*[_response(types.Part(text="Lo miro. " + WRITTEN)) for _ in range(3)],
+               _response(types.Part(text="Dígame.")))
+    conversation, heard = _start(sdk), []
+    reply = conversation.send_user("Raquel López.", heard.append)
+    assert (reply.text, reply.tool_calls, reply.stop) == ("Lo miro.", (), "end")
+    assert "".join(heard) == "Lo miro. " and len(sdk.requests) == 3
+    conversation.send_user("¿Oiga?")
+    kept = sdk.requests[3]["contents"][1]  # its turn in the history: the words, not the call
+    assert kept.role == "model" and [part.text for part in kept.parts] == ["Lo miro."]
+
+
 def test_thoughts_are_not_spoken():
     sdk = _Sdk(_response(types.Part(text="pensando...", thought=True), types.Part(text="Hola.")))
     assert _start(sdk).send_user("Hola").text == "Hola."
