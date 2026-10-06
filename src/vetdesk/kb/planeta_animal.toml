@@ -19,6 +19,9 @@ description = "Urgencias veterinarias las 24 horas, todos los días del año. Fu
 
 [appointments]
 slot_minutes = 30
+# The soonest an appointment is given, counted from the call: nobody is at the door in
+# three minutes. Anything that cannot wait that long is an emergency, not an appointment.
+min_notice_minutes = 60
 notes = [
     "Las visitas son con cita previa. Las urgencias se atienden sin cita.",
     "Para cancelar o cambiar una cita se agradece avisar con 24 horas de antelación.",

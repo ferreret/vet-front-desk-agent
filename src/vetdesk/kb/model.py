@@ -66,7 +66,15 @@ class Emergency(_Model):
 
 class Appointments(_Model):
     slot_minutes: int
+    min_notice_minutes: int
     notes: list[str]
+
+    @field_validator("min_notice_minutes")
+    @classmethod
+    def _sensible_notice(cls, value: int) -> int:
+        if not 0 <= value <= 24 * 60:
+            raise ValueError("min_notice_minutes must be between 0 and 1440")
+        return value
 
     @field_validator("slot_minutes")
     @classmethod
@@ -212,6 +220,8 @@ class KnowledgeBase(_Model):
                 lines.append(f"- {name}: {opening}")
         lines += ["", "CITAS"]
         lines += [f"- {note}" for note in self.appointments.notes]
+        if notice := self.appointments.min_notice_minutes:
+            lines.append(f"- No se dan citas para antes de {notice} minutos desde la llamada.")
         lines += ["", "SERVICIOS Y PRECIOS ORIENTATIVOS"]
         lines += [
             f"- {s.name}: desde {s.price_from_eur} euros. {s.description}" for s in self.services

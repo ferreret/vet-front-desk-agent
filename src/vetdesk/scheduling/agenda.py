@@ -105,20 +105,27 @@ class SqliteAgenda:
         rows = self._db.execute("SELECT start FROM appointments WHERE status = 'booked'")
         return {datetime.fromisoformat(row[0]) for row in rows}
 
+    def _in_time(self, start: datetime) -> bool:
+        """Whether a caller can still get there: not in the past, and not in three minutes."""
+        now = self._now()
+        notice = timedelta(minutes=self._kb.appointments.min_notice_minutes)
+        return start > now and start >= now + notice
+
     def is_free(self, start: datetime) -> bool:
-        return start > self._now() and start in self._slots_of(start.date()) \
+        return self._in_time(start) and start in self._slots_of(start.date()) \
             and start not in self._taken()
 
     def free_slots(
         self, date_from: date, date_to: date, part_of_day: PartOfDay = "any", limit: int = 6
     ) -> list[datetime]:
-        taken, now, found = self._taken(), self._now(), []
-        day = max(date_from, now.date())
+        taken, found = self._taken(), []
+        day = max(date_from, self._now().date())
         while day <= date_to and len(found) < limit:
             for slot in self._slots_of(day):
                 afternoon = slot.hour >= AFTERNOON_STARTS_AT
                 wanted = part_of_day == "any" or (part_of_day == "afternoon") == afternoon
-                if wanted and slot > now and slot not in taken and len(found) < limit:
+                if wanted and self._in_time(slot) and slot not in taken \
+                        and len(found) < limit:
                     found.append(slot)
             day += timedelta(days=1)
         return found
