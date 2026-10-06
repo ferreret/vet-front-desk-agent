@@ -31,6 +31,14 @@ def fold(text: str) -> str:
     return " ".join(re.sub(r"[^a-z0-9]+", " ", plain).split())
 
 
+def fold_any(text: str) -> str:
+    """`fold` for text in any alphabet: the names on file are in Latin letters, but a
+    caller may be speaking Russian. Lowercase, no accents, letters and digits of any script."""
+    decomposed = unicodedata.normalize("NFD", text.replace("·", "").lower())
+    plain = "".join(c for c in decomposed if unicodedata.category(c) != "Mn")
+    return " ".join(re.sub(r"[\W_]+", " ", plain).split())
+
+
 def osa_distance(a: str, b: str, limit: int = 2) -> int:
     """Edit distance counting a swap of two neighbouring letters as one edit.
 

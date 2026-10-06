@@ -13,7 +13,14 @@ from ..language import spoken_language
 from ..legacy.models import Clinic
 from ..llm import Conversation, LLMClient, LLMError, OnText, ToolResult, Usage
 from ..scheduling import Agenda
-from .prompt import LANGUAGE_NAMES, call_context, greeting, set_phrases, system_prompt
+from .prompt import (
+    LANGUAGE_NAMES,
+    call_context,
+    greeting,
+    in_an_emergency,
+    set_phrases,
+    system_prompt,
+)
 from .tools import SPECS, CallSession, Toolbox, ToolEvent
 
 MAX_TOOL_ROUNDS = 6
@@ -45,17 +52,36 @@ def left_waiting(text: str) -> bool:
 # Said when the model cannot produce a turn, in the language of the call.
 DID_NOT_FOLLOW = {"es": "Perdone, no le he entendido bien. ¿Me lo puede repetir?",
                   "ca": "Perdoni, no l'he entès bé. M'ho pot repetir?",
-                  "en": "Sorry, I didn't catch that. Could you say it again?"}
+                  "en": "Sorry, I didn't catch that. Could you say it again?",
+                  "de": "Entschuldigung, das habe ich nicht verstanden. Können Sie es bitte "
+                        "wiederholen?",
+                  "fr": "Excusez-moi, je n'ai pas bien compris. Pouvez-vous répéter ?",
+                  "it": "Mi scusi, non ho capito bene. Può ripetere?",
+                  "ru": "Извините, я не расслышала. Повторите, пожалуйста."}
 TOO_MANY_STEPS = '{"error": "Too many steps in one turn. Answer the caller now."}'
 CANNOT_HELP = {"es": "Perdone, con eso no le puedo ayudar por teléfono. Si quiere, tomo nota "
                      "y recepción le llama.",
                "ca": "Perdoni, amb això no el puc ajudar per telèfon. Si vol, en prenc nota i "
                      "recepció li trucarà.",
                "en": "Sorry, I can't help with that over the phone. If you like, I'll take a "
-                     "note and reception will call you."}
+                     "note and reception will call you.",
+               "de": "Entschuldigung, dabei kann ich Ihnen am Telefon nicht helfen. Wenn Sie "
+                     "möchten, notiere ich es und die Rezeption ruft Sie an.",
+               "fr": "Excusez-moi, je ne peux pas vous aider pour cela par téléphone. Si vous "
+                     "voulez, je prends note et la réception vous appellera.",
+               "it": "Mi scusi, per questo non posso aiutarla al telefono. Se vuole, prendo "
+                     "nota e la reception la chiamerà.",
+               "ru": "Извините, с этим я не могу помочь по телефону. Если хотите, я запишу, "
+                     "и вам позвонят из регистратуры."}
 # Told to the model when the caller's words show which language they speak and it is not
 # the one the call was going on in. Left to itself, a model greeted in Catalan went on in
 # Spanish in a third of its answers.
+# How many of a caller's first lines may change the language on a single telling word.
+SETTLING_LINES = 2
+STILL_IN = {
+    code: f"(Note from the phone system, not from the caller: the call is in {name}.)"
+    for code, name in LANGUAGE_NAMES.items()
+}
 LANGUAGE_NOTE = {
     code: f"(Note from the phone system, not from the caller: the caller is speaking {name}. "
           f"Answer in {name} from now on, every sentence, until they change language. "
@@ -84,20 +110,36 @@ class Turn:
 
 
 class Call:
-    def __init__(self, conversation: Conversation, toolbox: Toolbox, greeting: str) -> None:
+    def __init__(
+        self, conversation: Conversation, toolbox: Toolbox, greeting: str,
+        emergency: Callable[[str], str] = lambda language: "",
+    ) -> None:
         self._conversation = conversation
         self._toolbox = toolbox
         self.greeting = greeting
+        # What to say in an emergency on this call, by language: it depends on the hour.
+        self._emergency = emergency
         # The language the call is going on in: the clinic answers the phone in Spanish, and
         # the caller's own words change it.
         self.language = "es"
         # How things stood before the caller's last line, while that line can still be
         # taken back: see `take_back`.
-        self._before_last: tuple[int, str] | None = None
+        self._before_last: tuple[int, str, int] | None = None
+        self._lines = 0  # how many lines the caller has said
 
     @property
     def session(self) -> CallSession:
         return self._toolbox.session
+
+    def hears(self, text: str) -> str:
+        """The language the call will be in once the caller has said `text`.
+
+        A caller's first lines settle it: there a single telling word is enough, as in a
+        greeting. After that it takes two, so that a name, a town or a word two languages
+        share does not carry the call off into another language.
+        """
+        told = spoken_language(text, least=1 if self._lines < SETTLING_LINES else 2)
+        return told or self.language
 
     def say(self, text: str, on_text: OnText | None = None) -> Turn:
         """The caller says something; the agent answers, using its tools as needed.
@@ -107,13 +149,22 @@ class Call:
         runs, not after.
         """
         self._before_last = None
-        before = (self._conversation.mark(), self.language)
+        before = (self._conversation.mark(), self.language, self._lines)
         self._toolbox.heard(text)
         asked = text
-        language = spoken_language(text)
-        if language and language != self.language:
+        language = self.hears(text)
+        self._lines += 1
+        if language != self.language:
             self.language = language
             asked = f"{text}\n\n{LANGUAGE_NOTE[language]}"
+            if urgent := self._emergency(language):
+                asked = f"{asked[:-1]} {urgent})"
+        elif language != "es" and spoken_language(text) is None:
+            # A line that tells no language: a name, a town, a number. Seen in French and
+            # in Russian: given "Maria Ma Sala" and nothing else, the model answered in
+            # Italian. It is reminded which language the call is in. Not in Spanish, the
+            # language the call starts in and the instructions say so.
+            asked = f"{text}\n\n{STILL_IN[language]}"
         self.session.language = self.language  # what the tools hand over to be said
         events_before = len(self.session.events)
         latencies: list[float] = []
@@ -203,7 +254,7 @@ class Call:
         """
         if self._before_last is None:
             return False
-        mark, self.language = self._before_last
+        mark, self.language, self._lines = self._before_last
         self._conversation.rewind(mark)
         self._before_last = None
         return True
@@ -227,4 +278,5 @@ class FrontDeskAgent:
         hello = greeting(self._kb, now)
         toolbox = Toolbox(self._clinic, self._kb, self._agenda, self._now, caller_number)
         context = call_context(self._kb, now, caller_number, hello)
-        return Call(self._llm.start(self._system, context, SPECS), toolbox, hello)
+        return Call(self._llm.start(self._system, context, SPECS), toolbox, hello,
+                    lambda language: in_an_emergency(self._kb, now, language))

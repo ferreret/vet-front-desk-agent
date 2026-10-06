@@ -92,6 +92,18 @@ WANTS = {
     "en": {"book": "I'd like to make an appointment.",
            "cancel": "I'd like to cancel an appointment.",
            "reschedule": "I'd like to change an appointment."},
+    "de": {"book": "Ich möchte einen Termin vereinbaren.",
+           "cancel": "Ich möchte einen Termin absagen.",
+           "reschedule": "Ich möchte einen Termin verschieben."},
+    "fr": {"book": "Je voudrais prendre rendez-vous.",
+           "cancel": "Je voudrais annuler un rendez-vous.",
+           "reschedule": "Je voudrais déplacer un rendez-vous."},
+    "it": {"book": "Vorrei prendere un appuntamento.",
+           "cancel": "Vorrei annullare un appuntamento.",
+           "reschedule": "Vorrei spostare un appuntamento."},
+    "ru": {"book": "Я хотел бы записаться на приём.",
+           "cancel": "Я хотел бы отменить запись.",
+           "reschedule": "Я хотел бы перенести запись."},
 }
 OPENINGS = {
     "es": {"morning": "Hola, buenos días.", "afternoon": "Hola, buenas tardes.",
@@ -100,6 +112,12 @@ OPENINGS = {
            "night": "Hola, bona nit."},
     "en": {"morning": "Hello, good morning.", "afternoon": "Hello, good afternoon.",
            "night": "Hello, good evening."},
+    "de": {"morning": "Hallo, guten Morgen.", "afternoon": "Hallo, guten Tag.",
+           "night": "Hallo, guten Abend."},
+    "fr": {"morning": "Bonjour.", "afternoon": "Bonjour.", "night": "Bonsoir."},
+    "it": {"morning": "Buongiorno.", "afternoon": "Buon pomeriggio.", "night": "Buonasera."},
+    "ru": {"morning": "Здравствуйте, доброе утро.", "afternoon": "Здравствуйте, добрый день.",
+           "night": "Здравствуйте, добрый вечер."},
 }
 
 HANG_UP = ToolSpec(
@@ -113,7 +131,8 @@ HANG_UP = ToolSpec(
     },
 )
 
-LANGUAGES = {"es": "Spanish", "ca": "Catalan", "en": "English"}
+LANGUAGES = {"es": "Spanish", "ca": "Catalan", "en": "English", "de": "German",
+             "fr": "French", "it": "Italian", "ru": "Russian"}
 REASONS = {
     "vaccination": "it is due for its yearly vaccination",
     "checkup": "you want a general check-up",

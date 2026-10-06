@@ -23,7 +23,7 @@ from ..identity.spelling import SPELLED_WORD, spelled_words, was_spelled
 from ..kb import KnowledgeBase
 from ..kb.model import WEEKDAYS_ES
 from ..legacy.models import Client, Clinic
-from ..legacy.normalize import fold, parse_phones
+from ..legacy.normalize import fold, fold_any, parse_phones
 from ..llm import ToolCall, ToolResult, ToolSpec
 from ..scheduling import Agenda, AgendaError, Appointment
 from ..spoken import say
@@ -64,6 +64,9 @@ class CallSession:
     # spelled out, and in how many of their lines each word came up.
     spelled: list[str] = field(default_factory=list)
     lines_with: Counter = field(default_factory=Counter)
+    # Every word the caller has said, in whatever alphabet: what a reason for a visit is
+    # checked against. The names above are compared in Latin letters, as they are on file.
+    said: set[str] = field(default_factory=set)
     events: list[ToolEvent] = field(default_factory=list)
     messages: list[Message] = field(default_factory=list)
 
@@ -102,7 +105,12 @@ _NOT_A_REASON = frozenset("""
     perro perra perrito perrita gato gata gatito gatita conejo coneja hamster huron cobaya
     ave pajaro tortuga loro gos gossa gosset gosseta gat gatet gateta conill conilla fura
     ocell cobaia quiero queria vull volia voldria pedir demanar reservar agendar necesita
-    necessita tiene general""".split())
+    necessita tiene general appointment visit dog cat rabbit pets want would like need book
+    the for with and termin besuch tier haustier hund katze mein meine meinen mochte brauche
+    einen fur und mit rendez vous visite chien chat mon voudrais besoin pour avec
+    appuntamento visita cane gatto mio vorrei prenotare
+    запись прием визит собака собаки собаку кошка кошки кошку питомец питомца для моей
+    моего моя мой хочу хотел хотела записаться""".split())
 _STEM = 4  # "vacunarlo" and "vacunación" are the same reason: the first letters decide
 
 
@@ -251,6 +259,7 @@ class Toolbox:
         """Take note of what the caller has just said, before the model answers it."""
         self.session.spelled += spelled_words(text)
         self.session.lines_with.update(set(fold(text).split()))
+        self.session.said.update(fold_any(text).split())
 
     def _vouched_for(self, name: str | None, spelled: bool, pet: str | None,
                      town: str | None) -> None:
@@ -471,9 +480,9 @@ class Toolbox:
         "Visita general". Reception reads that reason, so it has to be the caller's: one
         word of it, at least, that they said and that is neither the animal nor the asking.
         """
-        animal = set(fold(pet_name).split())
-        said = _stems(word for word in self.session.lines_with if word not in animal)
-        if not _stems(word for word in fold(reason).split() if word not in animal) & said:
+        animal = set(fold_any(pet_name).split())
+        said = _stems(word for word in self.session.said if word not in animal)
+        if not _stems(word for word in fold_any(reason).split() if word not in animal) & said:
             raise ToolError(NO_REASON.format(reason=reason))
 
     def _own(self, appointment_id: str) -> Appointment:

@@ -49,8 +49,30 @@ from vetdesk.language import spoken_language
     ("No, thank you.", "en"),
     ("John Smith.", None),
     ("Can Pons.", None),  # a house in Catalan before it is a verb in English
+    # German, French, Italian; and Russian, told by its alphabet.
+    ("Hallo, guten Morgen.", "de"),
+    ("Ich möchte einen Termin für meinen Hund.", "de"),
+    ("Bonjour.", "fr"),
+    ("Je voudrais prendre rendez-vous pour mon chien.", "fr"),
+    ("Buongiorno.", "it"),
+    ("Vorrei prenotare un appuntamento per il mio cane.", "it"),
+    ("Здравствуйте.", "ru"),
+    ("Меня зовут Joan Feliu.", "ru"),
+    ("Hans Müller.", None),
+    ("Maria Rossi.", None),
     ("Ok.", None),
     ("", None),
 ])
 def test_the_language_of_a_line(line, language):
     assert spoken_language(line) == language
+
+
+def test_no_word_tells_two_languages():
+    """A word in two lists tells neither, and would stop telling the one it was first in."""
+    from vetdesk.language import _WORDS
+
+    lists = {language: set(words.split()) for language, words in _WORDS.items()}
+    for one in ("en", "de", "fr", "it"):  # Spanish and Catalan share words, taken out in code
+        for other in lists:
+            assert one == other or not lists[one] & lists[other], (one, other)
+

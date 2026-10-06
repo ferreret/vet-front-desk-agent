@@ -113,7 +113,102 @@ def say_en(moment: datetime) -> str:
             f"{_minutes(_EN, moment.minute, '')} {_part_en(moment.hour)}")
 
 
-SAY = {"es": say_es, "ca": say_ca, "en": say_en}
+# German, French, Italian and Russian tell the time of an appointment by the 24-hour clock,
+# which is how it is said at a reception desk there and leaves nothing to mistake.
+_DE = {
+    "weekdays": ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"),
+    "months": ("Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August",
+               "September", "Oktober", "November", "Dezember"),
+    "hours": ("null", "ein", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht", "neun",
+              "zehn", "elf", "zwölf", "dreizehn", "vierzehn", "fünfzehn", "sechzehn",
+              "siebzehn", "achtzehn", "neunzehn", "zwanzig", "einundzwanzig",
+              "zweiundzwanzig", "dreiundzwanzig"),
+    "minutes": {0: "", 5: " fünf", 10: " zehn", 15: " fünfzehn", 20: " zwanzig",
+                25: " fünfundzwanzig", 30: " dreißig", 35: " fünfunddreißig", 40: " vierzig",
+                45: " fünfundvierzig", 50: " fünfzig", 55: " fünfundfünfzig"},
+}
+_FR = {
+    "weekdays": ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"),
+    "months": ("janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",
+               "septembre", "octobre", "novembre", "décembre"),
+    "hours": ("zéro", "une", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf",
+              "dix", "onze", "douze", "treize", "quatorze", "quinze", "seize", "dix-sept",
+              "dix-huit", "dix-neuf", "vingt", "vingt et une", "vingt-deux", "vingt-trois"),
+    "minutes": {0: "", 5: " cinq", 10: " dix", 15: " quinze", 20: " vingt", 25: " vingt-cinq",
+                30: " trente", 35: " trente-cinq", 40: " quarante", 45: " quarante-cinq",
+                50: " cinquante", 55: " cinquante-cinq"},
+}
+_IT = {
+    "weekdays": ("lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"),
+    "months": ("gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto",
+               "settembre", "ottobre", "novembre", "dicembre"),
+    "hours": ("zero", "una", "due", "tre", "quattro", "cinque", "sei", "sette", "otto", "nove",
+              "dieci", "undici", "dodici", "tredici", "quattordici", "quindici", "sedici",
+              "diciassette", "diciotto", "diciannove", "venti", "ventuno", "ventidue",
+              "ventitré"),
+    "minutes": {0: "", 5: " e cinque", 10: " e dieci", 15: " e quindici", 20: " e venti",
+                25: " e venticinque", 30: " e trenta", 35: " e trentacinque", 40: " e quaranta",
+                45: " e quarantacinque", 50: " e cinquanta", 55: " e cinquantacinque"},
+}
+_RU = {
+    "weekdays": ("понедельник", "вторник", "среда", "четверг", "пятница", "суббота",
+                 "воскресенье"),
+    "months": ("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа",
+               "сентября", "октября", "ноября", "декабря"),
+    "hours": ("ноль", "один", "два", "три", "четыре", "пять", "шесть", "семь", "восемь",
+              "девять", "десять", "одиннадцать", "двенадцать", "тринадцать", "четырнадцать",
+              "пятнадцать", "шестнадцать", "семнадцать", "восемнадцать", "девятнадцать",
+              "двадцать", "двадцать один", "двадцать два", "двадцать три"),
+    "minutes": {0: "", 5: " ноль пять", 10: " десять", 15: " пятнадцать", 20: " двадцать",
+                25: " двадцать пять", 30: " тридцать", 35: " тридцать пять", 40: " сорок",
+                45: " сорок пять", 50: " пятьдесят", 55: " пятьдесят пять"},
+}
+
+
+def _day(words: dict, moment: datetime) -> tuple[str, str]:
+    return words["weekdays"][moment.weekday()], words["months"][moment.month - 1]
+
+
+def say_de(moment: datetime) -> str:
+    """'Montag, 9. November, um sechzehn Uhr dreißig'"""
+    weekday, month = _day(_DE, moment)
+    return (f"{weekday}, {moment.day}. {month}, um {_DE['hours'][moment.hour]} Uhr"
+            f"{_minutes(_DE, moment.minute, '')}")
+
+
+def say_fr(moment: datetime) -> str:
+    """'lundi 9 novembre à seize heures trente'"""
+    weekday, month = _day(_FR, moment)
+    day = "1er" if moment.day == 1 else str(moment.day)
+    hours = "heure" if moment.hour in (0, 1) else "heures"
+    return (f"{weekday} {day} {month} à {_FR['hours'][moment.hour]} {hours}"
+            f"{_minutes(_FR, moment.minute, '')}")
+
+
+def say_it(moment: datetime) -> str:
+    """'lunedì 9 novembre alle sedici e trenta'"""
+    weekday, month = _day(_IT, moment)
+    day = "1º" if moment.day == 1 else str(moment.day)
+    at = "all'una" if moment.hour == 1 else f"alle {_IT['hours'][moment.hour]}"
+    return f"{weekday} {day} {month} {at}{_minutes(_IT, moment.minute, 'e')}"
+
+
+def say_ru(moment: datetime) -> str:
+    """'понедельник, 9 ноября, в шестнадцать тридцать'"""
+    weekday, month = _day(_RU, moment)
+    hour = moment.hour
+    if moment.minute:
+        time_said = f"{_RU['hours'][hour]}{_minutes(_RU, moment.minute, '')}"
+    else:  # один час, два часа, пять часов, двадцать один час
+        last = hour % 10
+        unit = "час" if last == 1 and hour != 11 else \
+            "часа" if last in (2, 3, 4) and hour not in (12, 13, 14) else "часов"
+        time_said = f"{_RU['hours'][hour]} {unit}"
+    return f"{weekday}, {moment.day} {month}, в {time_said}"
+
+
+SAY = {"es": say_es, "ca": say_ca, "en": say_en, "de": say_de, "fr": say_fr, "it": say_it,
+       "ru": say_ru}
 
 
 def say(moment: datetime, language: str) -> str:

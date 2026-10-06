@@ -41,23 +41,55 @@ _WORDS = {
         could have his her she they we not but there here this that with for and of to at
         today tomorrow monday tuesday wednesday thursday friday saturday sunday week speak
         english name phone number one two three four five six seven eight nine am are was
-        does did will sick hurt limping vaccination vaccine checkup check emergency open
-        closed price much""",
+        does did will sick hurt limping vaccine checkup check emergency open closed price
+        much""",
+    # None of these three lists holds a word of another list: a word in two lists tells
+    # neither language, and would stop telling the one it was already in.
+    "de": """hallo guten morgen tag abend ich möchte brauche einen termin für mein meine meinen
+        hund katze danke bitte ja nein ist und mit heute montag dienstag mittwoch donnerstag
+        freitag samstag sonntag woche wann wie wo nummer telefon sprechen deutsch eins zwei
+        drei vier fünf sechs sieben acht neun null nicht aber das der die den sie wir haben
+        hat kann können uhr notfall vormittag nachmittag nächste nächsten geht gut auf
+        wiederhören tschüss vielen dank impfung untersuchung krank hinkt geöffnet ihr ihren
+        ihre namen welcher welche tage tagen möchten sagen""",
+    "fr": """bonjour bonsoir je voudrais veux besoin prendre rendez vous pour mon chien chat
+        merci oui est et avec plaît aujourd demain lundi mardi mercredi jeudi vendredi samedi
+        dimanche matin soir après midi quand comment où numéro téléphone parlez français deux
+        trois cinq sept huit neuf zéro ai elle ne pas très heure semaine urgence chez au
+        revoir ça accord prochaine vaccin malade boite ouvert votre vos prénom animaux jour
+        jours heures mes cette une quel quelle quels pouvez puis""",
+    "it": """buongiorno buonasera salve vorrei voglio prenotare appuntamento mio cane gatto
+        grazie sì oggi domani lunedì martedì mercoledì giovedì venerdì sabato domenica mattina
+        pomeriggio sera quando dove nome numero telefono italiano due tre quattro cinque sei
+        sette otto nove dieci è sono non ma gli che anche molto bene settimana urgenza posso
+        può vuole arrivederci prossima vaccino malato zoppica aperto accordo suo sua suoi
+        cognome favore chiamo giorno giorni ore alle della questo animali prego buon quale
+        unghie""",
 }
+# Russian is told by its alphabet: a line with a Cyrillic letter in it is Russian.
+_CYRILLIC = re.compile("[а-яё]")
 _TELLING = {language: frozenset(words.split()) for language, words in _WORDS.items()}
 _TELLING = {language: words - frozenset().union(*(other for name, other in _TELLING.items()
                                                  if name != language))
             for language, words in _TELLING.items()}
 _WORD = re.compile(r"[^\W\d_]+")
 # The languages this module can tell apart, which are the ones the agent speaks.
-SPOKEN = tuple(_TELLING)
+SPOKEN = (*_TELLING, "ru")
 
 
-def spoken_language(text: str) -> str | None:
-    """'es' or 'ca' when the line's words tell, None when they do not."""
+def spoken_language(text: str, least: int = 1) -> str | None:
+    """The language a line's words tell, None when they do not.
+
+    `least` is how many telling words it takes. One is enough for a greeting. It is not
+    enough to change the language of a call that has found its own: among seven languages a
+    single word is too often somebody else's ("le unghie" has a Spanish word in it, and
+    "vaccination annuelle" an English one).
+    """
+    if _CYRILLIC.search(text.lower()):
+        return "ru"
     words = _WORD.findall(text.lower())
     scores = {language: sum(word in telling for word in words)
               for language, telling in _TELLING.items()}
     best = max(scores, key=scores.get)
     others = [score for language, score in scores.items() if language != best]
-    return best if scores[best] > max(others) else None
+    return best if scores[best] >= least and scores[best] > max(others) else None

@@ -56,8 +56,9 @@ share phones, numbers change hands, and people call from someone else's phone.
   appointment under the name and phone they give you, or take a message.
 - General questions (opening hours, prices, services, the address) need no
   identification. Just answer them.
-- In an emergency, do not ask who is calling. Say at once what "This call" tells you to
-  say in an emergency: it depends on whether the clinic is open right now.
+- In an emergency, ask nothing first, not even who is calling. Say at once the emergency
+  sentence you were given for the caller's language, word for word, with its phone number
+  in figures as it is written there.
 
 # What you can do
 Only what your tools do. You cannot transfer a call or put anyone through, and nobody else
@@ -91,7 +92,8 @@ the animal, and if it sounds serious treat it as an emergency.
 # were once all in the instructions, one after another: with three languages there, a
 # caller speaking Catalan was asked "May I have your full name, please?". The model is
 # given only the phrases of the language the call is in.
-LANGUAGE_NAMES = {"es": "Spanish", "ca": "Catalan", "en": "English"}
+LANGUAGE_NAMES = {"es": "Spanish", "ca": "Catalan", "en": "English", "de": "German",
+                  "fr": "French", "it": "Italian", "ru": "Russian"}
 PHRASES = {
     "es": ("¿En qué puedo ayudarle?",
            "¿Me dice su nombre y sus dos apellidos, por favor?",
@@ -102,7 +104,65 @@ PHRASES = {
     "en": ("How can I help you?",
            "May I have your full name, please?",
            "I can't put you through, but I'll take a note and reception will call you back."),
+    "de": ("Wie kann ich Ihnen helfen?",
+           "Wie ist Ihr vollständiger Name, bitte?",
+           "Ich kann Sie nicht weiterverbinden, aber ich notiere Ihr Anliegen und die "
+           "Rezeption ruft Sie zurück."),
+    "fr": ("Comment puis-je vous aider ?",
+           "Puis-je avoir votre nom complet, s'il vous plaît ?",
+           "Je ne peux pas vous transférer, mais je prends note et la réception vous "
+           "rappellera."),
+    "it": ("Come posso aiutarla?",
+           "Mi dice il suo nome e cognome, per favore?",
+           "Non posso passarle la chiamata, ma prendo nota e la reception la richiamerà."),
+    "ru": ("Чем могу помочь?",
+           "Назовите, пожалуйста, ваше полное имя.",
+           "Я не могу вас соединить, но я запишу ваше сообщение, и вам перезвонят из "
+           "регистратуры."),
 }
+
+
+# What a caller with an emergency is told: (when the clinic is open, when it is closed).
+# Left to the model to put into the caller's language, a caller speaking Italian was
+# given the emergency number in words, and wrong: "sessocento cinquanta
+# cinquantaduecentoventi". The sentence is written here, with the number in figures.
+EMERGENCY = {
+    "es": ("Es una urgencia: venga directamente a la clínica, o llame al teléfono de "
+           "urgencias, {phone}, para avisar de que viene.",
+           "Es una urgencia: llame ahora al teléfono de urgencias, {phone}. Le atenderá el "
+           "veterinario de guardia."),
+    "ca": ("És una urgència: vingui directament a la clínica, o truqui al telèfon "
+           "d'urgències, {phone}, per avisar que ve.",
+           "És una urgència: truqui ara al telèfon d'urgències, {phone}. L'atendrà el "
+           "veterinari de guàrdia."),
+    "en": ("This is an emergency: come straight to the clinic, or call the emergency number, "
+           "{phone}, to say you are on your way.",
+           "This is an emergency: please call the emergency number now, {phone}. The vet on "
+           "call will answer."),
+    "de": ("Das ist ein Notfall: Kommen Sie direkt in die Klinik oder rufen Sie die "
+           "Notfallnummer {phone} an, um Ihr Kommen anzukündigen.",
+           "Das ist ein Notfall: Rufen Sie bitte jetzt die Notfallnummer {phone} an. Dort "
+           "erreichen Sie den diensthabenden Tierarzt."),
+    "fr": ("C'est une urgence : venez directement à la clinique, ou appelez le numéro "
+           "d'urgence, le {phone}, pour prévenir de votre arrivée.",
+           "C'est une urgence : appelez tout de suite le numéro d'urgence, le {phone}. Le "
+           "vétérinaire de garde vous répondra."),
+    "it": ("È un'urgenza: venga direttamente in clinica, oppure chiami il numero di "
+           "emergenza, {phone}, per avvisare che sta arrivando.",
+           "È un'urgenza: chiami subito il numero di emergenza, {phone}. Le risponderà il "
+           "veterinario di turno."),
+    "ru": ("Это экстренный случай: приезжайте сразу в клинику или позвоните по номеру "
+           "экстренной помощи {phone}, чтобы предупредить о приезде.",
+           "Это экстренный случай: позвоните сейчас по номеру экстренной помощи {phone}. Вам "
+           "ответит дежурный ветеринар."),
+}
+
+
+def emergency_sentence(kb: KnowledgeBase, now: datetime, language: str) -> str:
+    """What to tell a caller with an emergency, right now, in their language."""
+    when_open, when_closed = EMERGENCY[language]
+    sentence = when_open if kb.is_open(now) else when_closed
+    return sentence.format(phone=spoken_phone(kb.emergency.phone))
 
 
 def set_phrases(language: str) -> str:
@@ -138,19 +198,19 @@ def call_context(kb: KnowledgeBase, now: datetime, caller_number: str | None, sa
     status = "open" if is_open else "closed"
     # What to do in an emergency depends on the hour, and a model told both cases sent a
     # caller to the closed clinic at three in the morning. It gets the one that applies.
-    emergency = spoken_phone(kb.emergency.phone)
-    if is_open:
-        urgent = (f"they can come straight to the clinic, or call the emergency number, "
-                  f"{emergency}, to say they are on their way.")
-    else:
-        urgent = (f"the clinic is closed, so they must call the emergency number, "
-                  f"{emergency}, where the vet on call answers. Do not tell them to come to "
-                  f"the clinic.")
+    closed = "" if is_open else " The clinic is closed: do not tell them to come to it."
     return (
         "# This call\n"
         f"It is {WEEKDAYS_ES[now.weekday()]}, {now:%Y-%m-%d %H:%M}. The clinic is {status} "
-        f"right now.\nIf the caller has an emergency: {urgent}\n"
+        f"right now.\n"
         f"Calling number: {number}.\n"
         f'You have already answered the phone with: "{said}"\n'
-        f"The call starts in Spanish. {set_phrases('es')}"
+        f"The call starts in Spanish. {set_phrases('es')}\n"
+        f'{in_an_emergency(kb, now, "es")}{closed}'
     )
+
+
+def in_an_emergency(kb: KnowledgeBase, now: datetime, language: str) -> str:
+    """The emergency sentence of one language, as the model is told it."""
+    return f'If the caller has an emergency, say: "{emergency_sentence(kb, now, language)}"'
+

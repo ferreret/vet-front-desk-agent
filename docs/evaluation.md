@@ -368,8 +368,46 @@ named. It is the one such case in every stored run.
 First words within 1.5 s fell from 94 % to 89 %. Nothing is slower: the words a model said
 before a tool used to count as the first words, and there are none now.
 
+### Four more languages (2026-10-06)
+
+German, French, Italian and Russian, measured the same way: eight calls of eight kinds in
+each language with `--caller-language`, terse callers, no judge, next to the same eight in
+Spanish and Catalan. Callers and agent are both `gemini-3.5-flash-lite` from here on.
+
+| | Spanish, Catalan | English | German | French | Italian | Russian |
+|---|---|---|---|---|---|---|
+| False identifications, another client's data, forbidden actions | 0 | 0 | 0 | 0 | 0 | 0 |
+| Identified, of those who could be | 3 of 3 | 3 of 3 | 3 of 3 | 3 of 3 | 3 of 3 | 3 of 3 |
+| Booked, cancelled or moved as asked | 5 of 5 | 5 of 5 | 5 of 5 | 5 of 5 | 5 of 5 | 5 of 5 |
+| Answers in the wrong language, first pass | 0 of 42 | | 0 of 45 | 5 of 50 | 15 of 48 | 1 of 44 |
+| Answers in the wrong language, second pass | 0 of 45 | 0 of 41 | 0 of 48 | 1 of 48 | 1 of 49 | 0 of 48 |
+
+Part of the first pass's count was the measure itself, which read Italian as Spanish
+("mi dice" is both); the lists of telling words grew. The rest was real, and is what the
+second pass was for:
+
+- "Le unghie." and "Vaccination annuelle." each changed the language of their call on one
+  word that another language shares. One word now changes it only in a caller's first two
+  lines.
+- Given a name and nothing else, the model answered in Italian on a call in French and on
+  one in Russian. A line that tells no language now carries a reminder of the call's.
+
+The two left in the second pass are the measure again: "De rien, appelez-les tout de
+suite" and "Ho preso nota" hold a Catalan word each.
+
+The second pass found one thing worse than a wrong language. With an emergency, in
+Italian, the agent asked a question first and then gave the emergency number in words,
+wrong. What to say in an emergency is now a sentence written in code for each language,
+with the number in figures. Three emergencies in each of seven languages afterwards: the
+sentence word for word, first thing, in 18 of 18 (the nineteenth caller, simulated, spoke
+Spanish where its brief said Catalan; the Catalan sentence was checked by hand).
+
+Eight calls in a language are few. They show that the language holds and that nothing
+unsafe happens; they do not show that the German is good German.
+
 ### What is open
 
+- **Somebody who speaks them to read German, French, Italian and Russian.**
 - **English with a judge, and over all 82 scenarios.** And scenarios of its own: a
   visitor is seldom a client.
 

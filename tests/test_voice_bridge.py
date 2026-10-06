@@ -315,4 +315,4 @@ def test_the_language_to_speak_follows_what_was_heard(code, language):
 
 
 def test_every_language_has_both_stock_phrases():
-    assert set(WAITING) == set(TROUBLE) == {"es", "ca", "en", "fr", "de", "nl", "it"}
+    assert set(WAITING) == set(TROUBLE) == {"es", "ca", "en", "fr", "de", "nl", "it", "ru"}

@@ -58,11 +58,31 @@ def test_what_to_do_in_an_emergency_depends_on_the_hour_and_code_decides(kb):
     from vetdesk.agent.prompt import call_context
 
     open_now = call_context(kb, datetime(2026, 11, 3, 10, 15), None, "Hola")
-    assert "come straight to the clinic" in open_now and "600 555 020" in open_now
+    assert "venga directamente a la clínica" in open_now and "600 555 020" in open_now
     closed = call_context(kb, datetime(2026, 11, 8, 3, 20), None, "Hola")  # a Sunday night
     assert "The clinic is closed" in closed and "600 555 020" in closed
-    assert "Do not tell them to come to the clinic" in closed
-    assert "come straight" not in closed
+    assert "do not tell them to come to it" in closed
+    assert "venga directamente" not in closed and "veterinario de guardia" in closed
+
+
+def test_the_emergency_sentence_is_written_in_code_in_every_language(clinic, kb):
+    """Left to the model to say in Italian, the emergency number came out in words, and
+    wrong. Every language has the sentence, with the number in figures, for the open clinic
+    and for the closed one; the model is given it in the language the call turns to."""
+    from vetdesk.agent.prompt import EMERGENCY, emergency_sentence
+    from vetdesk.language import SPOKEN
+
+    night, morning = datetime(2026, 11, 8, 3, 20), datetime(2026, 11, 3, 10, 15)
+    assert set(EMERGENCY) == set(SPOKEN)
+    for language in SPOKEN:
+        closed, opened = (emergency_sentence(kb, when, language) for when in (night, morning))
+        assert "600 555 020" in closed and "600 555 020" in opened and closed != opened
+    model = ScriptedClient([Reply("È un'urgenza.")])
+    call = _call(model, clinic, kb, None, night)
+    call.say("Buonasera, il mio cane ha mangiato del cioccolato!")
+    told = model.transcript.user_messages[0]
+    assert emergency_sentence(kb, night, "it") in told
+    assert emergency_sentence(kb, night, "es") in model.transcript.context
 
 
 def test_the_system_prompt_is_the_same_for_every_call(clinic, kb):
@@ -214,6 +234,23 @@ def test_a_turn_that_ends_on_a_waiting_phrase_is_made_to_go_on(clinic, kb):
     assert "silence" not in call.session.lines_with and "caller" not in call.session.lines_with
 
 
+def test_one_word_changes_the_language_only_while_the_call_is_settling(clinic, kb):
+    """Measured with callers in French and Italian: "Le unghie." has a Spanish word in it and
+    "Vaccination annuelle." an English one, and each carried its call off into the wrong
+    language. A greeting may change the language on one word; later it takes two."""
+    model = ScriptedClient([Reply("Buongiorno.") for _ in range(6)])
+    call = _call(model, clinic, kb)
+    call.say("Buongiorno.")
+    assert call.language == "it"
+    call.say("Vorrei prendere un appuntamento.")
+    call.say("Le unghie.")                      # "le" tells Spanish; one word is not enough
+    call.say("Toby.")
+    assert call.language == "it" and call.hears("Sí.") == "it"
+    call.say("Perdone, ¿me puede hablar en castellano, por favor?")
+    assert call.language == "es"
+    assert call.hears("Здравствуйте") == "ru"   # an alphabet is not a word: always enough
+
+
 def test_set_phrases_reach_the_model_in_the_language_of_the_call_only(clinic, kb):
     """With the phrases of three languages in its instructions, the model asked a caller
     speaking Catalan "May I have your full name, please?". It is given one language's."""
@@ -230,7 +267,7 @@ def test_set_phrases_reach_the_model_in_the_language_of_the_call_only(clinic, kb
     assert not any(phrase in model.transcript.context for phrase in PHRASES["ca"] + PHRASES["en"])
     call.say("Hola, bon dia.")
     told = model.transcript.user_messages[0]
-    assert all(phrase in told for phrase in PHRASES["ca"]) and LANGUAGE_NOTE["ca"] in told
+    assert all(phrase in told for phrase in PHRASES["ca"]) and LANGUAGE_NOTE["ca"][:-1] in told
     assert not any(phrase in told for phrase in PHRASES["en"] + PHRASES["es"])
     call.say("Sorry, do you speak English?")
     assert all(phrase in model.transcript.user_messages[1] for phrase in PHRASES["en"])
@@ -288,7 +325,7 @@ def test_the_agent_is_nudged_once_and_only_when_left_waiting(clinic, kb):
 
 def test_the_model_is_told_the_callers_language_when_their_words_show_it(clinic, kb):
     """Greeted in Catalan, a model went on in Spanish. Code tells the languages apart."""
-    from vetdesk.agent.agent import LANGUAGE_NOTE
+    from vetdesk.agent.agent import LANGUAGE_NOTE, STILL_IN
 
     model = ScriptedClient([Reply("Bona tarda."), Reply("Digui'm."), Reply("Sí."),
                             Reply("Claro.")])
@@ -296,13 +333,18 @@ def test_the_model_is_told_the_callers_language_when_their_words_show_it(clinic,
     assert call.language == "es"  # the clinic answers the phone in Spanish
     call.say("Hola, bona tarda.")
     sent = model.transcript.user_messages
-    assert call.language == "ca" and sent[0] == f"Hola, bona tarda.\n\n{LANGUAGE_NOTE['ca']}"
+    assert call.language == "ca"
+    assert sent[0].startswith(f"Hola, bona tarda.\n\n{LANGUAGE_NOTE['ca'][:-1]}")
+    assert "És una urgència" in sent[0] and sent[0].endswith(")")
     call.say("Voldria demanar hora per al meu gos.")
     call.say("Joan Feliu Plana.")  # a name tells nothing: the call stays in Catalan
-    assert sent[1:] == ["Voldria demanar hora per al meu gos.", "Joan Feliu Plana."]
+    # ...and the model is reminded of it: given a name alone, one answered in the language
+    # the name looked like.
+    assert sent[1:] == ["Voldria demanar hora per al meu gos.",
+                        f"Joan Feliu Plana.\n\n{STILL_IN['ca']}"]
     assert call.language == "ca"
     call.say("Perdone, mejor en castellano, por favor.")
-    assert call.language == "es" and sent[3].endswith(LANGUAGE_NOTE["es"])
+    assert call.language == "es" and LANGUAGE_NOTE["es"][:-1] in sent[3]
     # The note is the phone system's: it is not what the caller said.
     assert "phone" not in call.session.lines_with and "system" not in call.session.lines_with
     # The agent's own lines follow the call's language too.

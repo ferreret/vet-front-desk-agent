@@ -51,7 +51,7 @@ from ..agent import FrontDeskAgent
 from ..agent.agent import Call, Turn
 from ..evals.cost import cost
 from ..kb import load_kb
-from ..language import SPOKEN, spoken_language
+from ..language import SPOKEN
 from ..legacy import LegacySqliteSource
 from ..legacy.normalize import parse_phones
 from ..llm import create_client
@@ -125,7 +125,7 @@ def _change_of_language(body: dict, messages: list[dict], line: Line) -> str | N
                   for tool in body.get("tools") or [] if isinstance(tool, dict))
     if not offered or messages[-1].get("role") != "user":
         return None  # no such tool, or it has just been used and the answer is due
-    spoken = spoken_language(_text(messages[-1].get("content")))
+    spoken = line.call.hears(_text(messages[-1].get("content")))
     return spoken if spoken in SPOKEN and spoken != line.listening_in else None
 
 

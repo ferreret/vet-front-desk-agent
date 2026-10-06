@@ -110,30 +110,52 @@ synthesizer speaks it convincingly. `--languages es,en,fr,de,ca` adds samples in
 
 ## Languages
 
-| | Spanish and Catalan | English | German, Russian, French, Italian |
+| | Spanish, Catalan | English | German, French, Italian, Russian |
 |---|---|---|---|
 | Set up at ElevenLabs, so the platform can be told to listen in it | Yes | Yes | Yes |
-| Told apart in code from the caller's words | Yes | Yes | **No** |
-| The agent answers in it: set phrases, stock phrases, days and times built in code | Yes | Yes | **No** |
-| Measured with simulated callers, by text | Yes | A first pass: 23 calls | **No** |
-| Heard on a call with a voice | Yes | **No** | **No** |
+| Told apart in code from the caller's words | Yes | Yes | Yes (Russian by its alphabet) |
+| The agent answers in it: set phrases, stock phrases, days and times, the emergency sentence | Yes | Yes | Yes |
+| Measured with simulated callers, by text | Yes | Yes | 8 calls each, and 3 emergencies |
+| Heard on a call with a voice | Yes | Yes | **No** |
+| Read by somebody who speaks it | Yes | Yes | **No** |
 
-A language is four things, and adding one is adding them: its telling words
+A language is five things, and adding one is adding them: its telling words
 (`language.py`), how a day and a time are said in it (`spoken.py`), the three set phrases
-the agent says the same way every time (`agent/prompt.py`) and its stock phrases for
-silence and trouble. The instructions name the languages and hold none of their phrases:
-the model is given the set phrases of the language the call is in, at the start and again
-when the language changes. With three languages' phrases in the instructions, a caller
-speaking Catalan was asked "May I have your full name, please?".
+the agent says the same way every time and what it tells a caller with an emergency
+(`agent/prompt.py`), and its stock phrases for silence and trouble. The instructions name
+the languages and hold none of their phrases: the model is given the phrases of the
+language the call is in, at the start and again when the language changes. With three
+languages' phrases in the instructions, a caller speaking Catalan was asked "May I have
+your full name, please?".
 
-The tools hand over each day and time in one language, the call's (`say`), not in all of
-them. The clinic's information is written in Spanish and the model says it in the
-caller's language: opening hours told in English are the model's own wording, which is
-what went wrong in Catalan before code took the times over. Not yet measured.
+What telling seven languages apart took, each learnt from a call that went wrong:
 
-What nobody knows yet: what the platform's recogniser, set to Spanish, writes when it
-hears English. If it writes Spanish, as it did with Catalan, the words will not tell the
-language and the platform will never be told to change.
+- **One word changes the language only in a caller's first two lines.** After that it
+  takes two. "Le unghie." has a Spanish word in it and "Vaccination annuelle." an English
+  one; each carried its call off into another language.
+- **A line that tells no language gets a reminder of the call's.** Given "Maria Ma Sala"
+  and nothing else, on calls in French and in Russian, the model answered in Italian.
+- **The emergency sentence is written in code, in each language, with the number in
+  figures.** Left to the model to say in Italian, the emergency number came out in words,
+  and wrong: "sessocento cinquanta cinquantaduecentoventi".
+
+The tools hand over each day and time in one language, the call's (`say`). German, French,
+Italian and Russian say the time of an appointment by the 24-hour clock.
+
+Known limits:
+
+- **Nobody who speaks German, French, Italian or Russian has read what the agent says in
+  them.** The phrases and the times were written with an assistant and checked for
+  consistency, not by a speaker.
+- **A caller speaking Russian will rarely be identified.** The records are in Latin
+  letters; a recogniser listening in Russian writes names in Cyrillic, and nothing here
+  transliterates. Such a caller is served as anybody not on file is: an appointment under
+  their word, flagged for reception. The simulated callers wrote their names in Latin
+  letters, so the measurement does not show this.
+- The clinic's information is written in Spanish and the model says it in the caller's
+  language: opening hours told in German are the model's own wording.
+- What the platform's recogniser writes when it hears German, French, Italian or Russian
+  while set to Spanish is not known. With English it wrote English, and the rest followed.
 
 Tried with synthesized phrases: English and German were transcribed and labelled
 correctly. Catalan was transcribed correctly both times but labelled Spanish once and

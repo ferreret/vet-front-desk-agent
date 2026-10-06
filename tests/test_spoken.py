@@ -49,6 +49,34 @@ def test_days_and_times_in_english(moment, english):
     assert say_en(when) == english == say(when, "en")
 
 
+@pytest.mark.parametrize(("moment", "german", "french", "italian", "russian"), [
+    ("2026-11-09T16:30", "Montag, 9. November, um sechzehn Uhr dreißig",
+     "lundi 9 novembre à seize heures trente", "lunedì 9 novembre alle sedici e trenta",
+     "понедельник, 9 ноября, в шестнадцать тридцать"),
+    ("2026-11-10T13:00", "Dienstag, 10. November, um dreizehn Uhr",
+     "mardi 10 novembre à treize heures", "martedì 10 novembre alle tredici",
+     "вторник, 10 ноября, в тринадцать часов"),
+    ("2026-11-01T09:15", "Sonntag, 1. November, um neun Uhr fünfzehn",
+     "dimanche 1er novembre à neuf heures quinze", "domenica 1º novembre alle nove e quindici",
+     "воскресенье, 1 ноября, в девять пятнадцать"),
+    ("2026-11-12T21:00", "Donnerstag, 12. November, um einundzwanzig Uhr",
+     "jeudi 12 novembre à vingt et une heures", "giovedì 12 novembre alle ventuno",
+     "четверг, 12 ноября, в двадцать один час"),
+    ("2026-11-13T14:00", "Freitag, 13. November, um vierzehn Uhr",
+     "vendredi 13 novembre à quatorze heures", "venerdì 13 novembre alle quattordici",
+     "пятница, 13 ноября, в четырнадцать часов"),
+    ("2026-11-11T22:00", "Mittwoch, 11. November, um zweiundzwanzig Uhr",
+     "mercredi 11 novembre à vingt-deux heures", "mercoledì 11 novembre alle ventidue",
+     "среда, 11 ноября, в двадцать два часа"),
+])
+def test_days_and_times_by_the_24_hour_clock(moment, german, french, italian, russian):
+    """German, French, Italian and Russian: the time of an appointment as a reception desk
+    says it there, by the 24-hour clock, which leaves nothing to mistake."""
+    when = datetime.fromisoformat(moment)
+    assert [say(when, language) for language in ("de", "fr", "it", "ru")] == \
+        [german, french, italian, russian]
+
+
 def test_every_language_the_agent_speaks_can_say_a_time():
     from vetdesk.agent.agent import CANNOT_HELP, DID_NOT_FOLLOW, LANGUAGE_NOTE
     from vetdesk.language import SPOKEN

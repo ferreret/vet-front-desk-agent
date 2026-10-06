@@ -581,3 +581,21 @@ def test_the_callers_own_name_is_not_their_pets(clinic, kb):
     toolbox.heard("Es diu Carme, com jo.")
     _call(toolbox, "identify_client", name="Carme Llull", pet_name="Carme")
     assert toolbox.session.evidence.pet_name == "Carme"
+
+
+def test_a_reason_given_in_another_alphabet_is_still_the_callers(clinic, kb):
+    """The names on file are compared in Latin letters. A reason is not a name: a caller
+    speaking Russian gives it in Russian, and it must not be refused for that."""
+    booking = {"start": SLOT, "pet_name": "Rex", "contact_name": "Ivan Petrov",
+               "contact_phone": "600 11 22 33"}
+    toolbox = _toolbox(clinic, kb, reason=None)
+    toolbox.heard("Я хотел бы записаться на приём для моей собаки.")
+    refused, failed = _call(toolbox, "book_appointment", **booking, reason="Осмотр")
+    assert failed and "has not said what the visit is for" in refused["error"]
+    toolbox.heard("Ему нужна прививка.")
+    assert not _call(toolbox, "book_appointment", **booking, reason="Прививка")[1]
+    for said, written in (("Er hinkt seit gestern.", "Hinken"), ("Il boite.", "Boiterie"),
+                          ("Deve fare il vaccino.", "Vaccino annuale")):
+        toolbox = _toolbox(clinic, kb, reason=said)
+        assert not _call(toolbox, "book_appointment", **booking, reason=written)[1], written
+

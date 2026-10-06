@@ -33,6 +33,7 @@ WAITING = {
     "de": "Einen Moment, bitte.",
     "nl": "Een ogenblik, alstublieft.",
     "it": "Un momento, per favore.",
+    "ru": "Одну минуту, пожалуйста.",
 }
 # Said when the model cannot be reached. The caller must never be left with nothing.
 TROUBLE = {
@@ -43,6 +44,7 @@ TROUBLE = {
     "de": "Entschuldigung, es gab ein Problem. Können Sie das bitte wiederholen?",
     "nl": "Excuseer, er ging iets mis. Kunt u dat herhalen?",
     "it": "Mi scusi, ho avuto un problema. Può ripetere?",
+    "ru": "Извините, возникла проблема. Повторите, пожалуйста.",
 }
 # Said when the platform reports that the caller has gone quiet: it sends "..." for a line.
 # Never handed to the model, which took it for a line and once answered, in English and
@@ -55,6 +57,7 @@ STILL_THERE = {
     "de": "Sind Sie noch da?",
     "nl": "Bent u er nog?",
     "it": "È ancora in linea?",
+    "ru": "Вы ещё на линии?",
 }
 # Silence after the goodbyes, or silence again after "are you still there?", is a caller
 # who has gone: asked once more, on a call in English, the agent said "Are you still
@@ -67,15 +70,17 @@ GOODBYE = {
     "de": "Vielen Dank für Ihren Anruf. Auf Wiederhören.",
     "nl": "Bedankt voor uw telefoontje. Tot ziens.",
     "it": "Grazie per aver chiamato. Arrivederci.",
+    "ru": "Спасибо за звонок. До свидания.",
 }
 _FAREWELL = re.compile(
     r"\b(adi[oó]s|hasta luego|que tenga|ad[eé]u|fins aviat|que tingui|que vagi|goodbye|bye|"
-    r"have a (good|nice|lovely)|take care|au revoir|auf wiederh[oö]ren|tot ziens|arrivederci)\b",
+    r"have a (good|nice|lovely)|take care|au revoir|auf wiederh[oö]ren|tot ziens|arrivederci|"
+    r"до свидания|всего доброго)\b",
     re.IGNORECASE)
 # What speech recognition may call each language: two-letter and three-letter codes.
 _CODES = {"ca": "ca", "cat": "ca", "en": "en", "eng": "en", "fr": "fr", "fra": "fr",
           "fre": "fr", "de": "de", "deu": "de", "ger": "de", "nl": "nl", "nld": "nl",
-          "dut": "nl", "it": "it", "ita": "it"}
+          "dut": "nl", "it": "it", "ita": "it", "ru": "ru", "rus": "ru"}
 
 
 def language_of(code: str | None) -> str:
