@@ -239,6 +239,30 @@ the answer to "why is there no database for the appointments?".
 Access is a Google service account that the calendar is shared with; nobody signs in. The
 calendar's id and the key live in the server's settings and nowhere in this repository.
 
+### The clinic's information, changed without a deployment
+
+Opening hours, prices, services and the emergency number live in one validated file. Built
+into the server's image, changing a price took a deployment and somebody able to make one.
+On the voice server the file sits on the server's disk instead (`VETDESK_CLINIC`), seeded
+from the one that comes with the project, and is read and replaced through the server
+with a key of its own (`VETDESK_ADMIN_KEY`, not the voice platform's): `GET` and `PUT`
+`/clinic`, and a plain page to edit it in at `/clinic/edit`.
+
+- The new text is checked exactly as the bundled file is. A wrong one (a phone number
+  that is not one, a day with no opening hours, text that is not the format) changes
+  nothing, and the answer says what is wrong.
+- The next call gets the new information, and the agenda its new opening hours. Calls
+  already going on keep what they started with.
+- The text it replaced is kept beside it.
+- A file broken by hand on the disk does not stop the phone: the server says so in its log
+  and answers with the information that comes with the project.
+
+The file also says which languages the front desk speaks: the agent changes only to
+those. Taking Russian out of the list is all it takes for it not to answer in Russian.
+
+Tried on the server: the price of a service changed from 10 to 12 euros, and the next
+conversation said 12; text that was not a clinic was refused; and it was put back.
+
 ## Two ways to carry the voice
 
 The first call with a microphone made one thing plain: the hard part of a voice line is
