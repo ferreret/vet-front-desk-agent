@@ -11,7 +11,9 @@
 name = "Planeta Animal"
 address = "Carrer Major, 12, Vallserena"
 phone = "+34971555010"
-languages = ["es", "ca"]
+# The languages the front desk speaks to callers, the phone being answered in the first.
+# Taking one out of this list is all it takes for the agent not to change to it.
+languages = ["es", "ca", "en", "de", "fr", "it", "ru"]
 
 [emergency]
 phone = "+34600555020"

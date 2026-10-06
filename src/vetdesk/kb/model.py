@@ -14,7 +14,7 @@ from datetime import date, datetime, time
 from importlib import resources
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 
 from ..spoken import clock_es
 
@@ -52,9 +52,20 @@ class Clinic(_Model):
     name: str
     address: str
     phone: str
-    languages: list[str]
+    languages: list[str]  # the ones the front desk speaks; the phone is answered in the first
 
     _check_phone = field_validator("phone")(_phone)
+
+    @field_validator("languages")
+    @classmethod
+    def _spoken(cls, value: list[str]) -> list[str]:
+        from ..language import SPOKEN
+
+        unknown = [code for code in value if code not in SPOKEN]
+        if unknown or not value or value[0] != "es":
+            raise ValueError(f"languages must start with 'es' and be among {', '.join(SPOKEN)}"
+                             f"{': not ' + ', '.join(unknown) if unknown else ''}")
+        return value
 
 
 class Emergency(_Model):
@@ -260,10 +271,20 @@ def parse_kb(text: str) -> KnowledgeBase:
     return KnowledgeBase.model_validate(tomllib.loads(text))
 
 
+def bundled_kb_text() -> str:
+    """The knowledge base that comes with the project, as it is written."""
+    return resources.files("vetdesk.kb").joinpath("planeta_animal.toml").read_text("utf-8")
+
+
 def load_kb(path: Path | None = None) -> KnowledgeBase:
     """Load and validate a knowledge base; the bundled Planeta Animal one by default."""
-    if path is None:
-        text = resources.files("vetdesk.kb").joinpath("planeta_animal.toml").read_text("utf-8")
-    else:
-        text = Path(path).read_text(encoding="utf-8")
+    text = bundled_kb_text() if path is None else Path(path).read_text(encoding="utf-8")
     return parse_kb(text)
+
+
+def why_not(error: Exception) -> str:
+    """What is wrong with a knowledge base that did not load, for whoever wrote it."""
+    if isinstance(error, ValidationError):
+        return "; ".join(f"{'.'.join(str(part) for part in problem['loc']) or 'the file'}: "
+                         f"{problem['msg']}" for problem in error.errors())
+    return f"not valid TOML: {error}"

@@ -117,6 +117,10 @@ class MirroredAgenda:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._agenda, name)  # everything that only reads
 
+    def follow(self, kb: Any) -> None:
+        self._agenda.follow(kb)
+        self._calendar._slot = timedelta(minutes=kb.appointments.slot_minutes)
+
     def restore(self, now: datetime) -> tuple[int, int]:
         """Put agenda and calendar in step for the appointments still to come.
 

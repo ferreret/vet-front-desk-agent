@@ -101,6 +101,10 @@ class SqliteAgenda:
         self._db.execute(f"PRAGMA application_id = {APPLICATION_ID}")
         self._db.executescript(_SCHEMA)
 
+    def follow(self, kb: KnowledgeBase) -> None:
+        """Take the clinic's information again: its opening hours may have changed."""
+        self._kb = kb
+
     # --- reading ----------------------------------------------------------------------------
 
     def _slots_of(self, day: date) -> list[datetime]:

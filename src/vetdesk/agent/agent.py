@@ -113,12 +113,14 @@ class Call:
     def __init__(
         self, conversation: Conversation, toolbox: Toolbox, greeting: str,
         emergency: Callable[[str], str] = lambda language: "",
+        languages: tuple[str, ...] = tuple(LANGUAGE_NAMES),
     ) -> None:
         self._conversation = conversation
         self._toolbox = toolbox
         self.greeting = greeting
         # What to say in an emergency on this call, by language: it depends on the hour.
         self._emergency = emergency
+        self._languages = languages  # the ones the clinic's front desk speaks
         # The language the call is going on in: the clinic answers the phone in Spanish, and
         # the caller's own words change it.
         self.language = "es"
@@ -139,7 +141,7 @@ class Call:
         share does not carry the call off into another language.
         """
         told = spoken_language(text, least=1 if self._lines < SETTLING_LINES else 2)
-        return told or self.language
+        return told if told in self._languages else self.language
 
     def say(self, text: str, on_text: OnText | None = None) -> Turn:
         """The caller says something; the agent answers, using its tools as needed.
@@ -279,4 +281,5 @@ class FrontDeskAgent:
         toolbox = Toolbox(self._clinic, self._kb, self._agenda, self._now, caller_number)
         context = call_context(self._kb, now, caller_number, hello)
         return Call(self._llm.start(self._system, context, SPECS), toolbox, hello,
-                    lambda language: in_an_emergency(self._kb, now, language))
+                    lambda language: in_an_emergency(self._kb, now, language),
+                    tuple(self._kb.clinic.languages))

@@ -50,7 +50,7 @@ from aiohttp import web
 from ..agent import FrontDeskAgent
 from ..agent.agent import Call, Turn
 from ..evals.cost import cost
-from ..kb import load_kb
+from ..kb import KnowledgeBase, load_kb, why_not
 from ..language import SPOKEN
 from ..legacy import LegacySqliteSource
 from ..legacy.normalize import parse_phones
@@ -59,12 +59,14 @@ from ..scheduling import Appointment, SqliteAgenda
 from ..scheduling.google_calendar import CALENDAR, GoogleCalendar, MirroredAgenda, session_from
 from ..scheduling.google_calendar import KEY as CALENDAR_KEY
 from .bridge import Line
+from .clinic_file import PAGE, ClinicFile
 
 log = logging.getLogger("vetdesk.endpoint")
 
 KEY_NAME = "VETDESK_ENDPOINT_KEY"
 STAND_INS = "VETDESK_CALLER_STANDS_IN_FOR"
 AGENDA_FILE = "VETDESK_AGENDA"
+CLINIC_FILE, ADMIN_KEY = "VETDESK_CLINIC", "VETDESK_ADMIN_KEY"
 IDLE_SECONDS = 30 * 60  # a call nobody has asked about for this long is over
 # ElevenLabs wraps the agent's prompt in text of its own, so the two markers are looked for
 # anywhere in it, under names nothing else would use.
@@ -130,6 +132,27 @@ class Switchboard:
         return line
 
 
+class Desk:
+    """The front desk as it is now: made again whenever the clinic's information changes.
+
+    Calls already going on keep the information they started with; the next call gets the
+    new one, and the agenda its new opening hours.
+    """
+
+    def __init__(self, make: Callable[[KnowledgeBase], FrontDeskAgent], agenda,
+                 kb: KnowledgeBase, file: ClinicFile | None = None) -> None:
+        self._make, self._agenda, self.file = make, agenda, file
+        self._agent = make(kb)
+
+    def start_call(self, number: str | None) -> Call:
+        return self._agent.start_call(number)
+
+    def replace(self, text: str) -> None:
+        kb = self.file.replace(text)  # raises, and changes nothing, if the text is wrong
+        self._agent = self._make(kb)
+        self._agenda.follow(kb)
+
+
 def _change_of_language(body: dict, messages: list[dict], line: Line) -> str | None:
     """The language to tell the platform to change to before this line is answered."""
     offered = any((tool.get("function") or {}).get("name") == LANGUAGE_TOOL
@@ -169,8 +192,11 @@ def _chunk(request_id: str, model: str, delta: dict, finish: str | None = None) 
     return f"data: {json.dumps(body, ensure_ascii=False)}\n\n".encode()
 
 
-def build_app(switchboard: Switchboard, key: str, model: str = "") -> web.Application:
-    """`model` is the agent's own model, named only to put a price on each answer."""
+def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | None = None,
+              admin_key: str = "") -> web.Application:
+    """`model` is the agent's own model, named only to put a price on each answer. With a
+    `desk` whose information is in a file and an `admin_key`, that information can be read
+    and replaced through the server."""
     agent_model = model
     waiting: set[asyncio.Future] = set()  # answers being worked out for a request to come
 
@@ -248,10 +274,33 @@ def build_app(switchboard: Switchboard, key: str, model: str = "") -> web.Applic
     async def health(request: web.Request) -> web.Response:
         return web.json_response({"status": "ok"})
 
+    def may_edit(request: web.Request) -> bool:
+        given = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        return bool(admin_key) and hmac.compare_digest(given.encode(), admin_key.encode())
+
+    async def clinic(request: web.Request) -> web.Response:
+        if not may_edit(request):
+            return web.json_response({"error": "invalid key"}, status=401)
+        if request.method == "GET":
+            return web.Response(text=desk.file.text(), content_type="text/plain")
+        try:
+            desk.replace(await request.text())
+        except Exception as error:  # not valid: nothing has changed
+            return web.json_response({"error": why_not(error)}, status=400)
+        log.info("the clinic's information was replaced")
+        return web.json_response({"status": "saved"})
+
+    async def edit(request: web.Request) -> web.Response:
+        return web.Response(text=PAGE, content_type="text/html")
+
     app = web.Application()
     app.router.add_post("/v1/chat/completions", chat_completions)
     app.router.add_post("/chat/completions", chat_completions)
     app.router.add_get("/health", health)
+    if desk is not None and desk.file is not None and admin_key:
+        app.router.add_get("/clinic", clinic)
+        app.router.add_put("/clinic", clinic)
+        app.router.add_get("/clinic/edit", edit)
     return app
 
 
@@ -315,13 +364,19 @@ def main() -> None:
                         datefmt="%H:%M:%S")
     _load_env()
     key = _key(args.host)
-    kb = load_kb()
+    # The clinic's information: a file on the server's disk when one is set, so that it
+    # can be changed without a deployment; otherwise the one that comes with the project.
+    path = os.environ.get(CLINIC_FILE)
+    file = ClinicFile(Path(path)) if path else None
+    kb = file.kb if file else load_kb()
     clinic = LegacySqliteSource(args.data / "clinic.db").load()
     llm = create_client()
-    front_desk = FrontDeskAgent(llm, clinic, kb, _agenda(kb, clinic))
-    switchboard = Switchboard(front_desk.start_call,
+    agenda = _agenda(kb, clinic)
+    desk = Desk(lambda kb: FrontDeskAgent(llm, clinic, kb, agenda), agenda, kb, file)
+    switchboard = Switchboard(desk.start_call,
                               stand_ins=stand_ins(os.environ.get(STAND_INS, "")))
-    app = build_app(switchboard, key, getattr(llm, "model", ""))
+    app = build_app(switchboard, key, getattr(llm, "model", ""), desk,
+                    os.environ.get(ADMIN_KEY, ""))
     print(f"The front desk answers at http://{args.host}:{args.port}/v1/chat/completions")
     web.run_app(app, host=args.host, port=args.port, print=None)
 

@@ -181,9 +181,10 @@ GREETINGS = {
 
 def system_prompt(kb: KnowledgeBase) -> str:
     """Identical for every call, so providers can cache it."""
-    names = list(LANGUAGE_NAMES.values())
+    names = [LANGUAGE_NAMES[code] for code in kb.clinic.languages]
     return INSTRUCTIONS.format(clinic=kb.clinic.name, knowledge_base=kb.render(),
-                               languages=", ".join(names[:-1]) + " or " + names[-1])
+                               languages=" or ".join(filter(None, [", ".join(names[:-1]),
+                                                                   names[-1]])))
 
 
 def greeting(kb: KnowledgeBase, now: datetime) -> str:
