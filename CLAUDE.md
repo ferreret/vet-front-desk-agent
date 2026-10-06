@@ -126,7 +126,7 @@ Probado el 2026-10-02 con micrófono: dar al reconocedor una lista de lenguas al
 
 **No perder el foco de que tiene que ser multilingüe** (Nicolás, 2026-10-06): pueden hablar también en inglés, alemán, ruso, francés e italiano. Ese día se vio que el agente de ElevenLabs, puesto solo en castellano, escribía en castellano lo que oía en catalán. Ahora tiene dadas de alta catalán, inglés, alemán, ruso, francés e italiano, y es nuestro servidor el que le dice a la plataforma en qué lengua escuchar, según las palabras de quien llama (`vetdesk.voice.endpoint`). Solo cambia a las lenguas que el agente habla: castellano y catalán. Para las de los visitantes falta todo lo de abajo.
 
-Pendiente y sin medir: el agente, los escenarios y las horas dichas desde código (`say_es`, `say_ca`) solo cubren castellano y catalán. Abrir el prompt a más lenguas es un cambio que hay que medir con escenarios en esas lenguas antes de darlo por bueno.
+**El agente habla castellano, catalán e inglés** (inglés desde el 2026-10-06, medido por texto con `--caller-language en`; sin oír por voz). Una lengua son cuatro cosas, y añadir otra es añadirlas: sus palabras para distinguirla (`language.py`), cómo se dicen un día y una hora (`spoken.py`), las tres frases hechas del agente (`agent/prompt.py`) y sus frases propias para el silencio y los fallos. Las instrucciones nombran las lenguas y no llevan ninguna frase de ninguna: al modelo se le dan las de la lengua de la llamada. Las herramientas dan cada hora en una sola lengua, la de la llamada (`say`). Añadir una lengua se mide con `--caller-language` en esa lengua **y** con la misma tanda en castellano y catalán, para ver que nada empeora. Faltan alemán, ruso, francés e italiano.
 
 ## Lo que enseñó el harness (2026-10-02)
 
@@ -136,6 +136,9 @@ Pendiente y sin medir: el agente, los escenarios y las horas dichas desde códig
 - **Un modelo más flojo es mejor prueba de la barrera** (2026-10-05): enseñó dónde la garantía dependía aún del modelo. Lo que se rompió con Flash Lite se llevó a código, no se arregló cambiando de modelo.
 - **Las reglas de identidad se prueban primero en el barrido del resolutor** (`vetdesk identity eval`), que no usa ningún modelo y no cuesta nada. Solo después, con el agente.
 - **Para cribar varios modelos, sin juez** (`--no-judge`); el juez, solo a los finalistas.
+- **Al modelo no se le deja decir nada antes de una herramienta** (2026-10-06). La frase de espera dicha por el modelo dio cuatro fallos distintos en tres días: turnos mudos, la frase en castellano a quien habla catalán, seis veces en una llamada, y un turno de tres minutos repitiendo «Let me check». Los silencios los tapa la plataforma de voz. Un turno no dice más de 700 caracteres.
+- **Lo que reserva la agenda es del cliente** (2026-10-06): la herramienta rechaza un motivo de visita que no tenga palabras de quien llama. El modelo se lo inventaba cuando el cliente no contestaba a la pregunta.
+- **Gemini a veces escribe la llamada a una herramienta como texto** (2 de 174 conversaciones). El adaptador repite la petición y ese texto ni se guarda ni se dice.
 - **Un cliente simulado que habla poco enseña lo que el hablador tapa** (2026-10-06): `--caller-style terse` saluda y espera, y luego da una cosa por pregunta. En su primera tanda encontró que un pueblo dicho a secas («Pinar del Mar») cambiaba la lengua de la conversación. Tras tocar cómo conversa el agente, medir también con él; lo que mide en código (pedir dos cosas, el nombre antes o después de tiempo, la lengua) sale en el informe sin juez.
 
 ## Convenciones

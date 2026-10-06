@@ -110,16 +110,30 @@ synthesizer speaks it convincingly. `--languages es,en,fr,de,ca` adds samples in
 
 ## Languages
 
-| | Spanish and Catalan | Visitors' languages |
-|---|---|---|
-| Hearing (Scribe v2 Realtime) | Yes | **Not by default.** Giving the recogniser a list of alternatives made it mistake Spanish for Dutch on a real microphone. `VETDESK_STT_LANGUAGES` can widen it for a test |
-| Speaking (v4 Turbo) | Yes | Yes |
-| The agent's own stock phrases (waiting, trouble) | Yes | Yes, in those six |
-| The agent's prompt, the scenarios, days and times built in code | Yes | **No** |
+| | Spanish and Catalan | English | German, Russian, French, Italian |
+|---|---|---|---|
+| Set up at ElevenLabs, so the platform can be told to listen in it | Yes | Yes | Yes |
+| Told apart in code from the caller's words | Yes | Yes | **No** |
+| The agent answers in it: set phrases, stock phrases, days and times built in code | Yes | Yes | **No** |
+| Measured with simulated callers, by text | Yes | A first pass: 23 calls | **No** |
+| Heard on a call with a voice | Yes | **No** | **No** |
 
-So the voice can speak to a visitor, but hearing them reliably is unsolved and nothing
-about answering them has been measured: the prompt still says "Spanish or Catalan", and a time in German would be the
-model's own wording, which is exactly what went wrong in Catalan before code took it over.
+A language is four things, and adding one is adding them: its telling words
+(`language.py`), how a day and a time are said in it (`spoken.py`), the three set phrases
+the agent says the same way every time (`agent/prompt.py`) and its stock phrases for
+silence and trouble. The instructions name the languages and hold none of their phrases:
+the model is given the set phrases of the language the call is in, at the start and again
+when the language changes. With three languages' phrases in the instructions, a caller
+speaking Catalan was asked "May I have your full name, please?".
+
+The tools hand over each day and time in one language, the call's (`say`), not in all of
+them. The clinic's information is written in Spanish and the model says it in the
+caller's language: opening hours told in English are the model's own wording, which is
+what went wrong in Catalan before code took the times over. Not yet measured.
+
+What nobody knows yet: what the platform's recogniser, set to Spanish, writes when it
+hears English. If it writes Spanish, as it did with Catalan, the words will not tell the
+language and the platform will never be told to change.
 
 Tried with synthesized phrases: English and German were transcribed and labelled
 correctly. Catalan was transcribed correctly both times but labelled Spanish once and

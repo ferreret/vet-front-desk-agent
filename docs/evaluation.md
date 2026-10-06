@@ -197,7 +197,7 @@ All three were then moved out of the model's hands:
 
 | | Fix |
 |---|---|
-| Days and times | The tools return each one already in words, in Spanish and in Catalan (`say_es`, `say_ca`), built by code. The prompt no longer says how to tell the time |
+| Days and times | The tools return each one already in words, built by code, in the language of the call (`say`; until 2026-10-06, in Spanish and in Catalan side by side). The prompt no longer says how to tell the time |
 | Spelling | `identify_client` checks `name_spelled` against the letters the caller actually spelled, and reads off the caller's words whether a pet's name was repeated or spelled. A claim the caller's words do not back is refused, and the refusal tells the model what was spelled |
 | Phone numbers | Written in figures, as given. Never spelled out |
 
@@ -307,7 +307,43 @@ booked. The scorer caught it as "no appointment was booked". Searching the day's
 a second one, in the first pass of the morning, that nobody had read: 2 of 174 calls. The
 Gemini adapter now asks for such a reply again and never keeps it in the history.
 
+### A third language (2026-10-06)
+
+English was added to the agent, and measured before any scenario was written for it:
+`--caller-language en` plays the same scenarios with callers who speak English, the same
+people with the same records. Three passes of one call of each kind (23), terse callers,
+no judge, each next to the same 23 in Spanish and Catalan to see that nothing got worse.
+
+| | Spanish and Catalan | English |
+|---|---|---|
+| False identifications, another client's data, forbidden actions | 0, 0, 0 | 0, 0, 0 |
+| Identified, of those who could be | 11, 11, 11 of 12 | 11, 11, 10 of 12 |
+| Booked, cancelled or moved as asked | 16, 16, 16 of 17 | 16, 16, 15 of 17 |
+| Answers in the language the caller was not speaking | 1 of 174, 1 of 174, 0 of 177 | 0 of 176, 0 of 180, 0 of 172 |
+
+The two answers in the wrong language are what the passes were for:
+
+- **A turn that ran on.** With the waiting phrase left to the model "in the caller's
+  language" and no example, one turn in Spanish was "Un momento, por favor. Let me check
+  our availability. Let me look at the schedule." and so on to the token limit: some three
+  minutes of speech. The model is no longer invited to say anything before a tool (0
+  waiting phrases in 146 turns with tools afterwards, from 8 in 143), and a turn may say
+  700 characters at most: past that the rest is not said and the model is told to get on.
+- **The wrong language's set phrase.** With the name question written in the instructions
+  in three languages, a caller speaking Catalan was asked "May I have your full name,
+  please?". The set phrases left the instructions; the model gets one language's.
+
+Once, in the third pass in English, the model handed the caller's given name over as their
+pet's name as well, and the caller ended unconfirmed; the tool now reads that as no pet
+named. It is the one such case in every stored run.
+
+First words within 1.5 s fell from 94 % to 89 %. Nothing is slower: the words a model said
+before a tool used to count as the first words, and there are none now.
+
 ### What is open
+
+- **English with a judge, and over all 82 scenarios.** And scenarios of its own: a
+  visitor is seldom a client.
 
 - **A judged run with terse callers.** The full run above had no judge.
 
