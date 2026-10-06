@@ -169,17 +169,23 @@ def report(voice: list[VoiceCall], model: list[ModelCall], today: datetime, *,
                          _usd(part_dollars / part_minutes, 4)))
     rows.append(("**Voz: todas**", str(len(spoken)), _n(voice_minutes, 1), _usd(voice_dollars),
                  _usd(voice_dollars / len(spoken), 3), _usd(per_minute, 4)))
-    model_per_call = model_per_minute = None
+    model_per_minute, typed_only = None, False
     if model:
-        model_dollars = sum(call.dollars for call in model)
-        model_per_call = model_dollars / len(model)
+        # The model's price per minute comes from calls somebody spoke on. Typed to, the
+        # agent's turns follow one another faster than anybody talks, and a minute of
+        # that holds more of them. With nothing but typed calls it is said so.
+        talked = [call for voice_call, call in both if voice_call.source in SOURCES]
+        typed_only = not talked
+        counted = talked or model
+        model_dollars = sum(call.dollars for call in counted)
         # Minutes as the voice platform counts them where both know the call; the server
         # only sees from the first line to the last.
         model_minutes = sum((by_id[call.id].seconds if call.id in by_id else call.seconds)
-                            for call in model) / 60
+                            for call in counted) / 60
         model_per_minute = model_dollars / model_minutes if model_minutes else None
-        rows.append((f"**Modelo** ({model_name or 'el del agente'})", str(len(model)),
-                     _n(model_minutes, 1), _usd(model_dollars, 4), _usd(model_per_call, 4),
+        rows.append((f"**Modelo** ({model_name or 'el del agente'})", str(len(counted)),
+                     _n(model_minutes, 1), _usd(model_dollars, 4),
+                     _usd(model_dollars / len(counted), 4),
                      _usd(model_per_minute, 4) if model_per_minute else "—"))
     out += _table(("", "Llamadas", "Minutos", "Cobrado", "Por llamada", "Por minuto"), rows)
     out += ["",
@@ -198,13 +204,21 @@ def report(voice: list[VoiceCall], model: list[ModelCall], today: datetime, *,
                    f"{turns} turnos"
                    + (f"; {back} de ellos son respuestas que no se llegaron a oír porque la "
                       "frase llegó otra vez, y se pagan igual" if back else "") + ".")
+        if typed_only:
+            out.append("- **El servidor solo tiene apuntadas pruebas escritas**, en las que "
+                       "los turnos van más seguidos que hablando: el precio del modelo por "
+                       "minuto sale más alto de lo que será por teléfono. Se corrige solo "
+                       "en cuanto haya llamadas habladas.")
+        elif len(counted) < len(model):
+            out.append(f"- El precio del modelo sale de las llamadas habladas ({len(counted)}); "
+                       f"las pruebas escritas ({len(model) - len(counted)}) no cuentan para "
+                       "él, porque en ellas los turnos van más seguidos que hablando.")
         if len(both) < len(spoken):
-            out.append(f"- El servidor apunta el gasto del modelo desde hace poco: tiene "
-                       f"{len(model)} llamadas, frente a las {len(spoken)} de la plataforma "
-                       "de voz. La media del modelo sale de esas.")
+            out.append("- El servidor apunta el gasto del modelo desde hace poco: llamadas "
+                       f"en su registro, {len(model)}; en la plataforma de voz, {len(spoken)}.")
         if only_model:
-            out.append(f"- {len(only_model)} llamadas del servidor no están en la plataforma "
-                       "de voz (pruebas hechas sin ella).")
+            out.append("- Llamadas del servidor que no están en la plataforma de voz "
+                       f"(pruebas hechas sin ella): {len(only_model)}.")
     else:
         out.append("  **Aún no hay ninguna llamada con el gasto del modelo apuntado**: el "
                    "servidor lo registra desde que se desplegó el registro de llamadas. "

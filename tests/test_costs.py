@@ -71,17 +71,19 @@ def test_the_report_adds_up_a_call_a_minute_and_a_month():
     assert "Del 05/10/2026 al 06/10/2026." in text
     assert "| Voz: teléfono | 1 | 1,0 | 0,03 $ | 0,030 $ | 0,0300 $ |" in text
     assert "| **Voz: todas** | 2 | 3,0 | 0,09 $ | 0,045 $ | 0,0300 $ |" in text
-    # The model: 0,0135 $ over 3,5 minutes (the typed call's are the server's own count).
-    assert ("| **Modelo** (gemini-3.5-flash-lite) | 3 | 3,5 | 0,0135 $ | 0,0045 $ "
-            "| 0,0039 $ |") in text
+    # The model: 0,012 $ over the 3 minutes of the two calls somebody spoke on. The typed
+    # one does not count for it: typed to, a minute holds more turns than a spoken one.
+    assert ("| **Modelo** (gemini-3.5-flash-lite) | 2 | 3,0 | 0,0120 $ | 0,0060 $ "
+            "| 0,0040 $ |") in text
+    assert "sale de las llamadas habladas (2); las pruebas escritas (1) no cuentan" in text
     assert "1 de ellos son respuestas que no se llegaron a oír" in text
-    assert "1 llamadas del servidor no están en la plataforma de voz" in text
+    assert "que no están en la plataforma de voz (pruebas hechas sin ella): 1." in text
     # A call of a minute and a half, the mean: voice, model and line.
     assert "Una llamada de 1,5 minutos (la media de las hechas hasta hoy):" in text
     assert "| Voz | 0,0450 $ | 0,0300 $ |" in text
     assert "| Línea telefónica | 0,0150 $ | 0,0100 $ |" in text
-    assert "| **Total** | **0,0658 $** | **0,0439 $** |" in text
-    assert "| 1.000 | 1.500 | 65,79 $ | 50,00 $ | **115,79 $** |" in text
+    assert "| **Total** | **0,0660 $** | **0,0440 $** |" in text
+    assert "| 1.000 | 1.500 | 66,00 $ | 50,00 $ | **116,00 $** |" in text
     assert "--phone-per-minute" not in text and "--fixed-per-month" not in text
 
 
@@ -94,3 +96,10 @@ def test_what_was_not_measured_is_said_to_be_missing_not_guessed():
     for missing in ("**El modelo**", "**La línea telefónica**", "**Los gastos fijos**"):
         assert missing in text
     assert "Todavía no hay ninguna llamada" in report([], [], TODAY)
+
+
+def test_with_nothing_but_typed_calls_the_models_price_a_minute_is_said_to_run_high():
+    voice = [_voice("a", 120, 0.06), _voice("t", 20, 0.01, "unknown")]
+    text = report(voice, [ModelCall("t", 3, 3, 10000, 60, 0.003, 18)], TODAY)
+    assert "solo tiene apuntadas pruebas escritas" in text
+    assert "| **Modelo** (el del agente) | 1 | 0,3 | 0,0030 $ | 0,0030 $ | 0,0090 $ |" in text
