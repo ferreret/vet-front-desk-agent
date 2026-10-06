@@ -303,7 +303,19 @@ our address decides, in code, and calls the tool.
   nobody picks up, the model is told and offers to take a message. Out of hours, or with
   no number, nothing changed: a message is taken.
 
-Not yet tried on a real call: the transfer itself. It needs two phones.
+Tried on real calls with two phones (2026-10-06):
+
+- The call is put through, over the SIP trunk, and the two phones hear each other.
+- The first time the caller heard nothing before it: over a SIP trunk the platform does
+  not say the message for the caller that it is handed with its tool. The words are now
+  the agent's own, said in front of the tool call, which waits for them.
+- **A voicemail counts as somebody picking up.** With nobody answering, the destination's
+  voicemail took the call, the platform reported the transfer as done, and the caller was
+  left talking to a mailbox. Nothing here can tell a mailbox from a person: once the
+  destination answers, the agent has left the call, and the platform offers no limit on
+  how long to let it ring. The line a clinic puts calls through to must have no
+  voicemail. What happens when a line rings out, the path that takes a message instead,
+  has not been heard yet.
 
 ## Two ways to carry the voice
 
