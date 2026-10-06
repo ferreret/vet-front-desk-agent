@@ -43,6 +43,18 @@ TROUBLE = {
     "nl": "Excuseer, er ging iets mis. Kunt u dat herhalen?",
     "it": "Mi scusi, ho avuto un problema. Può ripetere?",
 }
+# Said when the platform reports that the caller has gone quiet: it sends "..." for a line.
+# Never handed to the model, which took it for a line and once answered, in English and
+# out loud, "(No response needed; the user has hung up or finished the call.)".
+STILL_THERE = {
+    "es": "¿Sigue ahí?",
+    "ca": "Segueix aquí?",
+    "en": "Are you still there?",
+    "fr": "Vous êtes toujours là ?",
+    "de": "Sind Sie noch da?",
+    "nl": "Bent u er nog?",
+    "it": "È ancora in linea?",
+}
 # What speech recognition may call each language: two-letter and three-letter codes.
 _CODES = {"ca": "ca", "cat": "ca", "en": "en", "eng": "en", "fr": "fr", "fra": "fr",
           "fre": "fr", "de": "de", "deu": "de", "ger": "de", "nl": "nl", "nld": "nl",
@@ -111,6 +123,10 @@ class Line:
         stock phrases follow the language the call itself has worked out from the caller's
         words: a platform that says nothing must not mean Spanish for everybody.
         """
+        if not any(letter.isalnum() for letter in heard):
+            # Silence, not a line: nothing for the model, and nothing to keep as said.
+            yield STILL_THERE[language or self.call.language]
+            return
         loop = asyncio.get_running_loop()
         pieces: asyncio.Queue[str | None] = asyncio.Queue()
         said: list[str] = []

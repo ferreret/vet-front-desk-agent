@@ -12,7 +12,7 @@ from vetdesk.kb import load_kb
 from vetdesk.llm import LLMError, Reply, ToolCall
 from vetdesk.llm.scripted import ScriptedClient
 from vetdesk.scheduling import SqliteAgenda
-from vetdesk.voice.bridge import TROUBLE, WAITING, Line, language_of
+from vetdesk.voice.bridge import STILL_THERE, TROUBLE, WAITING, Line, language_of
 
 NOW = datetime(2026, 11, 3, 10, 15)
 LOOKUP = ToolCall("c1", "get_availability", {"date_from": "2026-11-09", "date_to": "2026-11-13",
@@ -206,6 +206,26 @@ def test_other_words_for_the_same_turn_long_after_are_a_new_line(clinic, kb):
         return first, [piece async for piece in line.answer("¿A qué hora abrís?", turn=1)]
 
     assert asyncio.run(call()) == (["Dígame."], ["Abrimos a las diez."])
+
+
+def test_silence_is_not_a_line_for_the_model(clinic, kb):
+    """The platform sends "..." when the caller has gone quiet. Handed to the model, it was
+    answered out loud with "(No response needed; the user has hung up or finished the
+    call.)". It gets a stock question in the language of the call, and the model nothing."""
+    model = ScriptedClient([Reply("Bon dia. En què el puc ajudar?"), Reply("Digui'm el nom.")])
+    call = _call(model, clinic, kb)
+    line = Line(call, patience=None)
+
+    async def play():
+        hello = [piece async for piece in line.answer("Hola, bon dia.", turn=1)]
+        quiet = [piece async for piece in line.answer("...", turn=2)]
+        spoke = [piece async for piece in line.answer("Vull una cita.", turn=2)]
+        return hello, quiet, spoke
+
+    hello, quiet, spoke = asyncio.run(play())
+    assert quiet == [STILL_THERE["ca"]] and spoke == ["Digui'm el nom."]
+    assert len(model.transcript.user_messages) == 2  # the two lines; the silence is not one
+    assert _spoken(_call(ScriptedClient([]), clinic, kb), " … ")[0] == [STILL_THERE["es"]]
 
 
 def test_a_broken_model_does_not_leave_the_caller_in_silence(clinic, kb):
