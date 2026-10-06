@@ -307,6 +307,21 @@ booked. The scorer caught it as "no appointment was booked". Searching the day's
 a second one, in the first pass of the morning, that nobody had read: 2 of 174 calls. The
 Gemini adapter now asks for such a reply again and never keeps it in the history.
 
+### One provider for the three roles (2026-10-06)
+
+Until this day the simulated callers were Claude Haiku and the judge Claude Opus, and every
+run above was played that way. From here on the defaults are Gemini for all three roles:
+`gemini-3.5-flash-lite` plays the callers and `gemini-3.8-flash` judges, with thinking on.
+Eight calls of eight kinds with the three of them: all scored, every checklist handed in,
+no finding thrown away, $0.11 in all. A full judged run comes to about $1.10 where it cost
+$3.20.
+
+What it costs in confidence: the caller and the agent are now the same model, and the
+judge is of the same family. A judge that shares a model's habits may not see them. The
+safety numbers do not depend on it, since they are read in code; what the judge reads
+(questions asked, a transfer promised, something not in the clinic's information) does.
+Nothing measured before this day is comparable with what a Gemini judge reads after it.
+
 ### A third language (2026-10-06)
 
 English was added to the agent, and measured before any scenario was written for it:
@@ -363,7 +378,7 @@ before a tool used to count as the first words, and there are none now.
 uv run vetdesk eval run                       # every scenario, once
 uv run vetdesk eval run --per-category 1      # one of each kind: a cheap first look
 uv run vetdesk eval run --only S-031,S-049    # particular calls
-uv run vetdesk eval run --model claude-haiku-4-5 --out data/runs/haiku   # another agent
+uv run vetdesk eval run --model gpt-5.6-luna --out data/runs/luna        # another agent
 uv run vetdesk eval run --no-judge            # only what code measures
 uv run vetdesk eval run --caller-style terse  # callers who say hello and wait
 uv run vetdesk eval report data/runs/<run>    # score a stored run again: costs nothing

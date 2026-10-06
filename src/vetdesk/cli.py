@@ -274,7 +274,7 @@ def _chat(args: argparse.Namespace) -> int:
 
 # One model per provider, the quickest measured of each: what `vetdesk latency` times when
 # no models are named.
-LATENCY_MODELS = ("claude-sonnet-5-5", "gemini-flash-lite-latest", "gpt-5.4-mini",
+LATENCY_MODELS = ("gemini-3.5-flash-lite", "gpt-5.4-mini",
                   "lyceum/glm-5.3-flash")
 
 
@@ -556,7 +556,7 @@ def main(argv: list[str] | None = None) -> int:
     eval_run.add_argument("--provider", choices=PROVIDERS,
                           help="the agent's LLM provider (default: the model's, else gemini)")
     eval_run.add_argument("--model", help="the agent's model (default: as `vetdesk chat`)")
-    eval_run.add_argument("--caller-model", default="claude-haiku-4-5",
+    eval_run.add_argument("--caller-model", default="gemini-3.5-flash-lite",
                           help="model that plays the callers")
     eval_run.add_argument("--caller-style", choices=STYLES, default=STYLES[0],
                           help="forthcoming: opens with what they want; terse: says hello "
@@ -564,7 +564,7 @@ def main(argv: list[str] | None = None) -> int:
     eval_run.add_argument("--caller-language", choices=sorted(CALLER_LANGUAGES),
                           help="have every caller speak this language instead of the "
                                "scenario's: the same people, as residents from abroad")
-    eval_run.add_argument("--judge-model", default="claude-opus-5-5",
+    eval_run.add_argument("--judge-model", default="gemini-3.8-flash",
                           help="model that reads the transcripts")
     eval_run.add_argument("--no-judge", action="store_true",
                           help="only what code can measure; cheaper")
