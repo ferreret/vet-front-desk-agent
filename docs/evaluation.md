@@ -299,6 +299,14 @@ unverified booking is taken. The one caller not identified is the client whose r
 a misspelled given name (`Deigo`). A terse call has half as many turns again (7.9 against
 5.3), which is where the higher cost per call comes from.
 
+**A tool call written out as text.** Measuring another fix the same day, the harness
+showed a call where the agent's model wrote its tool calls instead of making them
+(`<call:default_api:identify_client{...}/>`), from the third turn to the end. No tool ran;
+it offered times no agenda had given and told the caller "queda anotado" with nothing
+booked. The scorer caught it as "no appointment was booked". Searching the day's runs found
+a second one, in the first pass of the morning, that nobody had read: 2 of 174 calls. The
+Gemini adapter now asks for such a reply again and never keeps it in the history.
+
 ### What is open
 
 - **A judged run with terse callers.** The full run above had no judge.
