@@ -219,6 +219,43 @@ def _explain_llm_error(error: Exception, provider: str | None, model: str | None
               "or use a key created inside a workspace.", file=sys.stderr)
 
 
+def _costs(args: argparse.Namespace) -> int:
+    from .costs import model_calls, report, voice_calls
+
+    _load_env()
+    key, agent = os.environ.get("ELEVEN_API_KEY"), os.environ.get("VETDESK_ELEVENLABS_AGENT_ID")
+    if not key or not agent:
+        print("ELEVEN_API_KEY and VETDESK_ELEVENLABS_AGENT_ID must be set in .env",
+              file=sys.stderr)
+        return 1
+    voice = voice_calls(key, agent, cache=args.data / "costs" / "elevenlabs.json")
+    server = args.server or os.environ.get("VETDESK_SERVER")
+    admin = os.environ.get("VETDESK_ADMIN_KEY")
+    model = []
+    if server and admin:
+        try:
+            model = model_calls(server, admin)
+        except OSError as error:
+            # Never the address: it is not for a log, and the key travels with it.
+            print(f"the server's call log could not be read ({type(error).__name__}): "
+                  "the report has the voice side only", file=sys.stderr)
+    else:
+        print("no VETDESK_SERVER or VETDESK_ADMIN_KEY in .env: the report has the voice "
+              "side only", file=sys.stderr)
+    text = report(voice, model, datetime.now(),
+                  model_name=os.environ.get("VETDESK_LLM_MODEL", "gemini-3.5-flash-lite"),
+                  calls_per_month=tuple(int(n) for n in args.calls_per_month.split(",")),
+                  minutes=args.minutes, phone_per_minute=args.phone_per_minute,
+                  fixed_per_month=args.fixed_per_month)
+    if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(text, encoding="utf-8")
+        print(f"written to {args.out}")
+    else:
+        print(text)
+    return 0
+
+
 def _chat(args: argparse.Namespace) -> int:
     clinic = _clinic(args.data / DB_NAME)
     if clinic is None:
@@ -520,6 +557,22 @@ def main(argv: list[str] | None = None) -> int:
     evaluate.add_argument("--strangers", type=int, default=2000,
                           help="non-client callers in the sweep; -1 skips the sweep")
     evaluate.set_defaults(run=_identity_eval)
+
+    costs = commands.add_parser(
+        "costs", help="what a call costs, from what the calls so far were billed")
+    costs.add_argument("--data", type=Path, default=Path("data"))
+    costs.add_argument("--server", default=None,
+                       help="address of the voice server (default: VETDESK_SERVER in .env)")
+    costs.add_argument("--calls-per-month", default="300,1000,3000",
+                       help="how many calls a month to work the bill out for")
+    costs.add_argument("--minutes", type=float, default=None,
+                       help="length of a call, instead of the mean of those measured")
+    costs.add_argument("--phone-per-minute", type=float, default=None,
+                       help="what the phone line charges per minute, in dollars")
+    costs.add_argument("--fixed-per-month", type=float, default=None,
+                       help="what is paid every month whatever the calls, in dollars")
+    costs.add_argument("--out", type=Path, default=None, help="write the report to this file")
+    costs.set_defaults(run=_costs)
 
     chat = commands.add_parser("chat", help="talk to the agent in text, as if on the phone")
     chat.add_argument("--data", type=Path, default=Path("data"))
