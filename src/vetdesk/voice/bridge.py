@@ -133,6 +133,10 @@ class Line:
         # The language the platform is listening in, for a platform that listens in one
         # language at a time and can be told to change. None: not known, or not its way.
         self.listening_in: str | None = None
+        # What the platform calls this call, when it says, and somebody to tell when an
+        # answer is taken back: both for whoever keeps a record of the call.
+        self.name: str | None = None
+        self.on_taken_back: Callable[[int], None] | None = None
         # The last thing said on this line, and how many silences in a row have followed.
         self._last: list[str] = []
         self._quiet = 0
@@ -216,6 +220,8 @@ class Line:
         if again:
             log.info("turn %d heard again as %r: %r and its answer taken back",
                      turn, heard, before[0])
+            if self.on_taken_back:
+                self.on_taken_back(turn)
         self._last = said
         if turn is not None:
             self._answered[turn] = (heard, said, self._clock())

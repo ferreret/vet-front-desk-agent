@@ -60,7 +60,11 @@ from ..notices import Notice
 from ..scheduling import Appointment, SqliteAgenda
 from ..scheduling.google_calendar import CALENDAR, GoogleCalendar, MirroredAgenda, session_from
 from ..scheduling.google_calendar import KEY as CALENDAR_KEY
-from .bridge import Line, is_goodbye, may_end
+from .bridge import TROUBLE, Line, is_goodbye, may_end, silence
+from .call_log import FILE as CALLS_FILE
+from .call_log import KEEP_DAYS as CALLS_KEEP_DAYS
+from .call_log import PAGE as CALLS_PAGE
+from .call_log import CallLog
 from .clinic_file import PAGE, ClinicFile
 from .telegram import CHAT as TELEGRAM_CHAT
 from .telegram import TOKEN as TELEGRAM_TOKEN
@@ -142,7 +146,7 @@ class Switchboard:
             call = self._start_call(number, True) if can_transfer else \
                 self._start_call(number)
             line = Line(call, patience=None)
-            line.listening_in = FIRST_LANGUAGE
+            line.listening_in, line.name = FIRST_LANGUAGE, conversation
             self._lines[conversation] = (line, now)
         line, _ = self._lines[conversation]
         self._lines[conversation] = (line, now)
@@ -216,12 +220,13 @@ def _chunk(request_id: str, model: str, delta: dict, finish: str | None = None) 
 def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | None = None,
               admin_key: str = "",
               tell: Callable[[Notice], None] | None = None,
-              transfer_to: str = "") -> web.Application:
+              transfer_to: str = "", calls: CallLog | None = None) -> web.Application:
     """`model` is the agent's own model, named only to put a price on each answer. With a
     `desk` whose information is in a file and an `admin_key`, that information can be read
     and replaced through the server. `tell` is how reception is told what happens on a
     call: see `notices`. `transfer_to` is the number a person answers at, to put calls
-    through to."""
+    through to. `calls` is where every call is written down, to be read back with the
+    `admin_key`: see `call_log`."""
     agent_model = model
     put_through: set[int] = set()  # the lines the platform has been told to put through
     waiting: set[asyncio.Future] = set()  # answers being worked out for a request to come
@@ -233,14 +238,23 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                  usage.cache_read_tokens, usage.output_tokens,
                  f", ${price:.4f}" if price is not None else "")
 
-    def finished(line: Line) -> Callable[[Turn], None]:
+    def finished(line: Line, heard: str, number: int | None = None,
+                 note: str | None = None) -> Callable[[Turn], None]:
         """What to do when a turn is over, whether or not anybody is still listening."""
         def after(turn: Turn) -> None:
             spent(turn)
-            waiting_for_reception = line.call.session.notices
+            session = line.call.session
+            if calls:
+                found = session.resolution
+                calls.turn(line.name, number, heard, turn, cost(agent_model, turn.usage),
+                           session.language, found.level if found else "none",
+                           session.client.raw_name if session.client else None, note)
+            waiting_for_reception = session.notices
             while waiting_for_reception:
                 notice = waiting_for_reception.pop(0)
                 log.info("for reception: %s", notice.kind)
+                if calls:
+                    calls.happened(line.name, notice.kind)
                 if tell:
                     tell(notice)
         return after
@@ -271,6 +285,10 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
             return web.json_response({"error": {"message": "expected chat messages"}},
                                      status=400)
         line = switchboard.line(messages, bool(transfer_to) and _offers(body, TRANSFER_TOOL))
+        if calls and line.on_taken_back is None:  # the first that is heard of this call
+            calls.begin(line.name, line.call.session.caller_number, agent_model,
+                        line.call.greeting)
+            line.on_taken_back = lambda number: calls.taken_back(line.name, number)
         said = [_text(m.get("content")) for m in messages if m.get("role") == "user"]
         request_id = "chatcmpl-" + secrets.token_hex(8)
         model = str(body.get("model", "vetdesk"))
@@ -290,8 +308,10 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                 log.info("the caller speaks %s and the platform listens in %s: told to change",
                          language, line.listening_in)
                 line.listening_in = language
-                waiting.add(task := asyncio.ensure_future(
-                    _run(line.answer(said[-1], on_turn=finished(line), turn=len(said)))))
+                if calls:
+                    calls.note(line.name, f"language:{language}")
+                waiting.add(task := asyncio.ensure_future(_run(line.answer(
+                    said[-1], on_turn=finished(line, said[-1], len(said)), turn=len(said)))))
                 task.add_done_callback(waiting.discard)
                 return await use(response, request_id, model, LANGUAGE_TOOL,
                                  reason="the caller is speaking this language",
@@ -308,6 +328,8 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                         put_through.discard(id(line))
                         line.call.session.transfer = None
                         heard, turn, note = NOT_PUT_THROUGH, None, True
+                        if calls:
+                            calls.note(line.name, "not_put_through")
                 log.info("caller: %s", heard)
                 # A call may be over after this line (nothing said, or a goodbye). Then
                 # the answer is not said piece by piece but kept whole: if it is a
@@ -315,8 +337,9 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                 closing = _offers(body, END_TOOL) and not after_a_tool and may_end(said[-1])
                 session = line.call.session
                 answer, first = [], None
-                async for piece in line.answer(heard, on_turn=finished(line), turn=turn,
-                                               note=note):
+                on_turn = finished(line, "" if note else heard, turn,
+                                   "not_put_through" if note else None)
+                async for piece in line.answer(heard, on_turn=on_turn, turn=turn, note=note):
                     first = first if first is not None else time.perf_counter() - started
                     answer.append(piece)
                     # A model calls its tools before it speaks, so by its first words it
@@ -327,10 +350,16 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                 text = "".join(answer)
                 log.info("agent (first words %.1f s, all %.1f s): %s", first or 0,
                          time.perf_counter() - started, text)
+                if calls and silence(heard) and not note:
+                    calls.said(line.name, text, "silence")  # a stock phrase: no model
+                elif calls and text in TROUBLE.values():
+                    calls.said(line.name, text, "trouble", heard)  # the model failed
                 if session.transfer and transfer_to and id(line) not in put_through:
                     put_through.add(id(line))
                     log.info("the caller wants a person: the platform is told to put the "
                              "call through")
+                    if calls:
+                        calls.note(line.name, "put_through")
                     # The words are ours to say, before the tool: on a call that came in
                     # over a SIP trunk the platform put it through, rightly, and did not
                     # say the message for the caller it had been handed.
@@ -342,6 +371,8 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                                      agent_message=session.transfer)
                 if closing and is_goodbye(text):
                     log.info("the goodbyes are said: the platform is told to hang up")
+                    if calls:
+                        calls.note(line.name, "hung_up")
                     # Ours to say too, before the tool: handed to the tool as its
                     # farewell, on a phone call it was not said and the line just closed.
                     return await use(response, request_id, model, END_TOOL, say=text,
@@ -380,6 +411,33 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
     async def edit(request: web.Request) -> web.Response:
         return web.Response(text=PAGE, content_type="text/html")
 
+    # The record is read on a thread of its own: a slow disk must not hold up a call.
+    def read_calls(limit: int) -> dict:
+        calls.wait()
+        return {"totals": calls.totals(), "calls": calls.calls(limit)}
+
+    def read_call(call: str) -> dict | None:
+        calls.wait()
+        return calls.call(call)
+
+    async def taken(request: web.Request) -> web.Response:
+        if not may_edit(request):
+            return web.json_response({"error": "invalid key"}, status=401)
+        limit = request.query.get("limit", "")
+        return web.json_response(await asyncio.to_thread(
+            read_calls, int(limit) if limit.isdigit() else 200))
+
+    async def one(request: web.Request) -> web.Response:
+        if not may_edit(request):
+            return web.json_response({"error": "invalid key"}, status=401)
+        found = await asyncio.to_thread(read_call, request.match_info["call"])
+        if found is None:
+            return web.json_response({"error": "no such call"}, status=404)
+        return web.json_response(found)
+
+    async def view(request: web.Request) -> web.Response:
+        return web.Response(text=CALLS_PAGE, content_type="text/html")
+
     app = web.Application()
     app.router.add_post("/v1/chat/completions", chat_completions)
     app.router.add_post("/chat/completions", chat_completions)
@@ -388,6 +446,10 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
         app.router.add_get("/clinic", clinic)
         app.router.add_put("/clinic", clinic)
         app.router.add_get("/clinic/edit", edit)
+    if calls is not None and admin_key:
+        app.router.add_get("/calls", taken)
+        app.router.add_get("/calls/view", view)
+        app.router.add_get("/calls/{call}", one)
     return app
 
 
@@ -469,9 +531,14 @@ def main() -> None:
     numbers, _ = parse_phones(os.environ.get(TRANSFER_TO, ""))
     log.info("a caller who wants a person %s", "is put through while the clinic is open"
              if numbers else "leaves a message: no number to put calls through to is set")
+    path = os.environ.get(CALLS_FILE)
+    calls = CallLog(Path(path), keep_days=int(os.environ.get(CALLS_KEEP_DAYS, "90"))) \
+        if path else None
+    log.info("calls are %s", f"written down in {path}" if calls
+             else "not written down: no file is set for them")
     app = build_app(switchboard, key, getattr(llm, "model", ""), desk,
                     os.environ.get(ADMIN_KEY, ""), reception.send if reception else None,
-                    numbers[0] if numbers else "")
+                    numbers[0] if numbers else "", calls)
     print(f"The front desk answers at http://{args.host}:{args.port}/v1/chat/completions")
     web.run_app(app, host=args.host, port=args.port, print=None)
 
