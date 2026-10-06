@@ -103,7 +103,7 @@ description = "Sin cita si hay hueco; mejor llamar antes."
 price_from_eur = 10
 
 [species]
-treated = ["perros", "gatos", "conejos", "hurones", "cobayas", "aves", "tortugas"]
+treated = ["perros", "gatos", "conejos", "hurones", "cobayas", "hámsteres", "aves", "tortugas"]
 not_treated = ["caballos", "animales de granja", "reptiles venenosos"]
 
 [[faq]]
