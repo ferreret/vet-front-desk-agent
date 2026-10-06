@@ -320,6 +320,27 @@ Tried on real calls with two phones (2026-10-06):
   voicemail. What happens when a line rings out, the path that takes a message instead,
   has not been heard yet.
 
+### Every call written down
+
+The server's log said what happened on each call, as text that the next deployment threw
+away, and nobody at a clinic reads a server's log. Now every call is kept in a database
+of its own on the server's disk (`VETDESK_CALLS`, `voice/call_log.py`):
+
+- **Of the call:** when it began, the number it came from, the language it went on in,
+  how far the caller was identified, and what reception was told about it.
+- **Of each line:** the caller's words as the recogniser wrote them, the agent's answer,
+  the tools it ran, the seconds to its first words, and the tokens and the money.
+- An answer that was **taken back**, because the same line came again written
+  differently, is kept and marked: nobody heard it, and it was paid for.
+- What nobody said is there too: the platform told to change language, to hang up or to
+  put the call through, a stock phrase after a silence, a turn the model failed on.
+
+It is read back through the server with the clinic's key (`/calls`, `/calls/<id>`) and
+looked at on a page (`/calls/view`). It is written on a worker thread, off the call's
+path. Calls older than ninety days are dropped when the server starts
+(`VETDESK_CALLS_KEEP_DAYS`): what clients said on the phone is not kept for ever. On the
+page a caller's words are put as text, never as markup.
+
 ## Two ways to carry the voice
 
 The first call with a microphone made one thing plain: the hard part of a voice line is
@@ -405,6 +426,17 @@ ElevenLabs charged 150 credits a minute for these calls, at the reduced rate it 
 test calls from its dashboard, and nothing for the model, since it is ours. The model's
 cost was not recorded for these calls (it is logged per answer since); in the evaluation
 harness a call of six turns costs about 2 US cents.
+
+Since 2026-10-06 both bills are read from where they are kept, and added up:
+
+    uv run vetdesk costs                      # what a call, a minute and a month cost
+    uv run vetdesk costs --minutes 3 --phone-per-minute 0.01 --fixed-per-month 60
+
+The voice side comes from the platform's own record of each conversation (its length and
+what it charged), the model's from the server's call log, and the two are matched call by
+call. What was not measured (the phone line, the monthly fees) is listed as missing
+unless it is given; nothing is guessed. On the 26 conversations up to that day the voice
+platform charged 0.033 US dollars a minute, on the plan the account is on.
 
 ## Who does what
 
