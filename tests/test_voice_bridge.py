@@ -12,7 +12,14 @@ from vetdesk.kb import load_kb
 from vetdesk.llm import LLMError, Reply, ToolCall
 from vetdesk.llm.scripted import ScriptedClient
 from vetdesk.scheduling import SqliteAgenda
-from vetdesk.voice.bridge import STILL_THERE, TROUBLE, WAITING, Line, language_of
+from vetdesk.voice.bridge import (
+    GOODBYE,
+    STILL_THERE,
+    TROUBLE,
+    WAITING,
+    Line,
+    language_of,
+)
 
 NOW = datetime(2026, 11, 3, 10, 15)
 LOOKUP = ToolCall("c1", "get_availability", {"date_from": "2026-11-09", "date_to": "2026-11-13",
@@ -226,6 +233,27 @@ def test_silence_is_not_a_line_for_the_model(clinic, kb):
     assert quiet == [STILL_THERE["ca"]] and spoke == ["Digui'm el nom."]
     assert len(model.transcript.user_messages) == 2  # the two lines; the silence is not one
     assert _spoken(_call(ScriptedClient([]), clinic, kb), " … ")[0] == [STILL_THERE["es"]]
+
+
+def test_silence_after_the_goodbyes_is_a_caller_who_has_gone(clinic, kb):
+    """Heard on a call in English: "You're welcome. Have a good day.", ten seconds of
+    nothing, and then "Are you still there?"."""
+    model = ScriptedClient([Reply("It is booked. Anything else?"),
+                            Reply("You're welcome. Have a good day.")])
+    line = Line(_call(model, clinic, kb), patience=None)
+
+    async def play():
+        said = []
+        for turn, heard in enumerate(["Monday is fine, thank you.", "...", "...",
+                                      "No, that is all, thanks.", "...", "..."], start=1):
+            said.append("".join([piece async for piece in line.answer(heard, turn=turn)]))
+        return said
+
+    booked, first, second, bye, after, again = asyncio.run(play())
+    assert first == STILL_THERE["en"]  # mid-call: they may be looking for something
+    assert second == GOODBYE["en"]     # twice in a row: nobody is there
+    assert bye == "You're welcome. Have a good day."
+    assert after == again == GOODBYE["en"]  # after the goodbyes there is nothing to ask
 
 
 def test_a_broken_model_does_not_leave_the_caller_in_silence(clinic, kb):

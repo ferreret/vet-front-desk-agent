@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import time
 from collections.abc import AsyncIterator, Callable
 
@@ -55,6 +56,22 @@ STILL_THERE = {
     "nl": "Bent u er nog?",
     "it": "È ancora in linea?",
 }
+# Silence after the goodbyes, or silence again after "are you still there?", is a caller
+# who has gone: asked once more, on a call in English, the agent said "Are you still
+# there?" to somebody it had just wished a good day.
+GOODBYE = {
+    "es": "Gracias por llamar. Adiós.",
+    "ca": "Gràcies per trucar. Adéu.",
+    "en": "Thank you for calling. Goodbye.",
+    "fr": "Merci de votre appel. Au revoir.",
+    "de": "Vielen Dank für Ihren Anruf. Auf Wiederhören.",
+    "nl": "Bedankt voor uw telefoontje. Tot ziens.",
+    "it": "Grazie per aver chiamato. Arrivederci.",
+}
+_FAREWELL = re.compile(
+    r"\b(adi[oó]s|hasta luego|que tenga|ad[eé]u|fins aviat|que tingui|que vagi|goodbye|bye|"
+    r"have a (good|nice|lovely)|take care|au revoir|auf wiederh[oö]ren|tot ziens|arrivederci)\b",
+    re.IGNORECASE)
 # What speech recognition may call each language: two-letter and three-letter codes.
 _CODES = {"ca": "ca", "cat": "ca", "en": "en", "eng": "en", "fr": "fr", "fra": "fr",
           "fre": "fr", "de": "de", "deu": "de", "ger": "de", "nl": "nl", "nld": "nl",
@@ -88,6 +105,9 @@ class Line:
         # The language the platform is listening in, for a platform that listens in one
         # language at a time and can be told to change. None: not known, or not its way.
         self.listening_in: str | None = None
+        # The last thing said on this line, and how many silences in a row have followed.
+        self._last: list[str] = []
+        self._quiet = 0
         # Seconds of nothing said before the waiting phrase is. None: never, for a platform
         # that fills its own silences.
         self.patience = patience
@@ -125,8 +145,12 @@ class Line:
         """
         if not any(letter.isalnum() for letter in heard):
             # Silence, not a line: nothing for the model, and nothing to keep as said.
-            yield STILL_THERE[language or self.call.language]
+            gone = self._quiet > 0 or bool(_FAREWELL.search("".join(self._last)))
+            phrase = (GOODBYE if gone else STILL_THERE)[language or self.call.language]
+            self._quiet, self._last = self._quiet + 1, [phrase]
+            yield phrase
             return
+        self._quiet = 0
         loop = asyncio.get_running_loop()
         pieces: asyncio.Queue[str | None] = asyncio.Queue()
         said: list[str] = []
@@ -153,6 +177,7 @@ class Line:
         # The lock is held, so the first answer has finished and can be taken back whole.
         if again and (same_words or not self.call.take_back()):
             self._busy.release()
+            self._last = before[1]
             if not same_words:
                 log.info("turn %d heard again as %r: a tool ran on %r, so that answer stands",
                          turn, heard, before[0])
@@ -162,6 +187,7 @@ class Line:
         if again:
             log.info("turn %d heard again as %r: %r and its answer taken back",
                      turn, heard, before[0])
+        self._last = said
         if turn is not None:
             self._answered[turn] = (heard, said, self._clock())
         # Released when the turn ends, not when the listener leaves: an interrupted answer
