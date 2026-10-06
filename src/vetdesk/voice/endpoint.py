@@ -60,6 +60,9 @@ from ..scheduling.google_calendar import CALENDAR, GoogleCalendar, MirroredAgend
 from ..scheduling.google_calendar import KEY as CALENDAR_KEY
 from .bridge import Line
 from .clinic_file import PAGE, ClinicFile
+from .telegram import CHAT as TELEGRAM_CHAT
+from .telegram import TOKEN as TELEGRAM_TOKEN
+from .telegram import Telegram
 
 log = logging.getLogger("vetdesk.endpoint")
 
@@ -193,10 +196,11 @@ def _chunk(request_id: str, model: str, delta: dict, finish: str | None = None) 
 
 
 def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | None = None,
-              admin_key: str = "") -> web.Application:
+              admin_key: str = "", tell: Callable[[str], None] | None = None) -> web.Application:
     """`model` is the agent's own model, named only to put a price on each answer. With a
     `desk` whose information is in a file and an `admin_key`, that information can be read
-    and replaced through the server."""
+    and replaced through the server. `tell` is how reception is told what happens on a
+    call: see `notices`."""
     agent_model = model
     waiting: set[asyncio.Future] = set()  # answers being worked out for a request to come
 
@@ -206,6 +210,18 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                  usage.input_tokens + usage.cache_read_tokens + usage.cache_write_tokens,
                  usage.cache_read_tokens, usage.output_tokens,
                  f", ${price:.4f}" if price is not None else "")
+
+    def finished(line: Line) -> Callable[[Turn], None]:
+        """What to do when a turn is over, whether or not anybody is still listening."""
+        def after(turn: Turn) -> None:
+            spent(turn)
+            waiting_for_reception = line.call.session.notices
+            while waiting_for_reception:
+                notice = waiting_for_reception.pop(0)
+                log.info("for reception: %s", notice.kind)
+                if tell:
+                    tell(notice.text)
+        return after
 
     async def chat_completions(request: web.Request) -> web.StreamResponse:
         given = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
@@ -238,7 +254,7 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                          language, line.listening_in)
                 line.listening_in = language
                 waiting.add(task := asyncio.ensure_future(
-                    _run(line.answer(said[-1], on_turn=spent, turn=len(said)))))
+                    _run(line.answer(said[-1], on_turn=finished(line), turn=len(said)))))
                 task.add_done_callback(waiting.discard)
                 arguments = json.dumps({"reason": "the caller is speaking this language",
                                         "language": language})
@@ -255,7 +271,7 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                              _text(messages[-1].get("content"))[:200])
                 log.info("caller: %s", said[-1])
                 answer, first = [], None
-                async for piece in line.answer(said[-1], on_turn=spent, turn=len(said)):
+                async for piece in line.answer(said[-1], on_turn=finished(line), turn=len(said)):
                     first = first if first is not None else time.perf_counter() - started
                     answer.append(piece)
                     await response.write(_chunk(request_id, model, {"content": piece}))
@@ -375,8 +391,12 @@ def main() -> None:
     desk = Desk(lambda kb: FrontDeskAgent(llm, clinic, kb, agenda), agenda, kb, file)
     switchboard = Switchboard(desk.start_call,
                               stand_ins=stand_ins(os.environ.get(STAND_INS, "")))
+    token, chat = os.environ.get(TELEGRAM_TOKEN), os.environ.get(TELEGRAM_CHAT)
+    reception = Telegram(token, chat) if token and chat else None
+    log.info("reception is told what happens %s",
+             "on Telegram" if reception else "nowhere: no Telegram chat is set")
     app = build_app(switchboard, key, getattr(llm, "model", ""), desk,
-                    os.environ.get(ADMIN_KEY, ""))
+                    os.environ.get(ADMIN_KEY, ""), reception.send if reception else None)
     print(f"The front desk answers at http://{args.host}:{args.port}/v1/chat/completions")
     web.run_app(app, host=args.host, port=args.port, print=None)
 

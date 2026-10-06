@@ -8,7 +8,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from .. import notices
 from ..kb import KnowledgeBase
+from ..kb.model import spoken_phone
 from ..language import spoken_language
 from ..legacy.models import Clinic
 from ..llm import Conversation, LLMClient, LLMError, OnText, ToolResult, Usage
@@ -114,6 +116,7 @@ class Call:
         self, conversation: Conversation, toolbox: Toolbox, greeting: str,
         emergency: Callable[[str], str] = lambda language: "",
         languages: tuple[str, ...] = tuple(LANGUAGE_NAMES),
+        emergency_phone: str = "",
     ) -> None:
         self._conversation = conversation
         self._toolbox = toolbox
@@ -121,6 +124,10 @@ class Call:
         # What to say in an emergency on this call, by language: it depends on the hour.
         self._emergency = emergency
         self._languages = languages  # the ones the clinic's front desk speaks
+        # The emergency number as it is said: an answer that gives it is an emergency, and
+        # reception is told, once a call.
+        self._emergency_phone = emergency_phone
+        self._emergency_told = False
         # The language the call is going on in: the clinic answers the phone in Spanish, and
         # the caller's own words change it.
         self.language = "es"
@@ -242,6 +249,11 @@ class Call:
             heard(fallback)
             answer = fallback
         events = tuple(self.session.events[events_before:])
+        if self._emergency_phone and self._emergency_phone in answer \
+                and not self._emergency_told:
+            self._emergency_told = True
+            self.session.notices.append(notices.emergency(
+                self._toolbox.now(), self.session.caller_number, text))
         if not events:
             self._before_last = before
         return Turn(answer, events, usage, requests, tuple(latencies), first_words)
@@ -282,4 +294,4 @@ class FrontDeskAgent:
         context = call_context(self._kb, now, caller_number, hello)
         return Call(self._llm.start(self._system, context, SPECS), toolbox, hello,
                     lambda language: in_an_emergency(self._kb, now, language),
-                    tuple(self._kb.clinic.languages))
+                    tuple(self._kb.clinic.languages), spoken_phone(self._kb.emergency.phone))

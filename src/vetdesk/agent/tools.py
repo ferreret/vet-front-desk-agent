@@ -17,13 +17,14 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 
+from .. import notices
 from ..identity import Evidence, IdentityResolver, Resolution
 from ..identity.matching import SOUNDS_SAME, pet_grade
 from ..identity.spelling import SPELLED_WORD, spelled_words, was_spelled
 from ..kb import KnowledgeBase
 from ..kb.model import WEEKDAYS_ES
 from ..legacy.models import Client, Clinic
-from ..legacy.normalize import fold, fold_any, parse_phones
+from ..legacy.normalize import fold, fold_any, osa_distance, parse_phones
 from ..llm import ToolCall, ToolResult, ToolSpec
 from ..scheduling import Agenda, AgendaError, Appointment
 from ..spoken import say
@@ -72,6 +73,9 @@ class CallSession:
     # heard which it is and has spoken again.
     lines: int = 0
     told: dict[str, int] = field(default_factory=dict)
+    # What reception has to hear about this call: see `notices`. Whoever carries the call
+    # takes them from here and sends them on.
+    notices: list[notices.Notice] = field(default_factory=list)
     events: list[ToolEvent] = field(default_factory=list)
     messages: list[Message] = field(default_factory=list)
 
@@ -350,6 +354,8 @@ class Toolbox:
             session.resolution = self.resolver.resolve(evidence)
             if session.resolution.decision == "resolved":
                 session.client = session.resolution.client
+            elif session.resolution.decision == "not_found" and evidence.name_verified:
+                self._misspelt_on_file(evidence.client_name)
         if session.client is not None:
             instructions = ("The caller is confirmed. Their data and appointments are now "
                             "available through the other tools.")
@@ -366,6 +372,29 @@ class Toolbox:
             return {"status": "need_more", "ask_for": resolution.ask_for,
                     "instructions": ASK[resolution.ask_for]}
         return {"status": "unconfirmed", "instructions": UNCONFIRMED}
+
+    def _misspelt_on_file(self, spelled: str) -> None:
+        """Tell reception when a record on the calling number is one letter from a name.
+
+        A caller spells "Diego Esteve Planas" from the phone of "Esteve Planas, Deigo". The
+        resolver does not forgive a given name a letter (a brother is a letter away too),
+        so the caller is served as nobody on file. But the clinic can be told that the
+        record looks misspelt. The model is told nothing: it is no evidence of who calls.
+        """
+        said = fold(spelled).split()
+        for client in self.clinic.clients_by_phone(self.session.caller_number):
+            name = client.name
+            if name is None or len(said) < 2:
+                continue
+            on_file = [fold(part) for part in (name.given, name.surname1, name.surname2) if part]
+            apart = [osa_distance(a, b, 1) for a, b in zip(said, on_file, strict=False)]
+            if len(said) == len(on_file) and sorted(apart) == [0] * (len(apart) - 1) + [1]:
+                notice = notices.record(client.raw_name, spelled, self.session.caller_number)
+                if notice not in self.session.notices:
+                    self.session.notices.append(notice)
+
+    def _client_name(self) -> str | None:
+        return self.session.client.raw_name if self.session.client else None
 
     def _confirmed(self) -> Client:
         if self.session.client is None:
@@ -465,6 +494,7 @@ class Toolbox:
                 )
         except AgendaError as error:
             raise ToolError(f"{error}. Check get_availability and offer another time.") from error
+        self.session.notices.append(notices.booked(booked, self._client_name()))
         result = {"status": "booked", **self._summary(booked)}
         if not booked.verified:
             result["note"] = ("Booked under the caller's word. Tell them reception will "
@@ -543,15 +573,19 @@ class Toolbox:
     def _cancel_appointment(self, appointment_id: str) -> dict:
         self._may_change(appointment_id)
         self._heard_which(appointment_id, "cancel")
-        return {"status": "cancelled", **self._summary(self.agenda.cancel(appointment_id))}
+        gone = self.agenda.cancel(appointment_id)
+        self.session.notices.append(notices.cancelled(gone, self._client_name()))
+        return {"status": "cancelled", **self._summary(gone)}
 
     def _reschedule_appointment(self, appointment_id: str, new_start: str) -> dict:
         self._may_change(appointment_id)
         self._heard_which(appointment_id, "move")
+        before = self.agenda.get(appointment_id).start
         try:
             moved = self.agenda.reschedule(appointment_id, _moment(new_start))
         except AgendaError as error:
             raise ToolError(f"{error}. Check get_availability and offer another time.") from error
+        self.session.notices.append(notices.moved(moved, before, self._client_name()))
         return {"status": "rescheduled", **self._summary(moved)}
 
     # --- handoff --------------------------------------------------------------------------------
@@ -576,6 +610,8 @@ class Toolbox:
         self.session.messages.append(
             Message(message, contact_name, phone, client.code if client else None)
         )
+        self.session.notices.append(
+            notices.message(message, contact_name, phone, self._client_name()))
         return {"status": "message_taken",
                 "instructions": "Tell the caller reception will call them back. Do not "
                 "promise when, and do not say you are transferring the call."}

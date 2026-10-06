@@ -1,0 +1,185 @@
+"""What reception is told about a call: made in code from what a tool did, and sent on."""
+
+import asyncio
+import json
+from datetime import datetime
+from types import SimpleNamespace
+
+import pytest
+from aiohttp.test_utils import TestClient, TestServer
+
+from vetdesk.agent import FrontDeskAgent, Toolbox
+from vetdesk.kb import load_kb
+from vetdesk.llm import Reply, ToolCall
+from vetdesk.llm.scripted import ScriptedClient
+from vetdesk.scheduling import SqliteAgenda
+from vetdesk.voice.endpoint import Switchboard, build_app
+from vetdesk.voice.telegram import Telegram
+
+NOW = datetime(2026, 11, 3, 10, 15)
+SLOT = "2026-11-09T16:30"
+
+
+@pytest.fixture(scope="module")
+def kb():
+    return load_kb()
+
+
+def _run(toolbox, tool, /, **arguments):
+    result = toolbox.run(ToolCall("c", tool, arguments))
+    return json.loads(result.content), result.is_error
+
+
+def _client_on_own_phone(clinic):
+    """A client with both surnames whose number is on nobody else's record."""
+    for client in clinic.clients.values():
+        if client.name and client.name.surname2 and client.phones \
+                and len(clinic.clients_by_phone(client.phones[0])) == 1 \
+                and clinic.animals_of(client.code):
+            return client
+    raise AssertionError("no such client")
+
+
+def test_a_message_reaches_reception(clinic, kb):
+    """The agent says "reception will call you back". Until now nobody was told."""
+    toolbox = Toolbox(clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW, "+34600111222")
+    toolbox.heard("Quería hablar con alguien de una factura.")
+    _run(toolbox, "take_message", message="Quiere hablar de una factura.",
+         contact_name="Marta Soler", contact_phone=None)
+    (notice,) = toolbox.session.notices
+    assert notice.kind == "message"
+    assert notice.text == ("RECADO: llamar a Marta Soler (sin identificar)\n"
+                           "Teléfono: 600 111 222\n«Quiere hablar de una factura.»")
+
+
+def test_appointments_booked_moved_and_cancelled_are_told(clinic, kb):
+    client = _client_on_own_phone(clinic)
+    pet = clinic.animals_of(client.code)[0].name
+    toolbox = Toolbox(clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW, client.phones[0])
+    name = f"{client.name.given} {client.name.surname1} {client.name.surname2}"
+    toolbox.heard(f"Soy {name}, le toca la vacuna.")
+    assert _run(toolbox, "identify_client", name=name)[0]["status"] == "confirmed"
+    booked, _ = _run(toolbox, "book_appointment", start=SLOT, reason="vacuna", pet_name=pet,
+                     contact_name=None, contact_phone=None)
+    _run(toolbox, "list_appointments")
+    toolbox.heard("Sí, esa.")
+    _run(toolbox, "reschedule_appointment", appointment_id=booked["appointment_id"],
+         new_start="2026-11-10T09:30")
+    _run(toolbox, "cancel_appointment", appointment_id=booked["appointment_id"])
+    new, moved, gone = toolbox.session.notices
+    assert (new.kind, moved.kind, gone.kind) == ("booked", "moved", "cancelled")
+    assert new.text == (f"CITA NUEVA\n{pet}, vacuna\n"
+                        "lunes 9 de noviembre a las cuatro y media de la tarde\n"
+                        f"Cliente: {client.raw_name}.")
+    assert "Era el lunes 9 de noviembre a las cuatro y media de la tarde" in moved.text
+    assert "Ahora es el martes 10 de noviembre a las nueve y media de la mañana" in moved.text
+    assert gone.text.startswith("CITA ANULADA") and client.raw_name in gone.text
+
+
+def test_an_unverified_booking_asks_reception_to_check(clinic, kb):
+    toolbox = Toolbox(clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW, None)
+    toolbox.heard("Es para una revisión de mi perro Toby.")
+    _run(toolbox, "book_appointment", start=SLOT, reason="revisión", pet_name="Toby",
+         contact_name="Marta Soler", contact_phone="600 11 22 33")
+    (notice,) = toolbox.session.notices
+    assert "SIN VERIFICAR: dice ser Marta Soler, teléfono 600 112 233" in notice.text
+    assert "Comprobar antes de la visita" in notice.text
+    # What a tool refused is no news: a booking with a reason nobody gave tells nobody.
+    _run(toolbox, "book_appointment", start="2026-11-10T09:30", reason="vacuna",
+         pet_name="Toby", contact_name="Marta Soler", contact_phone="600 11 22 33")
+    assert len(toolbox.session.notices) == 1
+
+
+def test_a_record_that_looks_misspelt_is_pointed_out_to_reception_and_to_nobody_else(clinic, kb):
+    """A caller spells a name one letter from the record their phone is on. They are not
+    identified (a brother is a letter away too), but the clinic can mend the record."""
+    client = _client_on_own_phone(clinic)
+    given = client.name.given
+    swapped = given[0] + given[2] + given[1] + given[3:]  # two letters the wrong way round
+    assert swapped != given
+    spelled = f"{swapped} {client.name.surname1} {client.name.surname2}"
+    toolbox = Toolbox(clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW, client.phones[0])
+    toolbox.heard(" ".join("-".join(word.upper()) for word in spelled.split()))
+    result, _ = _run(toolbox, "identify_client", name=spelled, name_spelled=True)
+    assert result["status"] == "not_a_client" and toolbox.session.client is None
+    assert client.raw_name not in json.dumps(result)  # the model learns nothing from it
+    (notice,) = toolbox.session.notices
+    assert notice.kind == "record" and f"«{client.raw_name}»" in notice.text
+    assert f"«{spelled}»" in notice.text and "No se le ha identificado" in notice.text
+    # From another phone the same spelling points at no record.
+    other = Toolbox(clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW, None)
+    other.heard(" ".join("-".join(word.upper()) for word in spelled.split()))
+    _run(other, "identify_client", name=spelled, name_spelled=True)
+    assert other.session.notices == []
+
+
+def test_an_emergency_is_told_at_once_and_once(clinic, kb):
+    night = datetime(2026, 11, 8, 3, 20)
+    model = ScriptedClient([
+        Reply("Es una urgencia: llame ahora al teléfono de urgencias, 600 555 020."),
+        Reply("Sí, el 600 555 020."), Reply("Abrimos a las nueve y media.")])
+    agent = FrontDeskAgent(model, clinic, kb, SqliteAgenda(kb, lambda: night), lambda: night)
+    call = agent.start_call("+34600111222")
+    call.say("¡Mi perro se ha comido una tableta de chocolate!")
+    call.say("¿Me repite el número?")
+    (notice,) = call.session.notices
+    assert notice.text == ("URGENCIA a las 03:20\nLlamaban desde: 600 111 222\n"
+                           "«¡Mi perro se ha comido una tableta de chocolate!»\n"
+                           "Se le ha dado el teléfono de urgencias.")
+    quiet = agent.start_call(None)
+    quiet.say("¿A qué hora abrís?")
+    assert quiet.session.notices == []
+
+
+def test_notices_are_sent_when_the_turn_is_over(clinic, kb):
+    """Through the voice server: the notice of a booking goes out with the turn that made
+    it, and is taken off the call so that it goes out once."""
+    book = ToolCall("b", "book_appointment", {
+        "start": SLOT, "reason": "revisión", "pet_name": "Toby",
+        "contact_name": "Marta Soler", "contact_phone": "600 11 22 33"})
+    model = ScriptedClient([Reply("", (book,), "tool_calls"), Reply("Reservado."),
+                            Reply("Adiós.")])
+    agent = FrontDeskAgent(model, clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW)
+    told = []
+    app = build_app(Switchboard(agent.start_call), "key", tell=told.append)
+    system = {"role": "system", "content": "vetdesk-conversation: c1\nvetdesk-caller: "}
+    first = [system, {"role": "user", "content": "Una revisión para mi perro Toby, el lunes."}]
+    second = [*first, {"role": "assistant", "content": "Reservado."},
+              {"role": "user", "content": "Gracias, adiós."}]
+
+    async def run():
+        async with TestClient(TestServer(app)) as client:
+            for messages in (first, first, second):
+                response = await client.post(
+                    "/v1/chat/completions", json={"model": "x", "messages": messages},
+                    headers={"Authorization": "Bearer key"})
+                await response.text()
+            await asyncio.sleep(0.05)
+
+    asyncio.run(run())
+    assert len(told) == 1 and told[0].startswith("CITA NUEVA\nToby, revisión")
+
+
+def test_telegram_gets_the_text_and_a_failure_hurts_nobody(caplog):
+    sent = []
+
+    def post(url, json, timeout):
+        sent.append((url, json))
+        return SimpleNamespace(status_code=200 if len(sent) == 1 else 403)
+
+    telegram = Telegram("123:secret", "-1001", post)
+    telegram.send("RECADO: llamar a Marta Soler")
+    telegram.send("URGENCIA a las 03:20")
+    telegram.wait()
+    assert sent[0] == ("https://api.telegram.org/bot123:secret/sendMessage",
+                       {"chat_id": "-1001", "text": "RECADO: llamar a Marta Soler"})
+    assert "a notice was not delivered: Telegram answered 403" in caplog.text
+    assert "secret" not in caplog.text  # the bot's key is never written to the log
+
+    def broken(url, json, timeout):
+        raise OSError("no network")
+
+    down = Telegram("123:secret", "-1001", broken)
+    down.send("CITA NUEVA")
+    down.wait()
+    assert "a notice was not delivered: OSError" in caplog.text

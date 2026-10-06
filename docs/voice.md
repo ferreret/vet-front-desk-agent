@@ -263,6 +263,25 @@ those. Taking Russian out of the list is all it takes for it not to answer in Ru
 Tried on the server: the price of a service changed from 10 to 12 euros, and the next
 conversation said 12; text that was not a clinic was refused; and it was put back.
 
+### What reception is told
+
+When the agent takes a message it says "reception will call you back". Until 2026-10-06
+the message went nowhere: it stayed in the server's memory, a promise nothing kept. Now
+everything a person at the clinic has to know or act on is a notice
+([`notices.py`](../src/vetdesk/notices.py)), written in code from what a tool did, never
+from what the model said it did, and sent to a Telegram chat when the turn is over
+(`VETDESK_TELEGRAM_TOKEN`, `VETDESK_TELEGRAM_CHAT`):
+
+- a message taken, with who to call back and where;
+- an emergency, as soon as the emergency number has been given, with what the caller said;
+- an appointment booked, moved or cancelled; an unverified one says so and asks reception
+  to check before the visit;
+- a record that looks misspelt: a caller spells a name one letter from the record their
+  phone is on. They are not identified for it (a brother is a letter away too), and the
+  model is told nothing, but the clinic can mend the record.
+
+Sent off the call's path: a slow or failing Telegram makes no caller wait.
+
 ## Two ways to carry the voice
 
 The first call with a microphone made one thing plain: the hard part of a voice line is
