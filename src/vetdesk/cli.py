@@ -564,7 +564,7 @@ def main(argv: list[str] | None = None) -> int:
     eval_run.add_argument("--caller-language", choices=sorted(CALLER_LANGUAGES),
                           help="have every caller speak this language instead of the "
                                "scenario's: the same people, as residents from abroad")
-    eval_run.add_argument("--judge-model", default="gemini-3.8-flash",
+    eval_run.add_argument("--judge-model", default="claude-opus-5-5",
                           help="model that reads the transcripts")
     eval_run.add_argument("--no-judge", action="store_true",
                           help="only what code can measure; cheaper")

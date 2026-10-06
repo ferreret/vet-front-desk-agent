@@ -307,20 +307,33 @@ booked. The scorer caught it as "no appointment was booked". Searching the day's
 a second one, in the first pass of the morning, that nobody had read: 2 of 174 calls. The
 Gemini adapter now asks for such a reply again and never keeps it in the history.
 
-### One provider for the three roles (2026-10-06)
+### Who plays the caller and who judges (2026-10-06)
 
 Until this day the simulated callers were Claude Haiku and the judge Claude Opus, and every
-run above was played that way. From here on the defaults are Gemini for all three roles:
-`gemini-3.5-flash-lite` plays the callers and `gemini-3.8-flash` judges, with thinking on.
-Eight calls of eight kinds with the three of them: all scored, every checklist handed in,
-no finding thrown away, $0.11 in all. A full judged run comes to about $1.10 where it cost
-$3.20.
+run above was played that way. The callers are now `gemini-3.5-flash-lite`, the model that
+answers the phone: it costs a fifth, and it kept to its brief (in the scenario of moving
+an appointment, better than Haiku had).
 
-What it costs in confidence: the caller and the agent are now the same model, and the
-judge is of the same family. A judge that shares a model's habits may not see them. The
-safety numbers do not depend on it, since they are read in code; what the judge reads
-(questions asked, a transfer promised, something not in the clinic's information) does.
-Nothing measured before this day is comparable with what a Gemini judge reads after it.
+The judge was tried on Gemini as well, and measured before deciding. `gemini-3.8-flash`,
+with thinking on, read the 82 calls of the full run of 2026-10-05, which Opus had judged:
+
+| What the judge reads | Opus | Gemini 3.8 Flash |
+|---|---|---|
+| Identity questions per call | | the same count in 80 of 82 |
+| Calls with an answer in the wrong language | 14 | the same 14 |
+| A transfer promised | 1 | the same one |
+| Something stated that the clinic's information does not say | 2 | **0** |
+| A claim of something that did not happen | 1 | 1, another call |
+| A simulated caller who strayed from the brief | 2 | **0** |
+| Findings thrown away for a quote not in the transcript | 0 | 0 |
+
+It reads what can be counted as well as Opus does. It missed what takes judgement: a
+caller with an emergency at 03:20 told to "come straight to the clinic", which was closed,
+and an invented reason for a refusal; and both callers who had strayed, so two calls that
+were set aside would have been scored. Two findings and two callers are few, and one model
+of one size was tried, so whether it is the family or the size is not known. The judge
+stays Opus: it runs only on the full runs whose numbers are published, $1.65 a run, and
+everything else is played with `--no-judge`.
 
 ### A third language (2026-10-06)
 
