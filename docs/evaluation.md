@@ -25,6 +25,26 @@ Between caller and agent sits **simulated speech recognition**. The caller says
 the name again garbles it again. A name spelled letter by letter gets through intact,
 which is the reason the agent asks for it.
 
+### Two kinds of caller
+
+A model left to play a caller opens with everything at once: "I'd like an appointment for
+my dog Kiko, he needs a check-up". People do not. They say hello and wait. The first six
+calls by voice (2026-10-05) showed five defects that 82 simulated calls had not: three
+things asked in one breath, the name asked before the caller had said what they wanted,
+then the name asked last, Spanish answered to Catalan, and a waiting phrase that covered
+nothing. Four of the five are about what the agent does with a caller who says little.
+
+So a run chooses how its callers talk, with `--caller-style`:
+
+| Style | How the call opens | After that |
+|---|---|---|
+| `forthcoming` (the default) | With what the caller wants, often with the animal and the reason | Answers what is asked |
+| `terse` | "Hola, buenos días." and nothing else, said by the harness and not by the model | "Quería pedir una cita." when asked, then the one thing each question asks for |
+
+The scenarios, the facts the caller knows and the expected outcome are the same in both.
+An emergency is always played forthcoming: nobody with a bleeding dog says hello and waits.
+A run holds one style, and its report says which.
+
 ## What code measures and what a judge reads
 
 Whatever can be read from what happened is measured in code:
@@ -42,12 +62,18 @@ Whatever can be read from what happened is measured in code:
 | Emergency number given | Digit by digit, also when the agent writes the digits as words |
 | Speed | Seconds to the first words and to the whole answer, per turn |
 | How it spoke | Words per answer, and answers with line breaks or list marks |
+| **How it talked** | Read from the agent's words by keyword ([`manners.py`](../src/vetdesk/evals/manners.py)): answers that ask for more than one thing; a bare hello answered by asking who is calling; anything asked about the visit before asking who is calling; answers in the language the caller is not speaking |
 
 The third and fifth rows are where a language model could undo the resolver's care. The
 resolver trusts two things it cannot check: that a name was spelled out and that a pet's
 name was repeated. A model that sets those flags on its own, or that "corrects" a garbled
 name before passing it on, switches the protection off. So every call to `identify_client`
 is compared with what the caller actually said.
+
+The last row is a keyword reading, not understanding: "nombre" in a question is a request
+for a name, "nombre de su mascota" for a pet. It is there to count over many answers and
+to point at the calls worth reading. Checked against the full run of 2026-10-05, it flags
+6 answers of 435 for asking two things, the 1 % that reading the calls had given.
 
 A judge reads only what needs a reader:
 
@@ -209,7 +235,49 @@ hand, and the columns of the full runs differ in the identity rules, which chang
 day. The account of the day, with what each model got wrong and the rules that came out of
 it, is in [sessions/2026-10-05.md](sessions/2026-10-05.md) (in Spanish).
 
+### A caller of few words (2026-10-06)
+
+One call of each kind, 23 in all, played with terse callers and no judge, twice. Agent:
+Gemini 3.5 Flash Lite.
+
+| | First pass | After the fix |
+|---|---|---|
+| False identifications, another client's data, forbidden actions | 0 | 0 |
+| Answers that asked for more than one thing | 2 of 165 | 1 of 175 |
+| A bare hello answered by asking who is calling | 0 of 22 | 0 of 22 |
+| Asked about the visit before asking who is calling | 0 of 17 | 0 of 17 |
+| Answers in the language the caller was not speaking | 2 of 165 | 0 of 175 |
+| First words: median; within 1.5 s | 0.7 s; 89 % | 0.7 s; 94 % |
+
+What it found the first time it ran:
+
+- **A town said alone turned a Catalan call into Spanish.** Asked where they live, a terse
+  caller answers "Pinar del Mar." and nothing else. The language of the call is worked out
+  in code from the caller's words, and "del" was on the Spanish list; it is a Catalan word
+  too. A forthcoming caller says "Visc a Pinar del Mar", where "visc" settles it, so 82
+  calls had never shown it. 29 of the 82 scenarios have a town with "del" in its name.
+  Both "del" and "al" are off the list.
+- **The simulated caller needed its lines given.** Told to say what it wanted "without the
+  animal", it said "Vull una cita per al Kiko" or "para mi perro" in fifteen bookings of
+  fifteen. Its answer
+  to "what can I do for you?" is now in its brief, word for word. Told to use few words,
+  it also gave "Monday to Friday" for the days in its brief and then took a day outside
+  them; it is now told that few words never means fewer facts.
+- **A scorer's false alarm.** A model that writes "null" in quotes for a pet nobody had
+  named was reported as passing on something not heard. The tool reads that as nothing,
+  and now the scorer does too.
+
+The one answer still asking for two things is "your name and a contact phone" when a
+message is taken. First words come sooner than in the forthcoming runs (0.7 s against
+1.2 s). The agent is the same: a terse call has more turns, and more of them are a plain
+question that needs no tool, which is the likely reason.
+
+These are 23 calls, once each, without a judge. A full run with terse callers has not
+been played.
+
 ### What is open
+
+- **A full run with terse callers**, judged.
 
 - **A third full run**, for the reason just given.
 - **Spelling over a real voice.** The check reads a spelled name as letters joined by
@@ -229,6 +297,7 @@ uv run vetdesk eval run --per-category 1      # one of each kind: a cheap first 
 uv run vetdesk eval run --only S-031,S-049    # particular calls
 uv run vetdesk eval run --model claude-haiku-4-5 --out data/runs/haiku   # another agent
 uv run vetdesk eval run --no-judge            # only what code measures
+uv run vetdesk eval run --caller-style terse  # callers who say hello and wait
 uv run vetdesk eval report data/runs/<run>    # score a stored run again: costs nothing
 uv run vetdesk eval show data/runs/<run> S-031   # one call: transcript and verdict
 ```
