@@ -246,8 +246,11 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
         return after
 
     async def use(response: web.StreamResponse, request_id: str, model: str, tool: str,
-                  **arguments: str) -> web.StreamResponse:
-        """Answer with a call to one of the platform's own tools, and nothing else."""
+                  say: str = "", **arguments: str) -> web.StreamResponse:
+        """Answer with a call to one of the platform's own tools, and, with `say`, words
+        for the platform to speak before it runs the tool."""
+        if say:
+            await response.write(_chunk(request_id, model, {"content": say}))
         call = {"index": 0, "id": "call_" + secrets.token_hex(8), "type": "function",
                 "function": {"name": tool, "arguments": json.dumps(arguments,
                                                                    ensure_ascii=False)}}
@@ -328,7 +331,11 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                     put_through.add(id(line))
                     log.info("the caller wants a person: the platform is told to put the "
                              "call through")
+                    # The words are ours to say, before the tool: on a call that came in
+                    # over a SIP trunk the platform put it through, rightly, and did not
+                    # say the message for the caller it had been handed.
                     return await use(response, request_id, model, TRANSFER_TOOL,
+                                     say=THROUGH[session.language],
                                      reason="the caller asked to speak to a person",
                                      transfer_number=transfer_to,
                                      client_message=THROUGH[session.language],

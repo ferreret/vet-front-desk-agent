@@ -58,7 +58,11 @@ def _transfer() -> dict:
         return {}
     return {"transfer_to_number": {
         "type": "system", "name": "transfer_to_number",
-        "params": {"system_tool_type": "transfer_to_number", "enable_client_message": True,
+        # What the caller hears is said by our address, before the tool, and the tool
+        # waits for it: the platform's own message for the caller is off, or a platform
+        # that does say it would say it twice.
+        "force_pre_tool_speech": True,
+        "params": {"system_tool_type": "transfer_to_number", "enable_client_message": False,
                    "transfers": [{
                        "transfer_destination": {"type": "phone", "phone_number": number},
                        "condition": "Only when asked for by the custom model.",

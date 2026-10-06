@@ -103,11 +103,15 @@ SYSTEM = {"role": "system", "content": "vetdesk-conversation: c1\nvetdesk-caller
 WANTS = [SYSTEM, {"role": "user", "content": "Quería hablar con alguien por una factura."}]
 
 
-def test_the_platform_is_told_to_put_the_call_through_and_says_the_words_itself(clinic, kb):
-    model = ScriptedClient([Reply("", (ASK,), "tool_calls"), Reply(THROUGH["es"])])
+def test_the_caller_is_told_and_the_platform_is_told_to_put_the_call_through(clinic, kb):
+    """On the first real call the transfer worked and the caller heard nothing: over a SIP
+    trunk the platform does not say the message for the caller. The words go out as ours,
+    once, in front of the tool call, whatever the model went on to say."""
+    model = ScriptedClient([Reply("", (ASK,), "tool_calls"),
+                            Reply("Muy bien, le paso ahora mismo con mis compañeros.")])
     (stream,) = _ask(_server(model, clinic, kb, OPEN), WANTS)
     said, asked = _read(stream)
-    assert said == ""  # not said by us as well: the platform says it while it dials
+    assert said == THROUGH["es"]
     assert asked == {"name": "transfer_to_number", "transfer_number": "+34600999888",
                      "reason": "the caller asked to speak to a person",
                      "client_message": THROUGH["es"],
@@ -143,5 +147,7 @@ def test_the_platforms_agent_holds_the_number_only_when_there_is_one(monkeypatch
     assert "transfer_to_number" not in tools["built_in_tools"]
     monkeypatch.setenv("VETDESK_TRANSFER_TO", "+34600999888")
     tools = config("https://example.test", "s")["conversation_config"]["agent"]["prompt"]
-    rule = tools["built_in_tools"]["transfer_to_number"]["params"]["transfers"][0]
+    tool = tools["built_in_tools"]["transfer_to_number"]
+    assert tool["force_pre_tool_speech"] and not tool["params"]["enable_client_message"]
+    rule = tool["params"]["transfers"][0]
     assert rule["transfer_destination"] == {"type": "phone", "phone_number": "+34600999888"}
