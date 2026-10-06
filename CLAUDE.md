@@ -33,7 +33,7 @@ El asistente del piloto tenía dos funciones: **agenda** (crear, eliminar y modi
 |---|---|
 | No sabía con quién hablaba: pedía nombre y teléfono y creaba la cita con lo que entendiera | Resolución de identidad con confianza antes de leer o escribir nada de un cliente |
 | La agenda solo creaba citas | `cancel_appointment` y `reschedule_appointment`, y solo sobre citas de quien llama |
-| Prometía «te paso con recepción» sin poder transferir | El agente **no promete acciones que no tiene**: o existe la herramienta de traspaso, o toma un recado y lo dice así |
+| Prometía «te paso con recepción» sin poder transferir | El agente **no promete acciones que no tiene**: o existe la herramienta de traspaso, o toma un recado y lo dice así. Desde el 2026-10-06 la herramienta existe (`transfer_to_reception`) solo en las llamadas en que alguien puede cogerla: hay un número al que pasar y la clínica está abierta. La frase «le paso con recepción» está escrita en código y solo llega al modelo en la respuesta de esa herramienta |
 | La base de conocimiento tenía huecos de plantilla sin rellenar | Validación de la base de conocimiento en los tests: sin marcadores vacíos y con horarios y teléfonos presentes |
 | El teléfono de urgencias era un relleno | Los datos críticos (urgencias, horarios) salen de una única fuente validada, nunca del prompt |
 | No se medía nada | El harness llega antes que la voz (F4) y sus métricas van al README |

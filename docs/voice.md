@@ -282,6 +282,29 @@ from what the model said it did, and sent to a Telegram chat when the turn is ov
 
 Sent off the call's path: a slow or failing Telegram makes no caller wait.
 
+### Hanging up, and putting a call through
+
+Two things our address cannot do and the platform can, each with a tool of its own that
+is meant for the platform's model. As with the language, no model of theirs is used here:
+our address decides, in code, and calls the tool.
+
+- **Hanging up.** After "que tenga un buen día" the line stayed open until the caller put
+  the phone down. When a line may end a call (the caller's goodbye, or silence) the answer
+  is kept whole instead of being said piece by piece; if it is a goodbye too, the platform
+  is handed it to say and told to hang up (`end_call`). Tried by typing to the agent: the
+  call ended by itself, "end_call tool was called".
+- **Putting a call through to a person.** The 2025 pilot said "le paso con recepción" and
+  could not; this agent has said, truthfully, that it cannot, and taken a message. Now it
+  can, when there is a number to put calls through to (`VETDESK_TRANSFER_TO`) and the
+  clinic is open: the agent then has a tool, `transfer_to_reception`, and our address
+  tells the platform to dial (`transfer_to_number`) with a line for whoever picks up. What
+  the caller hears meanwhile is written in code in each language and reaches the model
+  only in that tool's answer, so it cannot be said without the transfer happening. If
+  nobody picks up, the model is told and offers to take a message. Out of hours, or with
+  no number, nothing changed: a message is taken.
+
+Not yet tried on a real call: the transfer itself. It needs two phones.
+
 ## Two ways to carry the voice
 
 The first call with a microphone made one thing plain: the hard part of a voice line is
