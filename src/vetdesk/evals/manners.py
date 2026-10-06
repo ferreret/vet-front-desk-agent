@@ -26,21 +26,28 @@ _ASKS = {
     "when": ("que dia", "que dias", "quin dia", "quins dies", "cuando", "quan", "que hora",
              "quina hora", "manana o", "mati o", "por la manana", "por la tarde", "pel mati",
              "al mati", "a la tarda", "le va bien", "le viene bien", "le iria bien",
-             "li va be", "li aniria be", "prefiere", "prefereix"),
+             "li va be", "li aniria be", "prefiere", "prefereix", "what day", "which day",
+             "what days", "which days", "when", "what time", "morning or", "suit you",
+             "suits you", "work for you", "works for you", "prefer"),
     "reason": ("motivo", "motiu", "que le pasa", "que le ocurre", "que li passa", "que tiene",
                "que te", "de que se trata", "de que es tracta", "para que es la",
-               "per a que es la", "per que es la", "que necesita", "que necessita"),
+               "per a que es la", "per que es la", "que necesita", "que necessita", "reason",
+               "wrong", "the matter", "visit for", "appointment for", "the problem"),
     "town": ("poblacion", "pueblo", "localidad", "municipio", "donde vive", "poblacio", "poble",
-             "localitat", "municipi", "on viu"),
-    "phone": ("telefono", "telefon", "numero"),
-    "pet": ("mascota", "animal", "perro", "perra", "gato", "gos", "gossa", "gat", "gata"),
+             "localitat", "municipi", "on viu", "town", "city", "village", "where do you live"),
+    "phone": ("telefono", "telefon", "numero", "phone", "number"),
+    "pet": ("mascota", "animal", "perro", "perra", "gato", "gos", "gossa", "gat", "gata",
+            "pet", "pets", "dog", "cat"),
     "name": ("nombre", "apellido", "apellidos", "nom", "cognom", "cognoms", "se llama",
-             "te llamas", "es diu", "us dieu", "et dius", "deletre", "lletrej"),
+             "te llamas", "es diu", "us dieu", "et dius", "deletre", "lletrej", "name",
+             "surname", "surnames", "spell"),
 }
-_REQUEST = ("digame", "dime", "indiqueme", "necesito", "digui m", "digues", "necessito")
+_REQUEST = ("digame", "dime", "indiqueme", "necesito", "digui m", "digues", "necessito",
+            "tell me", "give me", "may i have", "could you")
 _SENTENCE = re.compile(r"[^.!?¿¡]+[.!?]?")
-_CLAUSE = re.compile(r"[,;]| y | e | i ")
-_GREETING = frozenset("hola buenos buenas dias tardes noches bon bona dia tarda nit".split())
+_CLAUSE = re.compile(r"[,;]| y | e | i | and ")
+_GREETING = frozenset("""hola buenos buenas dias tardes noches bon bona dia tarda nit hello hi
+    good morning afternoon evening""".split())
 ABOUT_THE_VISIT = ("pet", "reason", "when")
 # Goals that are about the caller's own animals or appointments: the agent has to know who
 # is calling, and is told to ask it before anything else about them.
@@ -102,6 +109,7 @@ def manners(scenario: Scenario, record: CallRecord) -> Manners:
         before_who=before_who,
         wrong_language=[
             turn for turn, exchange in enumerate(record.exchanges, start=1)
-            if spoken_language(exchange.answer) not in (None, scenario.language)
+            if spoken_language(exchange.answer)
+            not in (None, record.caller_language or scenario.language)
         ],
     )

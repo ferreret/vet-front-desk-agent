@@ -201,7 +201,7 @@ def judge(
     context = "The checklist is filled in by calling `report`. One call per transcript."
     material = (
         "# What the simulated caller was told (the agent never saw this)\n"
-        f"{brief(scenario, truth, record.caller_style)}\n\n"
+        f"{brief(scenario, truth, record.caller_style, record.caller_language)}\n\n"
         "# Transcript\n"
         f"{transcript(record)}"
     )

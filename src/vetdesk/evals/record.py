@@ -82,6 +82,7 @@ class CallRecord(_Model):
     agent_model: str
     caller_model: str
     caller_style: str = "forthcoming"  # how much the caller told unasked: see `caller`
+    caller_language: str | None = None  # when the caller spoke another than the scenario's
     greeting: str
     exchanges: list[Exchange]
     # hung_up: the caller got what the clinic could offer. gave_up: the caller left without

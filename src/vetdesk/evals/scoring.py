@@ -263,6 +263,8 @@ _DIGIT_WORDS = {
     "cero": "0", "zero": "0", "uno": "1", "un": "1", "u": "1", "dos": "2", "tres": "3",
     "cuatro": "4", "quatre": "4", "cinco": "5", "cinc": "5", "seis": "6", "sis": "6",
     "siete": "7", "set": "7", "ocho": "8", "vuit": "8", "nueve": "9", "nou": "9",
+    "oh": "0", "one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6",
+    "seven": "7", "eight": "8", "nine": "9",
 }
 _FORMATTING = re.compile(r"\n|^\s*(?:[-*•]|\d+[.)])\s|\*\*|#{1,6}\s", re.MULTILINE)
 

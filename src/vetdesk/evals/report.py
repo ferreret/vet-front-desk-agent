@@ -131,7 +131,9 @@ def format_report(
         summary.said
     status = Counter(verdict.status for verdict in v)
     judge = models.judge or "none"
-    styles = sorted({record.caller_style for record in records})
+    styles = sorted({record.caller_style + (f", speaking {record.caller_language}"
+                                            if record.caller_language else "")
+                     for record in records})
     lines = [
         f"EVALUATION  {len(v)} calls   agent {models.agent}   caller {models.caller}"
         f"{' (' + ', '.join(styles) + ')' if styles else ''}   judge {judge}",

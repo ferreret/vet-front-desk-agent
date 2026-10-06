@@ -15,6 +15,7 @@ import anthropic
 
 from .agent import FrontDeskAgent
 from .dbguard import ForeignDatabaseError
+from .evals.caller import LANGUAGES as CALLER_LANGUAGES
 from .evals.caller import STYLES
 from .evals.calls import play
 from .evals.identity import Probe, format_report, probes_from_scenarios, run_probe, summarize
@@ -371,13 +372,16 @@ def _eval_run(args: argparse.Namespace) -> int:
         print(f"error: {out} was played against other scenarios; choose another --out",
               file=sys.stderr)
         return 1
-    if earlier and info.get("caller_style", STYLES[0]) != args.caller_style:
-        print(f"error: {out} was not played with {args.caller_style} callers; choose "
-              "another --out", file=sys.stderr)
+    if earlier and (info.get("caller_style", STYLES[0]), info.get("caller_language")) != \
+            (args.caller_style, args.caller_language):
+        print(f"error: {out} was not played with these callers ({args.caller_style}, "
+              f"{args.caller_language or 'the language of each scenario'}); choose another "
+              "--out", file=sys.stderr)
         return 1
     store.write_info(models, {
         "scenarios": fingerprint,
         "caller_style": args.caller_style,
+        "caller_language": args.caller_language,
         "started": info.get("started", datetime.now().isoformat(timespec="seconds")),
         "agent_effort": getattr(agent_llm, "effort", None),
         "agent_thinking": getattr(agent_llm, "thinking", None),
@@ -386,7 +390,7 @@ def _eval_run(args: argparse.Namespace) -> int:
     def play_call(scenario: Scenario, rep: int):
         return play(scenario, agent_llm=agent_llm, caller_llm=caller_llm, clinic=clinic, kb=kb,
                     truth=truth, rep=rep, agent_model=models.agent, caller_model=models.caller,
-                    caller_style=args.caller_style)
+                    caller_style=args.caller_style, caller_language=args.caller_language)
 
     def judge_call(record, scenario: Scenario):
         return judge(record, scenario, truth, kb, judge_llm, models.judge)
@@ -557,6 +561,9 @@ def main(argv: list[str] | None = None) -> int:
     eval_run.add_argument("--caller-style", choices=STYLES, default=STYLES[0],
                           help="forthcoming: opens with what they want; terse: says hello "
                                "and waits, then one thing per question")
+    eval_run.add_argument("--caller-language", choices=sorted(CALLER_LANGUAGES),
+                          help="have every caller speak this language instead of the "
+                               "scenario's: the same people, as residents from abroad")
     eval_run.add_argument("--judge-model", default="claude-opus-5-5",
                           help="model that reads the transcripts")
     eval_run.add_argument("--no-judge", action="store_true",

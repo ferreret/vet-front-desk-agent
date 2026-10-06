@@ -14,6 +14,10 @@ it. A terse one says hello and waits, then gives one thing per question, which i
 people phone a clinic: every defect of the first voice calls (three things asked at once,
 the name asked too early, then too late, the wrong language) showed only with a person who
 said little. The facts and the goal are the same in both; only the telling changes.
+
+A run can also have its callers speak another language than the scenario's: the same
+people with the same records, as residents from abroad are. That is how a language the
+agent has just been taught is measured before any scenario is written for it.
 """
 
 from __future__ import annotations
@@ -85,12 +89,17 @@ WANTS = {
            "reschedule": "Quería cambiar una cita."},
     "ca": {"book": "Volia demanar una cita.", "cancel": "Volia anul·lar una cita.",
            "reschedule": "Volia canviar una cita."},
+    "en": {"book": "I'd like to make an appointment.",
+           "cancel": "I'd like to cancel an appointment.",
+           "reschedule": "I'd like to change an appointment."},
 }
 OPENINGS = {
     "es": {"morning": "Hola, buenos días.", "afternoon": "Hola, buenas tardes.",
            "night": "Hola, buenas noches."},
     "ca": {"morning": "Hola, bon dia.", "afternoon": "Hola, bona tarda.",
            "night": "Hola, bona nit."},
+    "en": {"morning": "Hello, good morning.", "afternoon": "Hello, good afternoon.",
+           "night": "Hello, good evening."},
 }
 
 HANG_UP = ToolSpec(
@@ -104,7 +113,7 @@ HANG_UP = ToolSpec(
     },
 )
 
-LANGUAGES = {"es": "Spanish", "ca": "Catalan"}
+LANGUAGES = {"es": "Spanish", "ca": "Catalan", "en": "English"}
 REASONS = {
     "vaccination": "it is due for its yearly vaccination",
     "checkup": "you want a general check-up",
@@ -212,28 +221,36 @@ def style_of(scenario: Scenario, style: str) -> str:
     return "forthcoming" if scenario.caller.goal.type == "emergency" else style
 
 
-def opening(scenario: Scenario, style: str = "forthcoming") -> str | None:
+def opening(
+    scenario: Scenario, style: str = "forthcoming", language: str | None = None
+) -> str | None:
     """The line the harness says for a terse caller before the model takes over."""
     if style_of(scenario, style) != "terse":
         return None
     hour = scenario.clock.hour
     part = "morning" if 6 <= hour < 14 else "afternoon" if 14 <= hour < 21 else "night"
-    return OPENINGS[scenario.language][part]
+    return OPENINGS[language or scenario.language][part]
 
 
 def instructions(scenario: Scenario, style: str = "forthcoming") -> str:
     return INSTRUCTIONS.format(telling=TELLING[style_of(scenario, style)])
 
 
-def brief(scenario: Scenario, truth: Truth, style: str = "forthcoming") -> str:
-    """What the simulated caller is told about itself. Nothing about the clinic's records."""
+def brief(
+    scenario: Scenario, truth: Truth, style: str = "forthcoming", language: str | None = None
+) -> str:
+    """What the simulated caller is told about itself. Nothing about the clinic's records.
+
+    `language` is for a run whose callers speak another language than the scenario's.
+    """
     caller = scenario.caller
-    said = opening(scenario, style)
+    language = language or scenario.language
+    said = opening(scenario, style, language)
     manner = caller.persona if said is None else "says as little as possible"
     so_far = ""
     if said:
         so_far = f'\n\n# What you have said so far\n"{said}" Nothing else.'
-        if wants := WANTS[scenario.language].get(caller.goal.type):
+        if wants := WANTS[language].get(caller.goal.type):
             so_far += f'\nWhen you are asked what you want, say exactly: "{wants}"'
     full_name = " ".join(p for p in (caller.given_name, caller.surname1, caller.surname2) if p)
     name = f'When you are asked your name, say "{caller.says_name}".'
@@ -249,7 +266,7 @@ def brief(scenario: Scenario, truth: Truth, style: str = "forthcoming") -> str:
     ) or "none"
     return (
         "# Your character\n"
-        f"Language: {LANGUAGES[scenario.language]}\n"
+        f"Language: {LANGUAGES[language]}\n"
         f"Manner: {manner}\n"
         f"Name: {name}\n"
         f"Town you live in: {caller.town}\n"
@@ -271,12 +288,13 @@ STILL_ON_THE_LINE = (
 
 class SimulatedCaller:
     def __init__(
-        self, llm: LLMClient, scenario: Scenario, truth: Truth, style: str = "forthcoming"
+        self, llm: LLMClient, scenario: Scenario, truth: Truth, style: str = "forthcoming",
+        language: str | None = None,
     ) -> None:
         self._conversation = llm.start(
-            instructions(scenario, style), brief(scenario, truth, style), [HANG_UP]
+            instructions(scenario, style), brief(scenario, truth, style, language), [HANG_UP]
         )
-        self._opening = opening(scenario, style)
+        self._opening = opening(scenario, style, language)
         self._hanging_up: str | None = None  # the hang_up call still waiting for its answer
 
     def reply(self, agent_said: str) -> CallerLine:
