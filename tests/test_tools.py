@@ -27,8 +27,12 @@ def kb():
     return load_kb()
 
 
-def _toolbox(clinic, kb, number=None):
-    return Toolbox(clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW, number)
+def _toolbox(clinic, kb, number=None, reason="Le toca la vacuna y una revisión: es la primera."):
+    """A toolbox on a call where the caller has already said what the visit is for."""
+    toolbox = Toolbox(clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW, number)
+    if reason:
+        toolbox.heard(reason)
+    return toolbox
 
 
 def _call(toolbox, tool, /, **arguments):
@@ -528,3 +532,32 @@ def test_bad_calls_are_answered_not_raised(clinic, kb):
     assert _call(toolbox, "book_appointment", start=SLOT)[1]  # missing arguments
     assert _call(toolbox, "identify_client", name="Ana", surname="Mas")[1]  # no such field
     assert [event.is_error for event in toolbox.session.events] == [True] * 5
+
+
+
+def test_a_reason_the_caller_never_gave_is_not_booked(clinic, kb):
+    """Heard on a call: asked what the visit was for, the caller corrected the kind of
+    animal, and the booking went into the agenda with a reason of the model's own."""
+    toolbox = _toolbox(clinic, kb, reason=None)
+    for line in ("Vull agendar una cita.", "Pel meu gosset, Pep Toni.",
+                 "No és un gosset, és un hàmster.", "El dimarts em va bé."):
+        toolbox.heard(line)
+    booking = {"start": SLOT, "pet_name": "Pep Toni", "contact_name": "Pere Garriga",
+               "contact_phone": "973 664 209"}
+    for invented in ("Revisió", "Visita general", "Revisió hàmster", "Cita per al Pep Toni"):
+        refused, failed = _call(toolbox, "book_appointment", **booking, reason=invented)
+        assert failed and "has not said what the visit is for" in refused["error"], invented
+    toolbox.heard("Té una taca blava a l'esquena.")
+    for theirs in ("Taca blava a l'esquena", "té una taca"):
+        fresh = _toolbox(clinic, kb, reason="Té una taca blava a l'esquena.")
+        assert not _call(fresh, "book_appointment", **booking, reason=theirs)[1], theirs
+
+
+def test_the_callers_reason_may_be_put_in_other_words_of_the_same_root(clinic, kb):
+    booking = {"start": SLOT, "pet_name": "Luna", "contact_name": "Lucía Romero",
+               "contact_phone": "600 11 22 33"}
+    for said, written in (("Hay que vacunarlo.", "Vacunación anual"), ("Cojea un poco.", "Cojera"),
+                          ("Se rasca mucho.", "Se rasca"), ("Té tos.", "Tos"),
+                          ("Una revisión.", "Revisión general")):
+        toolbox = _toolbox(clinic, kb, reason=said)
+        assert not _call(toolbox, "book_appointment", **booking, reason=written)[1], written

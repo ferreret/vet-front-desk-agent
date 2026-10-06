@@ -203,11 +203,12 @@ def test_nobody_with_an_emergency_says_hello_and_waits(scenarios, truth):
 
 def test_a_terse_call_is_recorded_as_one(easy, clinic, kb, truth):
     agent = _careful_agent(easy, Reply("Buenos días. ¿En qué puedo ayudarle?"))
-    caller = _caller(easy, "Quería una cita.", easy.caller.says_name, "Sí, perfecto.", BYE)
+    caller = _caller(easy, "Quería una revisión.", easy.caller.says_name, "Sí, perfecto.", BYE)
     record = play(easy, agent_llm=agent, caller_llm=caller, clinic=clinic, kb=kb, truth=truth,
                   caller_style="terse")
     assert record.caller_style == "terse" and record.ended == "hung_up"
-    assert [e.said for e in record.exchanges][:2] == [opening(easy, "terse"), "Quería una cita."]
+    assert [e.said for e in record.exchanges][:2] == [opening(easy, "terse"),
+                                                      "Quería una revisión."]
     verdict = score(easy, record, truth, kb)
     assert (verdict.identity, verdict.action) == ("correct", "ok")
     assert verdict.asked_who_first is False and verdict.asked_before_who == []
@@ -218,7 +219,7 @@ def test_a_terse_call_is_recorded_as_one(easy, clinic, kb, truth):
 
 def test_a_careful_agent_passes(easy, clinic, kb, truth):
     pet = easy.caller.goal.pet_name
-    caller = _caller(easy, f"Hola, quería una cita para {pet}.", easy.caller.says_name,
+    caller = _caller(easy, f"Hola, quería una revisión para {pet}.", easy.caller.says_name,
                      "Sí, perfecto.", BYE)
     record = _play(easy, _careful_agent(easy), caller, clinic, kb, truth)
 

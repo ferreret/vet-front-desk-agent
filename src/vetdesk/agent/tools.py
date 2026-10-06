@@ -84,6 +84,29 @@ NOT_SAID = {
     "town": "The caller has not said that town. Pass a town only as the caller said it, "
     "and null until they have. If the town is needed, ask which town they live in.",
 }
+NO_REASON = (
+    "The caller has not said what the visit is for: nothing in '{reason}' is in their own "
+    "words. Do not make a reason up. If they did tell you, call again with what they said, "
+    "in their words. If they did not, ask them now what is wrong or what the visit is for, "
+    "and book once they have answered."
+)
+# Words that say nothing about why an animal is coming: asking for the appointment, and
+# naming the animal. A reason made only of these, or of words the caller never used, is
+# the model's own ("Revisió", "Visita general"), not the caller's.
+_NOT_A_REASON = frozenset("""
+    cita citas visita visitas consulta hora turno animal animals animales mascota mascotes
+    mascotas para per pel pels amb con una uns unes unos unas del dels els les los las que
+    perro perra perrito perrita gato gata gatito gatita conejo coneja hamster huron cobaya
+    ave pajaro tortuga loro gos gossa gosset gosseta gat gatet gateta conill conilla fura
+    ocell cobaia quiero queria vull volia voldria pedir demanar reservar agendar necesita
+    necessita tiene general""".split())
+_STEM = 4  # "vacunarlo" and "vacunación" are the same reason: the first letters decide
+
+
+def _stems(words) -> set[str]:
+    return {word[:_STEM] for word in words if len(word) >= 3 and word not in _NOT_A_REASON}
+
+
 OWN_NUMBER = (
     "That is one of the clinic's own numbers, not the caller's. Ask the caller for a phone "
     "number where reception can reach them, repeat it back, and call again."
@@ -391,6 +414,7 @@ class Toolbox:
         contact_phone: str | None,
     ) -> dict:
         when, client = _moment(start), self.session.client
+        self._reason_given(reason, pet_name)
         try:
             if client is not None:
                 names = [a.name for a in self.clinic.animals_of(client.code)]
@@ -422,6 +446,21 @@ class Toolbox:
             result["note"] = ("Booked under the caller's word. Tell them reception will "
                               "confirm the details when they arrive or by phone.")
         return result
+
+    def _reason_given(self, reason: str, pet_name: str) -> None:
+        """Refuse a reason for the visit that the caller never gave.
+
+        Heard on a call: asked what the visit was for, the caller corrected the kind of
+        animal instead ("no és un gosset, és un hàmster"). The model took that for an
+        answer, went on, and booked with a reason of its own. Repeated by text, every
+        booking made without the caller's reason carried an invented one: "Revisió",
+        "Visita general". Reception reads that reason, so it has to be the caller's: one
+        word of it, at least, that they said and that is neither the animal nor the asking.
+        """
+        animal = set(fold(pet_name).split())
+        said = _stems(word for word in self.session.lines_with if word not in animal)
+        if not _stems(word for word in fold(reason).split() if word not in animal) & said:
+            raise ToolError(NO_REASON.format(reason=reason))
 
     def _own(self, appointment_id: str) -> Appointment:
         client = self._confirmed()
