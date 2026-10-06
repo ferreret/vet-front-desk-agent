@@ -59,7 +59,7 @@ from ..notices import Notice
 from ..scheduling import Appointment, SqliteAgenda
 from ..scheduling.google_calendar import CALENDAR, GoogleCalendar, MirroredAgenda, session_from
 from ..scheduling.google_calendar import KEY as CALENDAR_KEY
-from .bridge import Line
+from .bridge import Line, is_goodbye, may_end
 from .clinic_file import PAGE, ClinicFile
 from .telegram import CHAT as TELEGRAM_CHAT
 from .telegram import TOKEN as TELEGRAM_TOKEN
@@ -79,6 +79,9 @@ _CALLER = re.compile(r"vetdesk-caller:[ \t]*([+\d][\d ()-]*)?")
 # The platform's tool for changing the language it listens and speaks in, and the language
 # its agent is set up to start in (see `elevenlabs_agent`).
 LANGUAGE_TOOL, FIRST_LANGUAGE = "language_detection", "es"
+# The platform's tool for hanging up. Our address can say goodbye; only the platform can
+# put the phone down.
+END_TOOL = "end_call"
 
 
 def _text(content) -> str:
@@ -157,11 +160,15 @@ class Desk:
         self._agenda.follow(kb)
 
 
+def _offers(body: dict, name: str) -> bool:
+    """Whether the platform has handed this tool of its own over with the request."""
+    return any((tool.get("function") or {}).get("name") == name
+               for tool in body.get("tools") or [] if isinstance(tool, dict))
+
+
 def _change_of_language(body: dict, messages: list[dict], line: Line) -> str | None:
     """The language to tell the platform to change to before this line is answered."""
-    offered = any((tool.get("function") or {}).get("name") == LANGUAGE_TOOL
-                  for tool in body.get("tools") or [] if isinstance(tool, dict))
-    if not offered or messages[-1].get("role") != "user":
+    if not _offers(body, LANGUAGE_TOOL) or messages[-1].get("role") != "user":
         return None  # no such tool, or it has just been used and the answer is due
     spoken = line.call.hears(_text(messages[-1].get("content")))
     return spoken if spoken in SPOKEN and spoken != line.listening_in else None
@@ -225,6 +232,18 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                     tell(notice)
         return after
 
+    async def use(response: web.StreamResponse, request_id: str, model: str, tool: str,
+                  **arguments: str) -> web.StreamResponse:
+        """Answer with a call to one of the platform's own tools, and nothing else."""
+        call = {"index": 0, "id": "call_" + secrets.token_hex(8), "type": "function",
+                "function": {"name": tool, "arguments": json.dumps(arguments,
+                                                                   ensure_ascii=False)}}
+        await response.write(_chunk(request_id, model, {"tool_calls": [call]}))
+        await response.write(_chunk(request_id, model, {}, "tool_calls"))
+        await response.write(b"data: [DONE]\n\n")
+        await response.write_eof()
+        return response
+
     async def chat_completions(request: web.Request) -> web.StreamResponse:
         given = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
         if not key or not hmac.compare_digest(given.encode(), key.encode()):
@@ -258,27 +277,35 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                 waiting.add(task := asyncio.ensure_future(
                     _run(line.answer(said[-1], on_turn=finished(line), turn=len(said)))))
                 task.add_done_callback(waiting.discard)
-                arguments = json.dumps({"reason": "the caller is speaking this language",
-                                        "language": language})
-                call = {"index": 0, "id": "call_" + secrets.token_hex(8), "type": "function",
-                        "function": {"name": LANGUAGE_TOOL, "arguments": arguments}}
-                await response.write(_chunk(request_id, model, {"tool_calls": [call]}))
-                await response.write(_chunk(request_id, model, {}, "tool_calls"))
-                await response.write(b"data: [DONE]\n\n")
-                await response.write_eof()
-                return response
+                return await use(response, request_id, model, LANGUAGE_TOOL,
+                                 reason="the caller is speaking this language",
+                                 language=language)
             else:
-                if messages[-1].get("role") == "tool":
-                    log.info("the platform answered the change of language: %s",
+                after_a_tool = messages[-1].get("role") == "tool"
+                if after_a_tool:
+                    log.info("the platform answered a tool of its own: %s",
                              _text(messages[-1].get("content"))[:200])
                 log.info("caller: %s", said[-1])
+                # A call may be over after this line (nothing said, or a goodbye). Then
+                # the answer is not said piece by piece but kept whole: if it is a
+                # goodbye too, the platform is handed it to say and told to hang up.
+                closing = _offers(body, END_TOOL) and not after_a_tool and may_end(said[-1])
                 answer, first = [], None
                 async for piece in line.answer(said[-1], on_turn=finished(line), turn=len(said)):
                     first = first if first is not None else time.perf_counter() - started
                     answer.append(piece)
-                    await response.write(_chunk(request_id, model, {"content": piece}))
+                    if not closing:
+                        await response.write(_chunk(request_id, model, {"content": piece}))
+                text = "".join(answer)
                 log.info("agent (first words %.1f s, all %.1f s): %s", first or 0,
-                         time.perf_counter() - started, "".join(answer))
+                         time.perf_counter() - started, text)
+                if closing and is_goodbye(text):
+                    log.info("the goodbyes are said: the platform is told to hang up")
+                    return await use(response, request_id, model, END_TOOL,
+                                     reason="the caller and the agent have said goodbye",
+                                     message=text)
+                if closing:
+                    await response.write(_chunk(request_id, model, {"content": text}))
             await response.write(_chunk(request_id, model, {}, "stop"))
             await response.write(b"data: [DONE]\n\n")
             await response.write_eof()

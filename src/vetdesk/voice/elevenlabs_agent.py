@@ -64,11 +64,17 @@ def config(url: str, secret_id: str) -> dict:
                     # The platform's tool for changing the language it listens and speaks
                     # in. It is meant for the platform's model; here our address calls it,
                     # when the caller's words tell another language (see `endpoint`).
-                    "built_in_tools": {"language_detection": {
-                        "type": "system", "name": "language_detection",
-                        "params": {"system_tool_type": "language_detection",
-                                   "only_at_conversation_start": False},
-                    }},
+                    "built_in_tools": {
+                        "language_detection": {
+                            "type": "system", "name": "language_detection",
+                            "params": {"system_tool_type": "language_detection",
+                                       "only_at_conversation_start": False},
+                        },
+                        # To hang up. Our address says the goodbye and decides, in code,
+                        # that the call is over; only the platform can put the phone down.
+                        "end_call": {"type": "system", "name": "end_call",
+                                     "params": {"system_tool_type": "end_call"}},
+                    },
                 },
                 "first_message": f"Clínica veterinaria {kb.clinic.name}, dígame.",
                 "language": "es",

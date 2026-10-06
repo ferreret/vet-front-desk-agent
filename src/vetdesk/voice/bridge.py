@@ -77,6 +77,29 @@ _FAREWELL = re.compile(
     r"have a (good|nice|lovely)|take care|au revoir|auf wiederh[oö]ren|tot ziens|arrivederci|"
     r"до свидания|всего доброго)\b",
     re.IGNORECASE)
+# What a caller says to end a call: "gracias" alone is not it, people say it all the time.
+_CLOSING = re.compile(
+    r"\b(adi[oó]s|hasta luego|eso es todo|nada m[aá]s|ad[eé]u|aix[oò] [eé]s tot|res m[eé]s|"
+    r"goodbye|bye|that'?s all|that is all|nothing else|au revoir|c'est tout|"
+    r"auf wiederh[oö]ren|tsch[uü]ss|das (ist|w[aä]re) alles|arrivederci|[eè] tutto|"
+    r"nient'altro|до свидания|это вс[её]|больше ничего)\b", re.IGNORECASE)
+
+
+def silence(heard: str) -> bool:
+    """Whether what the platform handed over as a line is the caller saying nothing."""
+    return not any(letter.isalnum() for letter in heard)
+
+
+def may_end(heard: str) -> bool:
+    """Whether a call may be over after this line: nothing said, or the caller's goodbye."""
+    return silence(heard) or bool(_CLOSING.search(heard))
+
+
+def is_goodbye(said: str) -> bool:
+    """Whether what the agent said closes the call: a farewell, and nothing asked."""
+    return bool(_FAREWELL.search(said)) and "?" not in said
+
+
 # What speech recognition may call each language: two-letter and three-letter codes.
 _CODES = {"ca": "ca", "cat": "ca", "en": "en", "eng": "en", "fr": "fr", "fra": "fr",
           "fre": "fr", "de": "de", "deu": "de", "ger": "de", "nl": "nl", "nld": "nl",
@@ -148,7 +171,7 @@ class Line:
         stock phrases follow the language the call itself has worked out from the caller's
         words: a platform that says nothing must not mean Spanish for everybody.
         """
-        if not any(letter.isalnum() for letter in heard):
+        if silence(heard):
             # Silence, not a line: nothing for the model, and nothing to keep as said.
             gone = self._quiet > 0 or bool(_FAREWELL.search("".join(self._last)))
             phrase = (GOODBYE if gone else STILL_THERE)[language or self.call.language]

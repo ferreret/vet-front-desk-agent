@@ -229,6 +229,46 @@ def test_a_line_in_the_language_being_listened_in_changes_nothing(clinic, kb):
     assert [_spoken(stream) for _, _, stream in answers] == ["Dígame.", "¿Su nombre?"]
 
 
+HANG_UP = [{"type": "function", "function": {"name": "end_call", "description": "End.",
+                                             "parameters": {"type": "object"}}}]
+
+
+def test_when_the_goodbyes_are_said_the_platform_is_told_to_hang_up(clinic, kb):
+    """Heard on a call: "Have a good day", and the line stayed open until the caller hung up
+    or thirty seconds went by. Our address says goodbye; only the platform can hang up."""
+    steps = [Reply("Abrimos a las nueve y media."), Reply("De nada. Que tenga un buen día."),
+             Reply("¿Para qué día la quiere?")]
+    model, _, app = _front_desk(steps, clinic, kb)
+    asked = _messages("¿A qué hora abrís?")
+    bye = _messages("¿A qué hora abrís?", "Vale, eso es todo, gracias. Adiós.")
+    answers = [stream for _, _, stream in _ask(app, asked, bye, tools=HANG_UP)]
+    assert _tool_call(answers[0]) is None and _spoken(answers[0]) == "Abrimos a las nueve y media."
+    assert _tool_call(answers[1]) == {
+        "name": "end_call", "reason": "the caller and the agent have said goodbye",
+        "message": "De nada. Que tenga un buen día."}
+    # A goodbye that the agent does not take for one ends nothing: it is said, as ever.
+    model, _, app = _front_desk([Reply("¿Para qué día la quiere?")], clinic, kb)
+    (_, _, stream), = _ask(app, _messages("Adiós, digo, quería una cita."), tools=HANG_UP)
+    assert _tool_call(stream) is None and _spoken(stream) == "¿Para qué día la quiere?"
+
+
+def test_silence_after_the_goodbyes_hangs_up_and_a_first_silence_does_not(clinic, kb):
+    model, _, app = _front_desk([Reply("Abrimos a las nueve y media.")], clinic, kb)
+    asked = _messages("¿A qué hora abrís?")
+    quiet = _messages("¿A qué hora abrís?", "...")
+    still = _messages("¿A qué hora abrís?", "...", "...")
+    answers = [stream for _, _, stream in _ask(app, asked, quiet, still, tools=HANG_UP)]
+    assert _tool_call(answers[1]) is None and _spoken(answers[1]) == "¿Sigue ahí?"
+    assert _tool_call(answers[2])["message"] == "Gracias por llamar. Adiós."
+    assert len(model.transcript.user_messages) == 1  # silence never reached the model
+
+
+def test_a_platform_that_cannot_hang_up_is_told_nothing_of_it(clinic, kb):
+    model, _, app = _front_desk([Reply("De nada, adiós.")], clinic, kb)
+    (_, _, stream), = _ask(app, _messages("Eso es todo, adiós."))
+    assert _tool_call(stream) is None and _spoken(stream) == "De nada, adiós."
+
+
 def test_two_conversations_are_two_calls(clinic, kb):
     model, calls, app = _front_desk([Reply("Dígame."), Reply("Digui.")], clinic, kb)
     other = _messages("Bon dia", prompt="vetdesk-conversation: conv_456\nvetdesk-caller: {caller}")
@@ -302,3 +342,4 @@ def test_the_platform_agent_can_be_told_to_change_language(monkeypatch):
     assert list(settings["language_presets"]) == ["ca", "en", "de", "ru", "fr", "it"]
     tools = settings["agent"]["prompt"]["built_in_tools"]
     assert tools["language_detection"]["params"]["system_tool_type"] == "language_detection"
+    assert tools["end_call"]["params"] == {"system_tool_type": "end_call"}
