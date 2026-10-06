@@ -27,6 +27,12 @@ from vetdesk.language import spoken_language
     ("Sí.", None),
     ("Hola.", None),
     ("Bobby.", None),
+    # A town said alone, as a caller of few words answers: "del" belongs to both languages,
+    # and counted as Spanish it turned a call in Catalan into Spanish.
+    ("Pinar del Mar.", None),
+    ("Santa Aina del Camp.", None),
+    ("Visc a Pinar del Mar.", "ca"),
+    ("Vivo en Santa Aina del Camp.", "es"),
     ("", None),
 ])
 def test_the_language_of_a_line(line, language):

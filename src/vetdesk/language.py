@@ -23,8 +23,8 @@ _WORDS = {
         sus perro perra gato qué con pero porque gracias adiós favor hoy mañana lunes martes
         miércoles jueves viernes sábado domingo tarde semana esta este esto puedo puede podría
         tengo tiene hacer hace duele pata nombre apellido apellidos hablas habla español
-        castellano soy llamo llamar llamada ver estoy cuándo cómo dónde nos le lo los las del
-        al uno cuatro cinco seis siete ocho nueve diez cero nada más mucho mucha muchas bien
+        castellano soy llamo llamar llamada ver estoy cuándo cómo dónde nos le lo los las
+        uno cuatro cinco seis siete ocho nueve diez cero nada más mucho mucha muchas bien
         vale acuerdo y por para me digo dice vivo vive pueblo vengo voy vamos pues también
         solo ningún ninguna alguna algún sin hasta""",
 }
