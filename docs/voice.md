@@ -211,26 +211,33 @@ in the clinic is invented, so nobody's real phone is on file. The server takes a
 ("real=clinic's"). The real number lives in the server's settings and nowhere in this
 repository; the agent never sees it, and the records stay made up.
 
-### The appointments, where the clinic can see them
+### The appointments: kept on disk, shown in a calendar
 
-The agenda the agent books into lives in the server's memory: nobody could look at it, and
-every deployment emptied it. The voice server can keep it in a Google Calendar as well
-([`google_calendar.py`](../src/vetdesk/scheduling/google_calendar.py)), when
+The agenda is a SQLite database of its own, apart from the clinic's records. In memory it
+is a fresh book for every test and every simulated call. On the voice server it is a file
+(`VETDESK_AGENDA`, on a mounted volume), written at once on every change, so a restart or
+a new deployment loses nothing, and what was cancelled and what is past are kept too.
+
+Nobody can look into a file on a server, so the appointments are also shown in a Google
+Calendar ([`google_calendar.py`](../src/vetdesk/scheduling/google_calendar.py)), when
 `VETDESK_GOOGLE_CALENDAR` and `VETDESK_GOOGLE_KEY` are set:
 
 - An appointment booked, moved or cancelled on a call shows up in the calendar: the animal
   and the reason as the title, "(sin verificar)" when the caller could not be confirmed,
   and whose it is in the description.
-- When the server starts it reads back the appointments still to come, so a restart loses
-  nothing.
-- The agenda stays the one the agent asks. The calendar is written to afterwards, on a
-  worker thread: a slow or failing calendar makes no caller wait and fails no booking.
-- One way only. An event deleted by hand in the calendar is still an appointment for the
-  agent until the server restarts. Only events it made itself are ever read or changed.
+- The agenda is the book and the calendar a picture of it. It is written to afterwards, on
+  a worker thread: a slow or failing calendar makes no caller wait and fails no booking.
+- One way only: what is changed by hand in the calendar changes nothing for the agent.
+  Only events it made itself are ever read or changed.
+- When the server starts the two are put in step: an appointment the calendar lacks is
+  added to it.
+
+For one morning the calendar was also where the appointments came back from after a
+restart, the agenda being in memory. It worked, with Google as the only copy; the file is
+the answer to "why is there no database for the appointments?".
 
 Access is a Google service account that the calendar is shared with; nobody signs in. The
-calendar's account and the key live in the server's settings and nowhere in this
-repository.
+calendar's id and the key live in the server's settings and nowhere in this repository.
 
 ## Two ways to carry the voice
 
