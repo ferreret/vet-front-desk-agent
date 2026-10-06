@@ -126,6 +126,44 @@ correctly. Catalan was transcribed correctly both times but labelled Spanish onc
 Portuguese once, so the label is not what decides the language of the answer; the model
 reads the words. Only the stock phrases follow the label, and fall back to Spanish.
 
+### On the ElevenLabs route: the platform listens in one language at a time
+
+The agent at ElevenLabs was set up in Spanish only, and on a call of 2026-10-06 its
+recogniser, told Spanish, wrote a caller's Catalan as Spanish: "¿Puedo venir esta tarde?",
+and "A dos cuartos de cinco", which is "dos quarts de cinc" (half past four) word for word
+and means nothing in Spanish. The agent read Spanish and answered in Spanish. From our
+side that cannot be told from a caller who has gone over to Spanish.
+
+So the platform is told which language to listen in:
+
+- The agent at ElevenLabs holds Catalan, English, German and Russian besides Spanish
+  (`VETDESK_LANGUAGES`), and the platform's tool for changing language, `language_detection`.
+  Adding them left the voice and the speech model as they were.
+- That tool is meant for the platform's own model. No model of theirs is used here, and
+  the language of a call is worked out in code from the caller's words, so our address
+  calls it. The first line that tells another language is answered with the tool call and
+  nothing else; the platform changes language and asks again, and the answer, worked out
+  meanwhile, is ready. Tried by typing to the agent over its conversation socket: the
+  platform reported the change to `ca` and the turn took about a second longer, once.
+- Only for the languages the agent itself speaks, Spanish and Catalan today. English,
+  German and Russian are set up at the platform and nothing more: telling them apart in
+  code, an agent that answers in them, days and times said in them, and scenarios to
+  measure it all are still to do.
+
+Not yet heard on a call with a voice: whether the recogniser, once told Catalan, writes
+Catalan.
+
+### The recogniser hands some lines over twice
+
+On the same day's calls the platform asked for an answer twice for the same line in four
+turns of ten, 0.4 to 1.0 seconds apart, with the words written differently: "Hola, buen
+día." and then "Hola, bon dia."; "934879642." and then the nine digits as words. It is not
+the platform's "speculative turn", which is off. The platform drops the first answer and
+keeps the second writing. A turn asked for again within three seconds is the same line:
+if the first answer ran no tool, it is taken back (the model's conversation is rewound)
+and the line answered as now written; if it ran one, the booking stands and the answer
+already given is repeated.
+
 ## Two ways to carry the voice
 
 The first call with a microphone made one thing plain: the hard part of a voice line is
