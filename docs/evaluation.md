@@ -277,12 +277,31 @@ message is taken. First words come sooner than in the forthcoming runs (0.7 s ag
 1.2 s). The agent is the same: a terse call has more turns, and more of them are a plain
 question that needs no tool, which is the likely reason.
 
-These are 23 calls, once each, without a judge. A full run with terse callers has not
-been played.
+**The full run, the same day**: all 82 scenarios with terse callers, no judge, after the
+fixes above.
+
+| | Terse callers (2026-10-06) | Forthcoming callers (2026-10-05) |
+|---|---|---|
+| False identifications, another client's data, forbidden actions | 0 | 0 |
+| Identified, of those who could be | 45 of 46 | 40 of 42 |
+| Booked, cancelled or moved as asked | 63 of 64 | 60 of 63 |
+| Answers that asked for more than one thing | 5 of 650 | 6 of 435 |
+| A bare hello answered by asking who is calling | 0 of 79 | (no call opened so) |
+| Asked about the visit before asking who is calling | 2 of 64 | 0 of 64 |
+| Answers in the language the caller was not speaking | 0 of 650 | 27 of 435 |
+| First words: median; within 1.5 s | 0.7 s; 93 % | 1.2 s; 94 % |
+| Cost of the agent per call | $0.014 | $0.010 |
+
+The columns differ in more than the caller: the language of the call, the agenda's
+shortest notice and the scorer changed in between. The five answers that ask for two
+things are all the same one, "your name and a contact phone", said when a message or an
+unverified booking is taken. The one caller not identified is the client whose record has
+a misspelled given name (`Deigo`). A terse call has half as many turns again (7.9 against
+5.3), which is where the higher cost per call comes from.
 
 ### What is open
 
-- **A full run with terse callers**, judged.
+- **A judged run with terse callers.** The full run above had no judge.
 
 - **A third full run**, for the reason just given.
 - **Spelling over a real voice.** The check reads a spelled name as letters joined by

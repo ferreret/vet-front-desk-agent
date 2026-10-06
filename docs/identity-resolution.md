@@ -141,8 +141,27 @@ soon as they give their name.
   a spelled surname is allowed one typing mistake on file, and in four of five with it.
   None turned up among 36,000 random non-clients; the case had to be built on purpose.
 - **Typos in a given name on file** (`Deigo`) are never matched: the caller is treated as
-  not a client. That is the safe direction, and it accounts for nearly all the missed
-  identifications. `uv run vetdesk legacy inspect` lists these records as
-  `given_name_suspect` so the clinic can fix them at the source.
+  not a client. That is the safe direction. `uv run vetdesk legacy inspect` lists these
+  records as `given_name_suspect` so the clinic can fix them at the source.
+
+  Forgiving them was measured on 2026-10-06, for a caller who spells their name and calls
+  from a phone on the record. Five of the 400 clients have a misspelled given name on file
+  (`Deigo`, `Mria`, `lberto`, `oana`, `armen`). Against each rule, the sweep and 292 calls
+  built on purpose: a relative who is not a client, with the same two surnames and a given
+  name one letter from the one on file, calling from the client's phone.
+
+  | Rule for a spelled given name one letter from the record | Clients recovered, of 5 | Relatives confirmed as the client, of 292 |
+  |---|---|---|
+  | None (today) | 0 | 1 |
+  | Any single letter | 4 | 281 |
+  | Only when nobody else on file has the record's name and the name spelled is a common one | 3 | 3 |
+  | The same, and only two neighbouring letters swapped | 1 | 1 |
+
+  The one confirmed today is `Helena` calling as the relative of an `Elena`: the two sound
+  the same, and a name heard cannot tell them apart. The third rule adds an `Ana` confirmed
+  as the `oana` that was a Joana, and a `Bel` as a `Biel` who is the only one in the clinic:
+  a rare name looks like a typo. The last rule adds nobody and recovers one client in 400.
+  None of the rules produced a false identification in the sweep itself, which has no
+  relatives in it: the 292 calls are what showed the difference. The rule stays as it is.
 - **The speech noise is simulated.** The rules that distort names were written for this
   project. Real recognisers will be measured in F5, and the phonetic comparison adjusted.
