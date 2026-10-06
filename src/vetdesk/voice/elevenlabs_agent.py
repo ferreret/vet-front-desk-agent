@@ -79,7 +79,7 @@ def config(url: str, secret_id: str) -> dict:
             # coast: Catalan, and the visitors' languages.
             "language_presets": {
                 code.strip(): {"overrides": {}}
-                for code in os.environ.get("VETDESK_LANGUAGES", "ca,en,de,ru").split(",")
+                for code in os.environ.get("VETDESK_LANGUAGES", "ca,en,de,ru,fr,it").split(",")
             },
             "tts": {
                 "voice_id": os.environ["VETDESK_TTS_VOICE"],

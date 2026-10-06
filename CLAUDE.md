@@ -118,13 +118,13 @@ Bloques de 90 minutos. Es mejor cerrar una fase entera que dejar tres a medias.
 El piloto posible está en una **zona turística de la costa catalana**, con clientes de muchas nacionalidades. Requisitos de Nicolás:
 
 - **Castellano de España peninsular, impecable.** Nada de acento latinoamericano. Es lo primero.
-- **Voz multilingüe**: además de castellano y catalán, las lenguas de los visitantes (inglés, francés, alemán, neerlandés, italiano; lista por confirmar con él).
+- **Voz multilingüe**: además de castellano y catalán, las lenguas de los visitantes: inglés, alemán, ruso, francés e italiano (lista de Nicolás del 2026-10-06).
 - El **catalán sintetizado le preocupa poco**: da por hecho que ningún sintetizador lo hace natural.
 - El acento lo pone la **voz** elegida en ElevenLabs más que el modelo; se decide de oído con `python -m vetdesk.voice.sample`.
 
 Probado el 2026-10-02 con micrófono: dar al reconocedor una lista de lenguas alternativas hizo que transcribiera castellano como neerlandés. Por defecto solo castellano y catalán; **oír a los visitantes está sin resolver**.
 
-**No perder el foco de que tiene que ser multilingüe** (Nicolás, 2026-10-06): pueden hablar también en inglés, alemán y ruso. Ese día se vio que el agente de ElevenLabs, puesto solo en castellano, escribía en castellano lo que oía en catalán. Ahora tiene dadas de alta catalán, inglés, alemán y ruso, y es nuestro servidor el que le dice a la plataforma en qué lengua escuchar, según las palabras de quien llama (`vetdesk.voice.endpoint`). Solo cambia a las lenguas que el agente habla: castellano y catalán. Para las de los visitantes falta todo lo de abajo.
+**No perder el foco de que tiene que ser multilingüe** (Nicolás, 2026-10-06): pueden hablar también en inglés, alemán, ruso, francés e italiano. Ese día se vio que el agente de ElevenLabs, puesto solo en castellano, escribía en castellano lo que oía en catalán. Ahora tiene dadas de alta catalán, inglés, alemán, ruso, francés e italiano, y es nuestro servidor el que le dice a la plataforma en qué lengua escuchar, según las palabras de quien llama (`vetdesk.voice.endpoint`). Solo cambia a las lenguas que el agente habla: castellano y catalán. Para las de los visitantes falta todo lo de abajo.
 
 Pendiente y sin medir: el agente, los escenarios y las horas dichas desde código (`say_es`, `say_ca`) solo cubren castellano y catalán. Abrir el prompt a más lenguas es un cambio que hay que medir con escenarios en esas lenguas antes de darlo por bueno.
 

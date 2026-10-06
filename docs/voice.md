@@ -136,8 +136,9 @@ side that cannot be told from a caller who has gone over to Spanish.
 
 So the platform is told which language to listen in:
 
-- The agent at ElevenLabs holds Catalan, English, German and Russian besides Spanish
-  (`VETDESK_LANGUAGES`), and the platform's tool for changing language, `language_detection`.
+- The agent at ElevenLabs holds Catalan, English, German, Russian, French and Italian
+  besides Spanish (`VETDESK_LANGUAGES`), and the platform's tool for changing language,
+  `language_detection`.
   Adding them left the voice and the speech model as they were.
 - That tool is meant for the platform's own model. No model of theirs is used here, and
   the language of a call is worked out in code from the caller's words, so our address
@@ -146,7 +147,7 @@ So the platform is told which language to listen in:
   meanwhile, is ready. Tried by typing to the agent over its conversation socket: the
   platform reported the change to `ca` and the turn took about a second longer, once.
 - Only for the languages the agent itself speaks, Spanish and Catalan today. English,
-  German and Russian are set up at the platform and nothing more: telling them apart in
+  German, Russian, French and Italian are set up at the platform and nothing more: telling them apart in
   code, an agent that answers in them, days and times said in them, and scenarios to
   measure it all are still to do.
 

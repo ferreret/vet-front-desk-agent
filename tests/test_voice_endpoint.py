@@ -274,6 +274,6 @@ def test_the_platform_agent_can_be_told_to_change_language(monkeypatch):
     monkeypatch.delenv("VETDESK_LANGUAGES", raising=False)
     settings = config("https://example.test", "secret")["conversation_config"]
     assert settings["agent"]["language"] == "es"
-    assert list(settings["language_presets"]) == ["ca", "en", "de", "ru"]
+    assert list(settings["language_presets"]) == ["ca", "en", "de", "ru", "fr", "it"]
     tools = settings["agent"]["prompt"]["built_in_tools"]
     assert tools["language_detection"]["params"]["system_tool_type"] == "language_detection"
