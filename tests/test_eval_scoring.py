@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from vetdesk.evals.manners import asked, bare_greeting
 from vetdesk.evals.record import (
     Booking,
     CallRecord,
@@ -330,6 +331,64 @@ def test_answers_are_measured_as_speech(scenarios, truth, kb):
     ])
     verdict = score(scenario, record, truth, kb)
     assert verdict.words == [4, 9, 4] and verdict.formatted == 2
+
+
+@pytest.mark.parametrize(("answer", "things"), [
+    # Said by the agent on the voice calls of 2026-10-05 and in the runs of that day.
+    ("¿Me dice su nombre y sus dos apellidos, por favor?", ["name"]),
+    ("Em diu el seu nom i els dos cognoms, si us plau?", ["name"]),
+    ("Com us dieu, si us plau?", ["name"]),
+    ("¿Podría deletrearme su nombre y sus dos apellidos, por favor?", ["name"]),
+    ("¿Me dice su nombre, su población y el nombre de su mascota?", ["name", "town", "pet"]),
+    ("Para poder ayudarle, ¿me podría decir su nombre y el de su mascota?", ["name", "pet"]),
+    ("¿Qué animal es y qué le pasa?", ["pet", "reason"]),
+    ("¿Cómo se llama su mascota?", ["pet"]),
+    ("¿Qué le pasa a su perro?", ["reason"]),
+    ("¿Qué días y qué parte del día le van bien para venir con la Trufa?", ["when"]),
+    ("Quins dies o quina part del dia us aniria bé per venir amb en Roqui?", ["when"]),
+    ("Tengo el lunes a las nueve y media o el martes a las once. ¿Le va bien alguno?",
+     ["when"]),
+    ("Voleu que prengui nota del vostre nom i telèfon?", ["name", "phone"]),
+    ("Dígame su nombre y un teléfono de contacto.", ["name", "phone"]),
+    ("¿En qué puedo ayudarle?", []),
+    ("Le he reservado la cita para Noa el lunes a las nueve y media. ¿Algo más?", []),
+    ("Su teléfono es el 600 111 222. Queda apuntado.", []),  # said, not asked
+])
+def test_what_an_answer_asks_for(answer, things):
+    assert asked(answer) == things
+
+
+def test_a_bare_greeting():
+    assert bare_greeting("Hola, bon dia.") and bare_greeting("Buenas tardes")
+    assert not bare_greeting("Hola, quería una cita.") and not bare_greeting("")
+
+
+def test_how_the_agent_talked_is_read_from_its_words(scenarios, truth, kb):
+    scenario = next(s for s in scenarios if s.category == "agenda.cancel_own"
+                    and s.language == "ca")
+    rude = _record(scenario, truth, [
+        _said("Hola, bon dia.", "¿Me dice su nombre y sus dos apellidos?"),
+        _said("Volia anul·lar una cita.", "Per a quin animal és i quin dia la tenia?"),
+        _said("Per al gos.", "Em diu el seu nom i els dos cognoms, si us plau?"),
+    ])
+    verdict = score(scenario, rude, truth, kb)
+    assert verdict.asked_who_first is True
+    assert verdict.asked_several == [2] and verdict.wrong_language == [1]
+    assert verdict.asked_before_who == []  # the name was asked first, however early
+
+    late = _record(scenario, truth, [
+        _said("Bon dia, volia anul·lar una cita.", "Per a quin animal és?"),
+        _said("Per al gos.", "Quin dia la tenia?"),
+        _said("Dijous.", "Em diu el seu nom i els dos cognoms, si us plau?"),
+    ])
+    verdict = score(scenario, late, truth, kb)
+    assert verdict.asked_who_first is None  # the caller said what they wanted straight away
+    assert verdict.asked_before_who == ["pet", "when"]
+    assert verdict.asked_several == [] and verdict.wrong_language == []
+
+    question = _first(scenarios, "info.no_identity_needed")
+    record = _record(question, truth, [_said("¿A qué hora abrís?", "Abrimos a las diez.")])
+    assert score(question, record, truth, kb).asked_before_who is None  # nobody to identify
 
 
 def test_the_judges_reading_is_merged_in(scenarios, truth, kb):

@@ -279,7 +279,7 @@ class Toolbox:
     ) -> dict:
         session = self.session
         if session.client is None:
-            name, pet_name, town = _given(name), _given(pet_name), _given(town)
+            name, pet_name, town = given(name), given(pet_name), given(town)
             if name:
                 # A model may hand the spelling over as it came: "X-I-S-C-A R-U-I-Z".
                 name = SPELLED_WORD.sub(lambda letters: letters.group().replace("-", ""), name)
@@ -494,7 +494,7 @@ class Toolbox:
                 "promise when, and do not say you are transferring the call."}
 
 
-def _given(value: str | None) -> str | None:
+def given(value: str | None) -> str | None:
     """What a model passed for a field, with its ways of saying "nothing" read as nothing."""
     if value is None or value.strip().lower() in ("", "null", "none"):
         return None

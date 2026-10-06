@@ -7,6 +7,13 @@ speaks; a `SpeechChannel` then turns what it said into what the agent hears.
 The caller is itself a source of error: if it invents a surname, the agent gets blamed for
 not finding the client. So its instructions are strict about facts, and the judge checks
 every call for a caller that went off its brief.
+
+Callers come in two styles. A forthcoming one opens with what it wants, often with the
+animal and the reason in the same breath, which is how a model plays a caller when left to
+it. A terse one says hello and waits, then gives one thing per question, which is how most
+people phone a clinic: every defect of the first voice calls (three things asked at once,
+the name asked too early, then too late, the wrong language) showed only with a person who
+said little. The facts and the goal are the same in both; only the telling changes.
 """
 
 from __future__ import annotations
@@ -29,8 +36,7 @@ stage directions, no quotation marks and no notes.
 - Speak the language in your brief, and only that one, whatever language the assistant
   uses. Talk the way people do on the phone: one or two short sentences per turn.
 - The manner in your brief changes how you talk. It never changes the facts.
-- Open by saying what you are calling about. Give your name, your town or your phone number
-  only when you are asked for them.
+{telling}
 - Answer what you are asked, one thing at a time, with the facts in your brief and only
   those. If you are asked for something that is not in it (an ID number, an address, a date
   of birth), say you do not have it at hand. Never make up facts about yourself, your
@@ -53,6 +59,39 @@ that it cannot do what you want. Then say goodbye in a few words and call hang_u
 same turn: "done" if you got what you called for or the best the clinic could offer,
 "gave_up" if you did not.
 """
+
+STYLES = ("forthcoming", "terse")
+TELLING = {
+    "forthcoming": """\
+- Open by saying what you are calling about. Give your name, your town or your phone number
+  only when you are asked for them.""",
+    "terse": """\
+- You say as little as you can. You have already opened the call with a greeting and
+  nothing else; it is in your brief, with what you say when you are asked what you want.
+  Say that and stop: not which animal, not why, not when.
+- After that, each of your lines answers the one thing you were just asked, in as few
+  words as will do, and adds nothing. Your name, your animal, what is wrong with it, when
+  you can come, your town, your phone number: each one only when the assistant asks for
+  it. If you are asked several things at once, answer the first one only.
+- Few words, never fewer facts. Asked when you can come, give the days in your brief with
+  their dates and the time of day. Asked which appointment, give its day and time.""",
+}
+# What a terse caller says first, by the hour: said by the harness, not by the model, so
+# that every terse call opens the same way.
+# What a terse caller answers to "what can I do for you?", when the goal is one that people
+# say in four words. The other goals (a question, wanting a person) are left to the model.
+WANTS = {
+    "es": {"book": "Quería pedir una cita.", "cancel": "Quería anular una cita.",
+           "reschedule": "Quería cambiar una cita."},
+    "ca": {"book": "Volia demanar una cita.", "cancel": "Volia anul·lar una cita.",
+           "reschedule": "Volia canviar una cita."},
+}
+OPENINGS = {
+    "es": {"morning": "Hola, buenos días.", "afternoon": "Hola, buenas tardes.",
+           "night": "Hola, buenas noches."},
+    "ca": {"morning": "Hola, bon dia.", "afternoon": "Hola, bona tarda.",
+           "night": "Hola, bona nit."},
+}
 
 HANG_UP = ToolSpec(
     "hang_up",
@@ -166,9 +205,36 @@ def _goal(scenario: Scenario, truth: Truth) -> str:
     return f"You have one question: your character {topic}. Once it is answered, you are done."
 
 
-def brief(scenario: Scenario, truth: Truth) -> str:
+def style_of(scenario: Scenario, style: str) -> str:
+    """The style a scenario is played in. Nobody with an emergency says hello and waits."""
+    if style not in STYLES:
+        raise ValueError(f"unknown caller style: {style}")
+    return "forthcoming" if scenario.caller.goal.type == "emergency" else style
+
+
+def opening(scenario: Scenario, style: str = "forthcoming") -> str | None:
+    """The line the harness says for a terse caller before the model takes over."""
+    if style_of(scenario, style) != "terse":
+        return None
+    hour = scenario.clock.hour
+    part = "morning" if 6 <= hour < 14 else "afternoon" if 14 <= hour < 21 else "night"
+    return OPENINGS[scenario.language][part]
+
+
+def instructions(scenario: Scenario, style: str = "forthcoming") -> str:
+    return INSTRUCTIONS.format(telling=TELLING[style_of(scenario, style)])
+
+
+def brief(scenario: Scenario, truth: Truth, style: str = "forthcoming") -> str:
     """What the simulated caller is told about itself. Nothing about the clinic's records."""
     caller = scenario.caller
+    said = opening(scenario, style)
+    manner = caller.persona if said is None else "says as little as possible"
+    so_far = ""
+    if said:
+        so_far = f'\n\n# What you have said so far\n"{said}" Nothing else.'
+        if wants := WANTS[scenario.language].get(caller.goal.type):
+            so_far += f'\nWhen you are asked what you want, say exactly: "{wants}"'
     full_name = " ".join(p for p in (caller.given_name, caller.surname1, caller.surname2) if p)
     name = f'When you are asked your name, say "{caller.says_name}".'
     if caller.says_name != full_name:
@@ -184,7 +250,7 @@ def brief(scenario: Scenario, truth: Truth) -> str:
     return (
         "# Your character\n"
         f"Language: {LANGUAGES[scenario.language]}\n"
-        f"Manner: {caller.persona}\n"
+        f"Manner: {manner}\n"
         f"Name: {name}\n"
         f"Town you live in: {caller.town}\n"
         f"Your animals: {pets}\n"
@@ -193,6 +259,7 @@ def brief(scenario: Scenario, truth: Truth) -> str:
         f"Now: {_when(scenario.clock)}, {scenario.clock.year}\n\n"
         "# Why you are calling\n"
         f"{_goal(scenario, truth)}"
+        f"{so_far}"
     )
 
 
@@ -203,12 +270,20 @@ STILL_ON_THE_LINE = (
 
 
 class SimulatedCaller:
-    def __init__(self, llm: LLMClient, scenario: Scenario, truth: Truth) -> None:
-        self._conversation = llm.start(INSTRUCTIONS, brief(scenario, truth), [HANG_UP])
+    def __init__(
+        self, llm: LLMClient, scenario: Scenario, truth: Truth, style: str = "forthcoming"
+    ) -> None:
+        self._conversation = llm.start(
+            instructions(scenario, style), brief(scenario, truth, style), [HANG_UP]
+        )
+        self._opening = opening(scenario, style)
         self._hanging_up: str | None = None  # the hang_up call still waiting for its answer
 
     def reply(self, agent_said: str) -> CallerLine:
         """What the caller says after hearing the agent."""
+        if self._opening:  # to the clinic's greeting; the model plays from the next line on
+            line, self._opening = self._opening, None
+            return CallerLine(line, None, Usage())
         if self._hanging_up is None:
             answer = self._conversation.send_user(agent_said)
         else:  # the harness kept the caller on the line: see `play`

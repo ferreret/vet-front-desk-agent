@@ -9,7 +9,14 @@ import json
 
 import pytest
 
-from vetdesk.evals.caller import HANG_UP, SimulatedCaller, brief, caller_phone
+from vetdesk.evals.caller import (
+    HANG_UP,
+    SimulatedCaller,
+    brief,
+    caller_phone,
+    instructions,
+    opening,
+)
 from vetdesk.evals.calls import MAX_EXCHANGES, play
 from vetdesk.evals.scoring import score
 from vetdesk.identity import Evidence, IdentityResolver
@@ -49,7 +56,7 @@ def easy(scenarios, clinic):
     raise AssertionError("no easy scenario")
 
 
-def _careful_agent(scenario):
+def _careful_agent(scenario, *before):
     """Asks the name, lets the resolver decide, offers a time, books it."""
     goal = scenario.caller.goal
     window = goal.window
@@ -64,6 +71,7 @@ def _careful_agent(scenario):
                      contact_name=None, contact_phone=None)
 
     return ScriptedClient([
+        *before,
         Reply("¿Me dice su nombre y sus dos apellidos?", usage=Usage(900, 12, 800, 0)),
         _tool("identify_client", **{**NOTHING, "name": scenario.caller.says_name}),
         _tool("get_availability", date_from=window.date_from.isoformat(),
@@ -153,6 +161,58 @@ def test_the_caller_speaks_and_hangs_up_through_a_tool(scenarios, truth):
     assert transcript.context == brief(scenario, truth) and transcript.tools == [HANG_UP]
 
 
+
+def test_a_terse_caller_says_hello_and_waits(scenarios, truth):
+    """The opening is said by the harness; the model plays from the second line on."""
+    scenario = _first(scenarios, "agenda.cancel_own")
+    hello = opening(scenario, "terse")
+    assert hello in ("Hola, buenos días.", "Hola, buenas tardes.", "Hola, bon dia.",
+                     "Hola, bona tarda.")
+    model = ScriptedClient([Reply("Quería anular una cita.", usage=Usage(300, 9)), BYE])
+    caller = SimulatedCaller(model, scenario, truth, "terse")
+    first = caller.reply("Clínica veterinaria, buenos días. ¿En qué puedo ayudarle?")
+    assert (first.text, first.hang_up, first.usage) == (hello, None, Usage())
+    assert caller.reply("¿En qué puedo ayudarle?").text == "Quería anular una cita."
+    transcript = model.transcript
+    assert transcript.user_messages == ["¿En qué puedo ayudarle?"]  # the model never opened
+    assert "say as little as you can" in transcript.system
+    assert f'"{hello}" Nothing else.' in transcript.context
+    assert 'say exactly: "Quería anular una cita."' in transcript.context \
+        or 'say exactly: "Volia anul·lar una cita."' in transcript.context
+    assert "Manner: says as little as possible" in transcript.context
+    assert scenario.caller.persona not in transcript.context
+
+
+def test_the_two_styles_know_the_same_facts(scenarios, truth):
+    for scenario in scenarios:
+        plain, terse = brief(scenario, truth), brief(scenario, truth, "terse")
+        facts = [line for line in plain.splitlines() if not line.startswith("Manner:")]
+        assert all(line in terse for line in facts), scenario.id
+        assert "Open by saying what you are calling about" in instructions(scenario)
+    with pytest.raises(ValueError):
+        brief(scenarios[0], truth, "chatty")
+
+
+def test_nobody_with_an_emergency_says_hello_and_waits(scenarios, truth):
+    scenario = _first(scenarios, "kb.emergency_out_of_hours")
+    assert opening(scenario, "terse") is None
+    assert brief(scenario, truth, "terse") == brief(scenario, truth)
+    assert instructions(scenario, "terse") == instructions(scenario)
+    assert opening(_first(scenarios, "agenda.cancel_own")) is None  # forthcoming: no script
+
+
+def test_a_terse_call_is_recorded_as_one(easy, clinic, kb, truth):
+    agent = _careful_agent(easy, Reply("Buenos días. ¿En qué puedo ayudarle?"))
+    caller = _caller(easy, "Quería una cita.", easy.caller.says_name, "Sí, perfecto.", BYE)
+    record = play(easy, agent_llm=agent, caller_llm=caller, clinic=clinic, kb=kb, truth=truth,
+                  caller_style="terse")
+    assert record.caller_style == "terse" and record.ended == "hung_up"
+    assert [e.said for e in record.exchanges][:2] == [opening(easy, "terse"), "Quería una cita."]
+    verdict = score(easy, record, truth, kb)
+    assert (verdict.identity, verdict.action) == ("correct", "ok")
+    assert verdict.asked_who_first is False and verdict.asked_before_who == []
+
+
 # --- whole calls --------------------------------------------------------------------------------
 
 
@@ -217,6 +277,18 @@ def test_an_agent_that_claims_a_spelling_it_never_got_is_caught(scenarios, clini
         f"turn 1: name {said!r} (refused by the tool)",
         f"turn 1: name_spelled for {said!r}, never spelled (refused by the tool)"]
     assert not any("verification not given" in failure for failure in verdict.failures)
+
+
+def test_null_written_as_a_word_is_nothing_passed(easy, clinic, kb, truth):
+    """Seen with a real model: "null" in quotes for the pet and the town nobody had given."""
+    said = easy.caller.says_name
+    agent = ScriptedClient([
+        _tool("identify_client", **{**NOTHING, "name": said, "pet_name": "null", "town": "None"}),
+        Reply("Gracias."), Reply("Adiós."),
+    ])
+    record = _play(easy, agent, _caller(easy, f"Soy {said}.", BYE), clinic, kb, truth)
+    assert not record.exchanges[0].tools[0].is_error
+    assert score(easy, record, truth, kb).evidence_not_heard == []
 
 
 def test_a_spelling_put_back_together_wrong_is_caught(scenarios, clinic, kb, truth):

@@ -16,11 +16,13 @@ import json
 import re
 from collections import Counter
 
+from ..agent.tools import given as given_by_model
 from ..identity.spelling import spelled_words, was_spelled
 from ..kb import KnowledgeBase
 from ..legacy.normalize import fold
 from ..scenario import ExpectedAction, Scenario, Window
 from .identity import verdict_of
+from .manners import manners
 from .record import Booking, CallRecord, Judgement, Verdict
 from .truth import Truth
 
@@ -121,7 +123,9 @@ def _evidence(record: CallRecord) -> tuple[list[str], list[str]]:
         for tool in exchange.tools:
             if tool.name != "identify_client":
                 continue
-            given = tool.arguments
+            # A model that writes "null" for nothing has passed nothing: the tool reads it so.
+            given = {field: given_by_model(value) if isinstance(value, str) else value
+                     for field, value in tool.arguments.items()}
             for field in ("name", "pet_name", "town"):
                 value = given.get(field)
                 if value and _tokens(value) - heard - spelled_tokens \
@@ -295,6 +299,7 @@ def score(
     action, notes, forbidden, unexpected = _actions(scenario, record, truth)
     facts_missing = _facts_missing(scenario, record, kb, judgement)
     status = {"error": "error", "turn_limit": "unfinished"}.get(record.ended, "scored")
+    talk = manners(scenario, record)
 
     judged: dict = {}
     if judgement is not None:
@@ -340,5 +345,9 @@ def score(
         answers=[e.seconds for e in record.exchanges],
         words=[len(e.answer.split()) for e in record.exchanges],
         formatted=sum(bool(_FORMATTING.search(e.answer.strip())) for e in record.exchanges),
+        asked_several=talk.several,
+        asked_who_first=talk.who_before_what,
+        asked_before_who=talk.before_who,
+        wrong_language=talk.wrong_language,
         **judged,
     )

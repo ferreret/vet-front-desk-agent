@@ -55,6 +55,7 @@ def play(
     rep: int = 0,
     agent_model: str = "",
     caller_model: str = "",
+    caller_style: str = "forthcoming",
 ) -> CallRecord:
     """Play one call to the end. A failure of either model is recorded, not raised."""
     agenda = _agenda(scenario, kb, truth)
@@ -65,7 +66,7 @@ def play(
     agent_usage, caller_usage = Usage(), Usage()
     ended, error, held = "turn_limit", None, 0
     try:
-        caller = SimulatedCaller(caller_llm, scenario, truth)
+        caller = SimulatedCaller(caller_llm, scenario, truth, caller_style)
         agent_said = call.greeting
         for _ in range(MAX_EXCHANGES):
             line = caller.reply(agent_said)
@@ -103,6 +104,7 @@ def play(
         rep=rep,
         agent_model=agent_model,
         caller_model=caller_model,
+        caller_style=caller_style,
         greeting=call.greeting,
         exchanges=exchanges,
         ended=ended,

@@ -131,9 +131,10 @@ def format_report(
         summary.said
     status = Counter(verdict.status for verdict in v)
     judge = models.judge or "none"
+    styles = sorted({record.caller_style for record in records})
     lines = [
-        f"EVALUATION  {len(v)} calls   agent {models.agent}   caller {models.caller}   "
-        f"judge {judge}",
+        f"EVALUATION  {len(v)} calls   agent {models.agent}   caller {models.caller}"
+        f"{' (' + ', '.join(styles) + ')' if styles else ''}   judge {judge}",
         f"  scored {status['scored']}   broken by a technical error {status['error']}   "
         f"never ended {status['unfinished']}   caller off its brief {status['invalid']}",
         "",
@@ -182,6 +183,23 @@ def format_report(
         ]
     else:
         lines.append("  not judged")
+
+    played = summary.played
+    answers = sum(len(verdict.words) for verdict in played)
+    hello = [verdict for verdict in played if verdict.asked_who_first is not None]
+    own = [verdict for verdict in played if verdict.asked_before_who is not None]
+    lines += [
+        "",
+        f"HOW IT TALKED  [read in code from its words, by keyword; {answers} answers]",
+        f"  answers that asked for more than one thing           "
+        f"{_share(sum(len(verdict.asked_several) for verdict in played), answers)}",
+        f"  a bare hello answered by asking who is calling       "
+        f"{_share(sum(verdict.asked_who_first for verdict in hello), len(hello))}",
+        f"  asked about the visit before asking who is calling   "
+        f"{_share(sum(bool(verdict.asked_before_who) for verdict in own), len(own))}",
+        f"  answers in the language the caller was not speaking  "
+        f"{_share(sum(len(verdict.wrong_language) for verdict in played), answers)}",
+    ]
 
     requests = [seconds for r in records for e in r.exchanges for seconds in e.requests]
     slow = sum(seconds > SLOW_REQUEST_SECONDS for seconds in requests)

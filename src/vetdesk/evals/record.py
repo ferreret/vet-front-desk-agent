@@ -81,6 +81,7 @@ class CallRecord(_Model):
     rep: int
     agent_model: str
     caller_model: str
+    caller_style: str = "forthcoming"  # how much the caller told unasked: see `caller`
     greeting: str
     exchanges: list[Exchange]
     # hung_up: the caller got what the clinic could offer. gave_up: the caller left without
@@ -147,6 +148,13 @@ class Verdict(_Model):
     answers: list[float]
     words: list[int]  # length of each answer: on the phone every word takes time
     formatted: int  # answers with line breaks or list marks, which a voice cannot say
+    # How it talked, read from its words by `manners`: turns that asked for several things,
+    # whether a bare hello was answered by asking who was calling, what was asked about the
+    # visit before asking who was calling, and turns in the wrong language.
+    asked_several: list[int] = []
+    asked_who_first: bool | None = None
+    asked_before_who: list[str] | None = None
+    wrong_language: list[int] = []
     # Read by the judge; None when the call was not judged.
     identity_questions: int | None = None
     over_asked: bool | None = None

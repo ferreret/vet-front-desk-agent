@@ -138,6 +138,10 @@ def test_a_report_without_a_judge_says_so(scenarios, truth, kb):
                            Models("claude-sonnet-5-5", "claude-haiku-4-5", None),
                            list(stored.calls.values()), [])
     assert "judge none" in report and "not judged" in report and "[judge]" not in report
+    # How it talked is read in code, so it is there with or without a judge.
+    assert "caller claude-haiku-4-5 (forthcoming)" in report
+    assert "HOW IT TALKED  [read in code" in report
+    assert "answers that asked for more than one thing" in report
 
 
 def test_report_and_show_work_from_what_is_stored(tmp_path, capsys):
