@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from vetdesk.spoken import clock_es, say_ca, say_es
+from vetdesk.spoken import SAY, clock_es, say, say_ca, say_en, say_es
 
 
 @pytest.mark.parametrize(("moment", "spanish", "catalan"), [
@@ -30,6 +30,32 @@ def test_days_and_times_as_they_are_said(moment, spanish, catalan):
     when = datetime.fromisoformat(moment)
     assert say_es(when) == spanish
     assert say_ca(when) == catalan
+
+
+@pytest.mark.parametrize(("moment", "english"), [
+    ("2026-11-09T09:30", "Monday 9 November at nine thirty in the morning"),
+    ("2026-11-09T16:30", "Monday 9 November at four thirty in the afternoon"),
+    ("2026-11-10T13:00", "Tuesday 10 November at one o'clock in the afternoon"),
+    ("2026-11-14T12:00", "Saturday 14 November at twelve noon"),
+    ("2026-11-14T12:30", "Saturday 14 November at twelve thirty in the afternoon"),
+    ("2026-04-01T10:15", "Wednesday 1 April at ten fifteen in the morning"),
+    ("2026-08-06T20:00", "Thursday 6 August at eight o'clock in the evening"),
+    ("2026-10-02T17:05", "Friday 2 October at five oh five in the afternoon"),
+])
+def test_days_and_times_in_english(moment, english):
+    """The hour and then the minutes, never "half past": a caller from Germany or the
+    Netherlands hears "half ten" as half an hour before ten."""
+    when = datetime.fromisoformat(moment)
+    assert say_en(when) == english == say(when, "en")
+
+
+def test_every_language_the_agent_speaks_can_say_a_time():
+    from vetdesk.agent.agent import CANNOT_HELP, DID_NOT_FOLLOW, LANGUAGE_NOTE
+    from vetdesk.language import SPOKEN
+    from vetdesk.voice.bridge import STILL_THERE, TROUBLE, WAITING
+
+    for table in (SAY, LANGUAGE_NOTE, DID_NOT_FOLLOW, CANNOT_HELP, STILL_THERE, TROUBLE, WAITING):
+        assert set(SPOKEN) <= set(table)
 
 
 def test_every_slot_the_agenda_can_offer_has_words(clinic):

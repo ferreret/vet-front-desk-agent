@@ -1,4 +1,4 @@
-"""Days and times written out the way they are said, in Spanish and in Catalan.
+"""Days and times written out the way they are said, in each language the agent speaks.
 
 A model asked to turn "16:30" into Catalan said "les cinc i mitja" to six callers out of
 eighty-two: an hour late for their appointment. Asked on a voice line when the clinic
@@ -37,6 +37,20 @@ _CA = {
 }
 
 
+_EN = {
+    "weekdays": ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"),
+    "months": ("January", "February", "March", "April", "May", "June", "July", "August",
+               "September", "October", "November", "December"),
+    "hours": ("twelve", "one", "two", "three", "four", "five", "six", "seven", "eight",
+              "nine", "ten", "eleven"),
+    # The hour and then the minutes, as figures are read out: no "half past", which a
+    # caller from another country may take for half an hour before.
+    "minutes": {0: " o'clock", 5: " oh five", 10: " ten", 15: " fifteen", 20: " twenty",
+                25: " twenty-five", 30: " thirty", 35: " thirty-five", 40: " forty",
+                45: " forty-five", 50: " fifty", 55: " fifty-five"},
+}
+
+
 def _part_es(hour: int) -> str:
     if hour < 6:
         return "de la madrugada"
@@ -60,7 +74,7 @@ def _part_ca(hour: int) -> str:
 
 
 def _minutes(words: dict, minute: int, joiner: str) -> str:
-    return words["minutes"].get(minute, f" {joiner} {minute}")
+    return words["minutes"].get(minute, f" {joiner} {minute}".replace("  ", " "))
 
 
 def say_es(moment: datetime) -> str:
@@ -80,6 +94,31 @@ def say_ca(moment: datetime) -> str:
     of = "d'" if month[0] in "aeiou" else "de "
     return (f"{_CA['weekdays'][moment.weekday()]} {moment.day} {of}{month} {article} {hour}"
             f"{_minutes(_CA, moment.minute, 'i')} {_part_ca(moment.hour)}")
+
+
+def _part_en(hour: int) -> str:
+    if hour < 12:
+        return "in the morning"
+    if hour < 18:
+        return "in the afternoon"
+    return "in the evening" if hour < 22 else "at night"
+
+
+def say_en(moment: datetime) -> str:
+    """'Monday 9 November at four thirty in the afternoon'"""
+    day = f"{_EN['weekdays'][moment.weekday()]} {moment.day} {_EN['months'][moment.month - 1]}"
+    if (moment.hour, moment.minute) == (12, 0):
+        return f"{day} at twelve noon"
+    return (f"{day} at {_EN['hours'][moment.hour % 12]}"
+            f"{_minutes(_EN, moment.minute, '')} {_part_en(moment.hour)}")
+
+
+SAY = {"es": say_es, "ca": say_ca, "en": say_en}
+
+
+def say(moment: datetime, language: str) -> str:
+    """A day and a time in words, in the language of the call."""
+    return SAY[language](moment)
 
 
 def clock_es(moment: time) -> str:

@@ -40,6 +40,16 @@ from vetdesk.language import spoken_language
     ("Joan Feliu i Plana.", None),
     ("El meu gos i el meu gat.", "ca"),
     ("Mi perro y mi gato.", "es"),
+    # English, the first of the visitors' languages.
+    ("Hello, good morning.", "en"),
+    ("I'd like to make an appointment.", "en"),
+    ("For my dog.", "en"),
+    ("Tomorrow morning, please.", "en"),
+    ("Six, five, five, six, two, three.", "en"),
+    ("No, thank you.", "en"),
+    ("John Smith.", None),
+    ("Can Pons.", None),  # a house in Catalan before it is a verb in English
+    ("Ok.", None),
     ("", None),
 ])
 def test_the_language_of_a_line(line, language):

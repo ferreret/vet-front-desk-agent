@@ -26,7 +26,7 @@ from ..legacy.models import Client, Clinic
 from ..legacy.normalize import fold, parse_phones
 from ..llm import ToolCall, ToolResult, ToolSpec
 from ..scheduling import Agenda, AgendaError, Appointment
-from ..spoken import say_ca, say_es
+from ..spoken import say
 
 
 class ToolError(Exception):
@@ -57,6 +57,9 @@ class CallSession:
     evidence: Evidence
     resolution: Resolution | None = None
     client: Client | None = None  # set once, when the resolver confirms the caller
+    # The language the call is going on in: what the tools hand over to be said (a day and
+    # a time in words) is in it.
+    language: str = "es"
     # What the caller has said, as far as it backs a claim of the model's: the words they
     # spelled out, and in how many of their lines each word came up.
     spelled: list[str] = field(default_factory=list)
@@ -303,6 +306,12 @@ class Toolbox:
         session = self.session
         if session.client is None:
             name, pet_name, town = given(name), given(pet_name), given(town)
+            if name and pet_name and set(fold(pet_name).split()) <= set(fold(name).split()) \
+                    and not all(session.lines_with[w] >= 2 for w in fold(pet_name).split()):
+                # The caller's own given name handed over as their pet's ("Carme Llull",
+                # pet "Carme"). Said once, it was the person's: kept as a pet's name, the
+                # caller was never asked for one and could not be confirmed.
+                pet_name = None
             if name:
                 # A model may hand the spelling over as it came: "X-I-S-C-A R-U-I-Z".
                 name = SPELLED_WORD.sub(lambda letters: letters.group().replace("-", ""), name)
@@ -386,7 +395,7 @@ class Toolbox:
         if not slots:
             return {"slots": [], "note": "Nothing free in that range. Offer other days."}
         if len(slots) <= MAX_OFFERED:
-            return {"slots": [_when(slot) for slot in slots],
+            return {"slots": [_when(slot, self.session.language) for slot in slots],
                     "note": "These are all the free times in that range."}
         # A sample spread over the first days. Handed the six earliest times, all on one
         # day, a model told callers that the rest of the week was full.
@@ -398,7 +407,7 @@ class Toolbox:
         sample = [slot for day in days
                   for slot in by_day[day][::max(1, len(by_day[day]) // per_day)][:per_day]]
         return {
-            "slots": [_when(slot) for slot in sample],
+            "slots": [_when(slot, self.session.language) for slot in sample],
             "free_days": [f"{WEEKDAYS_ES[day.weekday()]} {day.isoformat()}" for day in by_day],
             "note": "A sample: offer two or three of these. Every day in free_days has more "
                     "free times than are shown, so never say a day or the week is full "
@@ -441,11 +450,16 @@ class Toolbox:
                 )
         except AgendaError as error:
             raise ToolError(f"{error}. Check get_availability and offer another time.") from error
-        result = {"status": "booked", **_summary(booked)}
+        result = {"status": "booked", **self._summary(booked)}
         if not booked.verified:
             result["note"] = ("Booked under the caller's word. Tell them reception will "
                               "confirm the details when they arrive or by phone.")
         return result
+
+    def _summary(self, appointment: Appointment) -> dict:
+        return {"appointment_id": appointment.appointment_id,
+                **_when(appointment.start, self.session.language),
+                "pet_name": appointment.pet_name, "reason": appointment.reason}
 
     def _reason_given(self, reason: str, pet_name: str) -> None:
         """Refuse a reason for the visit that the caller never gave.
@@ -473,7 +487,7 @@ class Toolbox:
 
     def _list_appointments(self) -> dict:
         client = self._confirmed()
-        return {"appointments": [_summary(a) for a in self.agenda.for_client(client.code)]}
+        return {"appointments": [self._summary(a) for a in self.agenda.for_client(client.code)]}
 
     def _on_their_phone(self) -> bool:
         """Whether the call comes from a phone on the confirmed caller's record."""
@@ -496,7 +510,7 @@ class Toolbox:
 
     def _cancel_appointment(self, appointment_id: str) -> dict:
         self._may_change(appointment_id)
-        return {"status": "cancelled", **_summary(self.agenda.cancel(appointment_id))}
+        return {"status": "cancelled", **self._summary(self.agenda.cancel(appointment_id))}
 
     def _reschedule_appointment(self, appointment_id: str, new_start: str) -> dict:
         self._may_change(appointment_id)
@@ -504,7 +518,7 @@ class Toolbox:
             moved = self.agenda.reschedule(appointment_id, _moment(new_start))
         except AgendaError as error:
             raise ToolError(f"{error}. Check get_availability and offer another time.") from error
-        return {"status": "rescheduled", **_summary(moved)}
+        return {"status": "rescheduled", **self._summary(moved)}
 
     # --- handoff --------------------------------------------------------------------------------
 
@@ -559,12 +573,8 @@ def _moment(text: str) -> datetime:
         raise ToolError(f"{text!r} is not a time in YYYY-MM-DDTHH:MM format") from error
 
 
-def _when(moment: datetime) -> dict:
-    # `start` is for the tools; say_es and say_ca are for the caller's ears.
-    return {"start": moment.strftime("%Y-%m-%dT%H:%M"), "say_es": say_es(moment),
-            "say_ca": say_ca(moment)}
-
-
-def _summary(appointment: Appointment) -> dict:
-    return {"appointment_id": appointment.appointment_id, **_when(appointment.start),
-            "pet_name": appointment.pet_name, "reason": appointment.reason}
+def _when(moment: datetime, language: str) -> dict:
+    # `start` is for the tools; `say` is for the caller's ears, in the language of the call.
+    # One language and not all of them: seven ways of saying each of six times is a long
+    # answer to read, and a model once picked the Spanish words for a caller in Catalan.
+    return {"start": moment.strftime("%Y-%m-%dT%H:%M"), "say": say(moment, language)}

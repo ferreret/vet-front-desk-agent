@@ -214,6 +214,62 @@ def test_a_turn_that_ends_on_a_waiting_phrase_is_made_to_go_on(clinic, kb):
     assert "silence" not in call.session.lines_with and "caller" not in call.session.lines_with
 
 
+def test_set_phrases_reach_the_model_in_the_language_of_the_call_only(clinic, kb):
+    """With the phrases of three languages in its instructions, the model asked a caller
+    speaking Catalan "May I have your full name, please?". It is given one language's."""
+    from vetdesk.agent.agent import LANGUAGE_NOTE
+    from vetdesk.agent.prompt import PHRASES
+    from vetdesk.language import SPOKEN
+
+    assert set(PHRASES) == set(SPOKEN)
+    model = ScriptedClient([Reply("Bon dia."), Reply("Good morning.")])
+    call = _call(model, clinic, kb)
+    every = [phrase for phrases in PHRASES.values() for phrase in phrases]
+    assert not any(phrase in model.transcript.system for phrase in every)
+    assert all(phrase in model.transcript.context for phrase in PHRASES["es"])
+    assert not any(phrase in model.transcript.context for phrase in PHRASES["ca"] + PHRASES["en"])
+    call.say("Hola, bon dia.")
+    told = model.transcript.user_messages[0]
+    assert all(phrase in told for phrase in PHRASES["ca"]) and LANGUAGE_NOTE["ca"] in told
+    assert not any(phrase in told for phrase in PHRASES["en"] + PHRASES["es"])
+    call.say("Sorry, do you speak English?")
+    assert all(phrase in model.transcript.user_messages[1] for phrase in PHRASES["en"])
+    assert call.language == call.session.language == "en"
+
+
+def test_a_turn_that_runs_on_is_cut_short_and_made_to_go_on(clinic, kb):
+    """Seen once: "Let me check the schedule. Let me look at the available times." and so on
+    to the token limit, in answer to a caller speaking Spanish. Some three minutes of it."""
+    from vetdesk.agent.agent import MAX_SPOKEN, STILL_WAITING
+
+    babble = "Un momento, por favor. " + "Let me check the schedule. " * 150
+    look = _tool("get_availability", date_from="2026-11-09", date_to="2026-11-13",
+                 part_of_day="morning")
+
+    def streamed(transcript):  # as a model writes it: piece by piece
+        return Reply(babble.strip(), stop="max_tokens")
+
+    model = ScriptedClient([streamed, look, Reply("Tengo el lunes a las nueve y media.")])
+    call, heard = _call(model, clinic, kb), []
+    turn = call.say("La semana que viene por la mañana.", heard.append)
+    assert turn.text.endswith("Tengo el lunes a las nueve y media.")
+    assert len(turn.text) < MAX_SPOKEN + 60 and turn.text.count("Let me check") < 30
+    assert [event.name for event in turn.events] == ["get_availability"]
+    assert model.transcript.user_messages[1] == STILL_WAITING
+    assert "".join(heard).endswith("Tengo el lunes a las nueve y media.")
+    assert len("".join(heard)) < MAX_SPOKEN + 60  # the voice was not handed the rest
+
+
+def test_an_answer_of_ordinary_length_is_said_whole(clinic, kb):
+    from vetdesk.agent.agent import MAX_SPOKEN
+
+    long = ("Tengo el lunes 9 de noviembre a las nueve y media de la mañana, el lunes 9 de "
+            "noviembre a las once y media de la mañana o el martes 10 de noviembre a las "
+            "nueve y media de la mañana. ¿Cuál le va mejor?")
+    assert len(long) < MAX_SPOKEN / 2
+    assert _call(ScriptedClient([Reply(long)]), clinic, kb).say("Por la mañana.").text == long
+
+
 def test_the_agent_is_nudged_once_and_only_when_left_waiting(clinic, kb):
     from vetdesk.agent.agent import left_waiting
 

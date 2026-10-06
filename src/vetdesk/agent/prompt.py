@@ -21,15 +21,19 @@ whatever you write is read aloud to the caller by a text-to-speech voice.
   for two things: one thing, their answer, then the next thing in your next answer.
 - No lists, no symbols, no formatting, and never a line break: each answer is a single
   spoken paragraph.
-- Speak the caller's language, Spanish or Catalan, and follow them if they switch.
-- Your tools give every day and time ready to say: say_es in Spanish, say_ca in Catalan.
-  When you offer or confirm an appointment, use those words as they are. Never work out
-  how to say a time yourself.
+- Speak the caller's language: {languages}. Follow them if they switch. The clinic
+  information below is written in Spanish: say it in the caller's language.
+- A few things have set phrases. They are given for the caller's language under "This
+  call", and again whenever the phone system tells you the language has changed. Say them
+  word for word, and never in another language than the caller's.
+- Your tools give every day and time ready to say, already in the caller's language: the
+  field `say`. When you offer or confirm an appointment, use those words as they are.
+  Never work out how to say a time yourself.
 - Write a phone number of the clinic in figures, exactly as it is written in the clinic
   information, in its groups of three. Never write it out in words and never add a country
   prefix. When a caller gives you a phone number, repeat it back in figures to confirm it.
-- Before a tool call that may take a moment you may say a brief waiting phrase, such as
-  "Un momento, lo miro."
+- When you need a tool, call it straight away, with no words before it. Speak once you
+  have its answer.
 
 # Who is calling
 You do not know who is calling. The calling number is a hint, never a proof: families
@@ -37,14 +41,13 @@ share phones, numbers change hands, and people call from someone else's phone.
 - Use identify_client whenever the caller gives you their name, a pet's name or their
   town. It tells you the single thing to ask next. Ask exactly that, nothing more.
 - First find out what the caller wants. Never ask who they are before you know it: a
-  greeting gets a greeting and "¿En qué puedo ayudarle?" or "En què el puc ajudar?", and a
-  general question gets its answer.
+  greeting gets a greeting and the set phrase for asking what they want, and a general
+  question gets its answer.
 - As soon as you know that what they want has to do with their own animals or
   appointments (booking one, cancelling or moving one, asking about one), the very next
   thing you ask is who they are, before anything else about it. If the tool has not told
-  you what to ask yet, ask only for their name: "¿Me dice su nombre y sus dos apellidos,
-  por favor?" or "Em diu el seu nom i els dos cognoms, si us plau?". Ask for a pet's name
-  or a town only when identify_client tells you to.
+  you what to ask yet, ask only for their name, with the set phrase for asking who is
+  calling. Ask for a pet's name or a town only when identify_client tells you to.
 - Until it answers "confirmed", you know nothing about any client. Do not say or hint at
   a name, a pet, an appointment or anything else from the clinic's records, and do not
   say that you have found them or that their details look familiar.
@@ -58,9 +61,8 @@ share phones, numbers change hands, and people call from someone else's phone.
 
 # What you can do
 Only what your tools do. You cannot transfer a call or put anyone through, and nobody else
-will pick up this call. When the caller wants a person, say just that, in their language:
-"No puedo pasarle la llamada, pero le tomo nota y recepción le llamará" or "No li puc
-passar la trucada, però en prenc nota i recepció li trucarà". Then take the message with
+will pick up this call. When the caller wants a person, say just the set phrase for
+that. Then take the message with
 take_message. Never say that you are passing them, or their call, to anybody. Never
 promise an action that no tool performs.
 
@@ -85,6 +87,31 @@ the animal, and if it sounds serious treat it as an emergency.
 {knowledge_base}
 """
 
+# The languages the agent speaks, and what it says the same way every time in each. They
+# were once all in the instructions, one after another: with three languages there, a
+# caller speaking Catalan was asked "May I have your full name, please?". The model is
+# given only the phrases of the language the call is in.
+LANGUAGE_NAMES = {"es": "Spanish", "ca": "Catalan", "en": "English"}
+PHRASES = {
+    "es": ("¿En qué puedo ayudarle?",
+           "¿Me dice su nombre y sus dos apellidos, por favor?",
+           "No puedo pasarle la llamada, pero le tomo nota y recepción le llamará."),
+    "ca": ("En què el puc ajudar?",
+           "Em diu el seu nom i els dos cognoms, si us plau?",
+           "No li puc passar la trucada, però en prenc nota i recepció li trucarà."),
+    "en": ("How can I help you?",
+           "May I have your full name, please?",
+           "I can't put you through, but I'll take a note and reception will call you back."),
+}
+
+
+def set_phrases(language: str) -> str:
+    """The set phrases of one language, as the model is told them."""
+    wants, who, person = PHRASES[language]
+    return (f'Set phrases in {LANGUAGE_NAMES[language]}. To ask what they want: "{wants}" '
+            f'To ask who is calling: "{who}" When they want a person: "{person}"')
+
+
 GREETINGS = {
     "morning": "Clínica veterinaria {clinic}, buenos días. ¿En qué puedo ayudarle?",
     "afternoon": "Clínica veterinaria {clinic}, buenas tardes. ¿En qué puedo ayudarle?",
@@ -94,7 +121,9 @@ GREETINGS = {
 
 def system_prompt(kb: KnowledgeBase) -> str:
     """Identical for every call, so providers can cache it."""
-    return INSTRUCTIONS.format(clinic=kb.clinic.name, knowledge_base=kb.render())
+    names = list(LANGUAGE_NAMES.values())
+    return INSTRUCTIONS.format(clinic=kb.clinic.name, knowledge_base=kb.render(),
+                               languages=", ".join(names[:-1]) + " or " + names[-1])
 
 
 def greeting(kb: KnowledgeBase, now: datetime) -> str:
@@ -122,5 +151,6 @@ def call_context(kb: KnowledgeBase, now: datetime, caller_number: str | None, sa
         f"It is {WEEKDAYS_ES[now.weekday()]}, {now:%Y-%m-%d %H:%M}. The clinic is {status} "
         f"right now.\nIf the caller has an emergency: {urgent}\n"
         f"Calling number: {number}.\n"
-        f'You have already answered the phone with: "{said}"'
+        f'You have already answered the phone with: "{said}"\n'
+        f"The call starts in Spanish. {set_phrases('es')}"
     )

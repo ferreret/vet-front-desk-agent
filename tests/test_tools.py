@@ -336,8 +336,7 @@ def test_booking_for_a_confirmed_caller_goes_on_their_record(confirmed):
     result, failed = _call(toolbox, "book_appointment", start=SLOT, reason="vacuna",
                            pet_name=pet.upper(), contact_name=None, contact_phone=None)
     assert not failed and result["status"] == "booked"
-    assert result["say_es"] == "lunes 9 de noviembre a las nueve y media de la mañana"
-    assert result["say_ca"] == "dilluns 9 de novembre a les nou i mitja del matí"
+    assert result["say"] == "lunes 9 de noviembre a las nueve y media de la mañana"
     booked = toolbox.agenda.get(result["appointment_id"])
     assert booked.verified and booked.client_code == toolbox.session.client.code
     assert booked.pet_name == pet and booked.animal_code is not None
@@ -417,9 +416,16 @@ def test_availability_needs_no_identification(clinic, kb):
     assert not failed and len(result["slots"]) == 6
     assert result["slots"][0] == {
         "start": "2026-11-09T16:30",
-        "say_es": "lunes 9 de noviembre a las cuatro y media de la tarde",
-        "say_ca": "dilluns 9 de novembre a les quatre i mitja de la tarda",
+        "say": "lunes 9 de noviembre a las cuatro y media de la tarde",
     }
+    # One way of saying each time, in the language the call is going on in.
+    for language, words in (("ca", "dilluns 9 de novembre a les quatre i mitja de la tarda"),
+                            ("en", "Monday 9 November at four thirty in the afternoon")):
+        toolbox.session.language = language
+        result, _ = _call(toolbox, "get_availability", date_from="2026-11-09",
+                          date_to="2026-11-13", part_of_day="afternoon")
+        assert result["slots"][0] == {"start": "2026-11-09T16:30", "say": words}
+    toolbox.session.language = "es"
     assert _call(toolbox, "get_availability", date_from="2026-11-08", date_to="2026-11-08",
                  part_of_day="any")[0]["slots"] == []
 
@@ -441,7 +447,7 @@ def test_free_times_are_a_sample_over_several_days_and_say_so(clinic, kb):
     toolbox = _toolbox(clinic, kb)
     week, _ = _call(toolbox, "get_availability", date_from="2026-11-09", date_to="2026-11-13",
                     part_of_day="any")
-    assert [slot["say_es"].split()[0] for slot in week["slots"]] == \
+    assert [slot["say"].split()[0] for slot in week["slots"]] == \
         ["lunes", "lunes", "martes", "martes", "miércoles", "miércoles"]
     assert len({slot["start"] for slot in week["slots"]}) == 6
     assert week["free_days"] == ["lunes 2026-11-09", "martes 2026-11-10", "miércoles 2026-11-11",
@@ -561,3 +567,17 @@ def test_the_callers_reason_may_be_put_in_other_words_of_the_same_root(clinic, k
                           ("Una revisión.", "Revisión general")):
         toolbox = _toolbox(clinic, kb, reason=said)
         assert not _call(toolbox, "book_appointment", **booking, reason=written)[1], written
+
+
+def test_the_callers_own_name_is_not_their_pets(clinic, kb):
+    """Seen once: asked their name, a caller said "Carme Llull" and the model handed "Carme"
+    over as the pet's name too. With a pet's name on the table nobody asked for the real
+    one, and the caller ended the call unconfirmed."""
+    toolbox = _toolbox(clinic, kb, reason=None)
+    toolbox.heard("Carme Llull.")
+    result, failed = _call(toolbox, "identify_client", name="Carme Llull", pet_name="Carme")
+    assert not failed and toolbox.session.evidence.pet_name is None
+    # A pet that does share the name is named again, in a line of its own.
+    toolbox.heard("Es diu Carme, com jo.")
+    _call(toolbox, "identify_client", name="Carme Llull", pet_name="Carme")
+    assert toolbox.session.evidence.pet_name == "Carme"

@@ -1,10 +1,13 @@
 """Which language a caller is speaking, from the words of one line.
 
+The languages told apart here are the ones the agent speaks: adding one is adding its
+words, how a day and a time are said in it (`spoken`), and the agent's own stock phrases.
+
 The model is told to follow the caller's language, and measured on a voice line it did
 not: greeted in Catalan, it went on in Spanish until asked "no parles català?". So the
-language is worked out here, from words that belong to one language and not the other, and
-the model is told. Only the two languages the agent speaks are told apart; a line with no
-telling word (a name, "sí", a number in figures) says nothing, and the call stays as it was.
+language is worked out here, from words that belong to one language and to no other, and
+the model is told. A line with no telling word (a name, "sí", a number in figures) says
+nothing, and the call stays as it was.
 
 Words that are not on the lists on purpose: "del" and "al", which belong to both languages
 and come in the names of towns ("Pinar del Mar"), and "i" and "y", which are also letters:
@@ -31,6 +34,15 @@ _WORDS = {
         uno cuatro cinco seis siete ocho nueve diez cero nada más mucho mucha muchas bien
         vale acuerdo por para me digo dice vivo vive pueblo vengo voy vamos pues también
         solo ningún ninguna alguna algún sin hasta""",
+    # No "hi", "us", "can", "on", "pet", "he", "has", "no", "me": they are words of Catalan
+    # or Spanish too ("Can Pons" is a house, "on" is where).
+    "en": """hello good morning afternoon evening would like want need book make appointment
+        my dog cat rabbit the is it please thank thanks you your yes what when where how
+        could have his her she they we not but there here this that with for and of to at
+        today tomorrow monday tuesday wednesday thursday friday saturday sunday week speak
+        english name phone number one two three four five six seven eight nine am are was
+        does did will sick hurt limping vaccination vaccine checkup check emergency open
+        closed price much""",
 }
 _TELLING = {language: frozenset(words.split()) for language, words in _WORDS.items()}
 _TELLING = {language: words - frozenset().union(*(other for name, other in _TELLING.items()

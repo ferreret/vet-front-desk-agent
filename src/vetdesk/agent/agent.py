@@ -13,20 +13,29 @@ from ..language import spoken_language
 from ..legacy.models import Clinic
 from ..llm import Conversation, LLMClient, LLMError, OnText, ToolResult, Usage
 from ..scheduling import Agenda
-from .prompt import call_context, greeting, system_prompt
+from .prompt import LANGUAGE_NAMES, call_context, greeting, set_phrases, system_prompt
 from .tools import SPECS, CallSession, Toolbox, ToolEvent
 
 MAX_TOOL_ROUNDS = 6
 
-# What a model says to buy time, in the two languages the agent speaks. A turn that ends on
+# What a model says to buy time, in the languages the agent speaks. A turn that ends on
 # one of these, with no question and little else, has promised something and done nothing.
 _WAITING = re.compile(
     r"\b(un momento?|un moment|un segundo|un segon|un instante?|un instant|enseguida|"
     r"de seguida|ahora mismo|ara mateix|(lo|ho) (miro|compruebo|comprovo|consulto)|"
-    r"d[eé]jeme|deixi'm|perm[ií]tame|permeti'm)\b", re.IGNORECASE)
+    r"d[eé]jeme|deixi'm|perm[ií]tame|permeti'm|(one|just a) (moment|second)|hold on|"
+    r"bear with me|let me (check|see|look|have a look)|i(('| wi)ll| will) (check|look))\b",
+    re.IGNORECASE)
 STILL_WAITING = ("(Note from the phone system, not from the caller: you said you would look "
                  "something up and stopped. The caller is waiting in silence. Do it now with "
                  "your tools and give them the answer, without apologising.)")
+
+
+# The most one turn may say, in characters. The longest answer measured over 650 is about
+# 450. A model once filled a turn with "Let me check the schedule. Let me look at the
+# available times." until its token limit, some three minutes of speech: past this the
+# rest is not said, and the model is told to get on with it.
+MAX_SPOKEN = 700
 
 
 def left_waiting(text: str) -> bool:
@@ -35,20 +44,23 @@ def left_waiting(text: str) -> bool:
 
 # Said when the model cannot produce a turn, in the language of the call.
 DID_NOT_FOLLOW = {"es": "Perdone, no le he entendido bien. ¿Me lo puede repetir?",
-                  "ca": "Perdoni, no l'he entès bé. M'ho pot repetir?"}
+                  "ca": "Perdoni, no l'he entès bé. M'ho pot repetir?",
+                  "en": "Sorry, I didn't catch that. Could you say it again?"}
 TOO_MANY_STEPS = '{"error": "Too many steps in one turn. Answer the caller now."}'
 CANNOT_HELP = {"es": "Perdone, con eso no le puedo ayudar por teléfono. Si quiere, tomo nota "
                      "y recepción le llama.",
                "ca": "Perdoni, amb això no el puc ajudar per telèfon. Si vol, en prenc nota i "
-                     "recepció li trucarà."}
+                     "recepció li trucarà.",
+               "en": "Sorry, I can't help with that over the phone. If you like, I'll take a "
+                     "note and reception will call you."}
 # Told to the model when the caller's words show which language they speak and it is not
 # the one the call was going on in. Left to itself, a model greeted in Catalan went on in
 # Spanish in a third of its answers.
 LANGUAGE_NOTE = {
-    "ca": "(Note from the phone system, not from the caller: the caller is speaking Catalan. "
-          "Answer in Catalan from now on, every sentence, until they change language.)",
-    "es": "(Note from the phone system, not from the caller: the caller is speaking Spanish. "
-          "Answer in Spanish from now on, every sentence, until they change language.)",
+    code: f"(Note from the phone system, not from the caller: the caller is speaking {name}. "
+          f"Answer in {name} from now on, every sentence, until they change language. "
+          f"{set_phrases(code)})"
+    for code, name in LANGUAGE_NAMES.items()
 }
 
 
@@ -102,14 +114,19 @@ class Call:
         if language and language != self.language:
             self.language = language
             asked = f"{text}\n\n{LANGUAGE_NOTE[language]}"
+        self.session.language = self.language  # what the tools hand over to be said
         events_before = len(self.session.events)
         latencies: list[float] = []
         turn_started = time.perf_counter()
         first_words: float | None = None
         said_something = new_request = False
+        room = MAX_SPOKEN  # characters this turn may still say
 
         def heard(piece: str) -> None:
-            nonlocal first_words, said_something, new_request
+            nonlocal first_words, said_something, new_request, room
+            room -= len(piece)
+            if room < 0:
+                return  # running on: see MAX_SPOKEN
             if first_words is None:
                 first_words = time.perf_counter() - turn_started
             if on_text:
@@ -143,8 +160,18 @@ class Call:
                 spoken.append(reply.text)
                 usage, requests = usage + reply.usage, requests + 1
 
+        def kept(text: str) -> str:
+            """What was said of a reply that ran on: up to its last whole sentence."""
+            if len(text) <= MAX_SPOKEN:
+                return text
+            cut = text[:MAX_SPOKEN]
+            return cut[:max(cut.rfind(mark) for mark in ".?!") + 1] or cut
+
         use_tools()
-        if reply.stop == "end" and left_waiting(reply.text):
+        ran_on = room < 0 and not reply.tool_calls
+        if ran_on:
+            spoken[-1], room = kept(spoken[-1]), MAX_SPOKEN
+        if (reply.stop == "end" and left_waiting(reply.text)) or ran_on:
             # "Un momento, lo miro", and the turn is over with nothing looked up. Measured:
             # one model did it in 11 of 435 answers. On the phone that is a dead line until
             # the caller speaks again, so the model is told once to do what it said. The
@@ -154,7 +181,7 @@ class Call:
             usage, requests = usage + reply.usage, requests + 1
             use_tools()
 
-        answer = " ".join(part for part in spoken if part)
+        answer = " ".join(kept(part) for part in spoken if part)
         fallback = (CANNOT_HELP[self.language] if reply.stop == "refusal"
                     else "" if answer else DID_NOT_FOLLOW[self.language])
         if fallback:  # refused, cut off or empty: never go silent
