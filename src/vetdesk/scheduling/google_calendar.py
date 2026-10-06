@@ -1,15 +1,15 @@
 """The appointment book, mirrored in a Google Calendar.
 
-The agent books into `SqliteAgenda`, which lives in memory: nobody at the clinic can look
-at it, and it is empty again whenever the server restarts. `MirroredAgenda` wraps it and
-keeps a calendar in step: every appointment booked, moved or cancelled on a call shows up
-there, and when the server starts, the appointments still to come are read back from the
-calendar, so a restart loses nothing.
+The agent books into `SqliteAgenda`, where nobody at the clinic can look. `MirroredAgenda`
+wraps it and keeps a calendar in step, to be looked at: every appointment booked, moved or
+cancelled on a call shows up there.
 
-The agenda stays the one the agent asks. The calendar is written to after the fact and off
-the call's path, on a worker thread: a slow or failing calendar never makes a caller wait
-and never fails a booking. It goes one way. An event somebody deletes by hand in the
-calendar is still an appointment for the agent until the server restarts.
+The agenda is the book; the calendar is a picture of it. It is written to after the fact
+and off the call's path, on a worker thread: a slow or failing calendar never makes a
+caller wait and never fails a booking. It goes one way: what somebody changes by hand in
+the calendar changes nothing for the agent. When the server starts, the two are put in
+step again: an appointment the calendar lacks is added to it, and one that only the
+calendar holds (from before the agenda was kept on disk) is taken into the agenda.
 
 Access is a Google service account, with which the calendar is shared: no person signs in.
 """
@@ -117,13 +117,24 @@ class MirroredAgenda:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._agenda, name)  # everything that only reads
 
-    def restore(self, now: datetime) -> int:
-        """Read back the appointments still to come. How many were there."""
-        upcoming = self._calendar.upcoming(now)
-        for event_id, appointment in upcoming:
-            self._agenda.add(appointment)
+    def restore(self, now: datetime) -> tuple[int, int]:
+        """Put agenda and calendar in step for the appointments still to come.
+
+        How many the agenda took from the calendar, and how many the calendar was missing.
+        """
+        taken = 0
+        for event_id, appointment in self._calendar.upcoming(now):
             self._event[appointment.appointment_id] = event_id
-        return len(upcoming)
+            if self._agenda.get(appointment.appointment_id) is None:
+                self._agenda.add(appointment)
+                taken += 1
+        missing = [a for a in self._agenda.all()
+                   if a.status == "booked" and a.start > now
+                   and a.appointment_id not in self._event]
+        for appointment in missing:
+            self._jobs.put(lambda a=appointment: self._event.__setitem__(
+                a.appointment_id, self._calendar.add(a, self._who(a))))
+        return taken, len(missing)
 
     def _work(self) -> None:
         while True:

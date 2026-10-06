@@ -89,8 +89,9 @@ def test_moving_and_cancelling_follow(kb):
     assert [method for method, _, _ in google.requests] == ["POST", "PATCH", "DELETE"]
 
 
-def test_a_restart_reads_the_appointments_back(kb):
-    """The agenda lives in memory. What is still to come is in the calendar, and comes back."""
+def test_an_agenda_kept_in_memory_takes_its_appointments_back_from_the_calendar(kb):
+    """Without a file the agenda is empty after a restart. What is still to come is in the
+    calendar, and is taken back: how the first appointments reached the agenda on disk."""
     google = _Google()
     first = _mirrored(kb, google)
     kept = first.book(SLOT, "vacuna", "Luna", client_code=10, animal_code=7)
@@ -101,7 +102,7 @@ def test_a_restart_reads_the_appointments_back(kb):
                                "start": {"dateTime": "2026-11-09T12:00:00+01:00"}}
 
     again = _mirrored(kb, google)
-    assert again.restore(NOW) == 2
+    assert again.restore(NOW) == (2, 0)
     assert google.requests[-1][2]["privateExtendedProperty"] == "vetdesk=1"
     assert google.requests[-1][2]["timeMin"] == "2026-11-03T10:15:00+01:00"
     back = again.get(kept.appointment_id)
@@ -124,3 +125,52 @@ def test_a_calendar_that_fails_never_fails_a_booking(kb, caplog):
     agenda.wait()
     assert agenda.get(booked.appointment_id).status == "cancelled"
     assert "the calendar was not updated" in caplog.text
+
+
+def _on_disk(kb, google, path):
+    calendar = GoogleCalendar("clinic@example.test", google, kb.appointments.slot_minutes)
+    return MirroredAgenda(SqliteAgenda(kb, lambda: NOW, path), calendar,
+                          lambda appointment: "Cliente: Canals Company, José")
+
+
+def test_an_agenda_on_disk_outlives_a_restart_and_the_calendar_only_shows_it(kb, tmp_path):
+    """The agenda is the book and the calendar a picture of it: a restart loses nothing even
+    with no calendar to read, and what changed by hand in the calendar changes nothing."""
+    path, google = tmp_path / "agenda.db", _Google()
+    first = _on_disk(kb, google, path)
+    kept = first.book(SLOT, "vacuna", "Luna", client_code=10, animal_code=7)
+    gone = first.book(datetime(2026, 11, 10, 9, 30), "revisión", "Bruno", client_code=10)
+    first.cancel(gone.appointment_id)
+    first.wait()
+    google.events.clear()  # somebody emptied the calendar by hand
+
+    again = _on_disk(kb, google, path)
+    assert again.restore(NOW) == (0, 1)  # nothing to take; one the calendar was missing
+    again.wait()
+    assert [event["summary"] for event in google.events.values()] == ["Luna · vacuna"]
+    assert again.get(kept.appointment_id) == kept and not again.is_free(SLOT)
+    assert again.get(gone.appointment_id).status == "cancelled"  # what was undone is kept
+    again.reschedule(kept.appointment_id, datetime(2026, 11, 11, 9, 30))
+    again.wait()
+    (event,) = google.events.values()
+    assert event["start"]["dateTime"] == "2026-11-11T09:30:00"
+
+    plain = SqliteAgenda(kb, lambda: NOW, path)  # and with no calendar at all
+    assert plain.get(kept.appointment_id).start == datetime(2026, 11, 11, 9, 30)
+    assert plain.book(datetime(2026, 11, 12, 9, 30), "uñas", "Luna",
+                      client_code=10).appointment_id == "AP-0003"
+
+
+def test_a_database_that_is_not_ours_is_not_opened_as_an_agenda(kb, tmp_path):
+    import sqlite3
+
+    from vetdesk.dbguard import ForeignDatabaseError
+
+    theirs = tmp_path / "theirs.db"
+    with sqlite3.connect(theirs) as db:
+        db.execute("CREATE TABLE clients (name TEXT)")
+    with pytest.raises(ForeignDatabaseError):
+        SqliteAgenda(kb, lambda: NOW, theirs)
+    assert sqlite3.connect(theirs).execute(
+        "SELECT name FROM sqlite_master").fetchall() == [("clients",)]  # untouched
+

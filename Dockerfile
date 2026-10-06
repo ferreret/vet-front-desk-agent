@@ -14,7 +14,11 @@ RUN uv sync --frozen --no-dev --extra endpoint
 
 # The synthetic clinic, always the same from its seed. No real data exists to copy in.
 RUN uv run --no-sync vetdesk generate --seed 42 --out /app/data \
-    && useradd --system --no-create-home vetdesk
+    && useradd --system --no-create-home vetdesk \
+    && mkdir /app/state && chown vetdesk /app/state
+# Where the appointment book is kept when VETDESK_AGENDA points into it. Mount a volume
+# here: without one it is gone with the container, like everything else in it.
+VOLUME /app/state
 # The clinic's clock, not the server's: opening hours and the greeting depend on it.
 ENV VETDESK_DATA=/app/data TZ=Europe/Madrid
 USER vetdesk

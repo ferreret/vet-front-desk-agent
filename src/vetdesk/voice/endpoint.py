@@ -64,6 +64,7 @@ log = logging.getLogger("vetdesk.endpoint")
 
 KEY_NAME = "VETDESK_ENDPOINT_KEY"
 STAND_INS = "VETDESK_CALLER_STANDS_IN_FOR"
+AGENDA_FILE = "VETDESK_AGENDA"
 IDLE_SECONDS = 30 * 60  # a call nobody has asked about for this long is over
 # ElevenLabs wraps the agent's prompt in text of its own, so the two markers are looked for
 # anywhere in it, under names nothing else would use.
@@ -277,8 +278,11 @@ def _key(host: str, path: Path = Path(".env")) -> str:
 
 
 def _agenda(kb, clinic):
-    """The appointment book: in memory, and kept in a calendar as well when one is set."""
-    agenda = SqliteAgenda(kb, datetime.now)
+    """The appointment book: in a file when one is set, so that it outlives a restart,
+    and shown in a calendar as well when one is set."""
+    path = os.environ.get(AGENDA_FILE)
+    agenda = SqliteAgenda(kb, datetime.now, Path(path) if path else None)
+    log.info("the agenda is kept in %s", path or "memory: a restart empties it")
     calendar_id, key = os.environ.get(CALENDAR), os.environ.get(CALENDAR_KEY)
     if not (calendar_id and key):
         return agenda
@@ -292,10 +296,11 @@ def _agenda(kb, clinic):
     calendar = GoogleCalendar(calendar_id, session_from(key), kb.appointments.slot_minutes)
     mirrored = MirroredAgenda(agenda, calendar, who)
     try:
-        log.info("appointments are kept in a calendar: %d still to come were read back",
-                 mirrored.restore(datetime.now()))
+        taken, missing = mirrored.restore(datetime.now())
+        log.info("appointments are shown in a calendar: %d taken from it, %d it was missing",
+                 taken, missing)
     except Exception as error:  # a calendar that cannot be read must not stop the phone
-        log.warning("the calendar could not be read; starting with an empty agenda: %s", error)
+        log.warning("the calendar could not be read: %s", error)
     return mirrored
 
 

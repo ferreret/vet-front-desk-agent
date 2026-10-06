@@ -1,8 +1,10 @@
 """The clinic's appointment book.
 
-`Agenda` is the interface the agent's tools use. `SqliteAgenda` is a mock that lives in
-memory (or in a file) and takes its opening hours from the knowledge base; an Office 365
-calendar would be another implementation of the same interface.
+`Agenda` is the interface the agent's tools use. `SqliteAgenda` keeps the appointments in
+a SQLite database of its own, apart from the clinic's records, and takes its opening hours
+from the knowledge base. In memory it is a fresh book for every test and every simulated
+call; given a file, as on the voice server, the appointments outlive a restart. An Office
+365 calendar would be another implementation of the same interface.
 """
 
 from __future__ import annotations
@@ -11,8 +13,10 @@ import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Literal, Protocol
 
+from ..dbguard import APPLICATION_ID, ForeignDatabaseError, is_generated_db
 from ..kb import KnowledgeBase
 
 PartOfDay = Literal["morning", "afternoon", "any"]
@@ -82,11 +86,19 @@ _COLUMNS = ("appointment_id, start, reason, pet_name, client_code, animal_code, 
 
 
 class SqliteAgenda:
-    def __init__(self, kb: KnowledgeBase, now: Callable[[], datetime]) -> None:
+    def __init__(self, kb: KnowledgeBase, now: Callable[[], datetime],
+                 path: Path | None = None) -> None:
         self._kb = kb
         self._now = now
-        # On a voice line each turn runs on a worker thread, one at a time.
-        self._db = sqlite3.connect(":memory:", check_same_thread=False)
+        if path is not None and path.exists() and path.stat().st_size \
+                and not is_generated_db(path):
+            # Not a file of ours: somebody's data. Never opened, never written to.
+            raise ForeignDatabaseError(f"{path} is not an agenda this project made")
+        # On a voice line each turn runs on a worker thread, one at a time. Every change
+        # is written at once: an appointment booked is on disk before the caller hears so.
+        self._db = sqlite3.connect(":memory:" if path is None else path,
+                                   check_same_thread=False, isolation_level=None)
+        self._db.execute(f"PRAGMA application_id = {APPLICATION_ID}")
         self._db.executescript(_SCHEMA)
 
     # --- reading ----------------------------------------------------------------------------
