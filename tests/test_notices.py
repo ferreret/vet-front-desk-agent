@@ -48,8 +48,12 @@ def test_a_message_reaches_reception(clinic, kb):
          contact_name="Marta Soler", contact_phone=None)
     (notice,) = toolbox.session.notices
     assert notice.kind == "message"
-    assert notice.text == ("RECADO: llamar a Marta Soler (sin identificar)\n"
-                           "Teléfono: 600 111 222\n«Quiere hablar de una factura.»")
+    assert notice.text == ("RECADO\nLlamar a Marta Soler\nTeléfono: 600 111 222\n"
+                           "Sin identificar\n«Quiere hablar de una factura.»")
+    # For a chat: an emoji to tell it at a glance, who to call in bold, their words apart.
+    assert notice.html == ("📩 <b>RECADO</b>\n☎️ Llamar a <b>Marta Soler</b>\n"
+                           "📞 Teléfono: <b>600 111 222</b>\n❔ Sin identificar\n"
+                           "<blockquote>Quiere hablar de una factura.</blockquote>")
 
 
 def test_appointments_booked_moved_and_cancelled_are_told(clinic, kb):
@@ -69,8 +73,11 @@ def test_appointments_booked_moved_and_cancelled_are_told(clinic, kb):
     new, moved, gone = toolbox.session.notices
     assert (new.kind, moved.kind, gone.kind) == ("booked", "moved", "cancelled")
     assert new.text == (f"CITA NUEVA\n{pet}, vacuna\n"
-                        "lunes 9 de noviembre a las cuatro y media de la tarde\n"
-                        f"Cliente: {client.raw_name}.")
+                        "Lunes 9 de noviembre a las cuatro y media de la tarde\n"
+                        f"Cliente: {client.raw_name}")
+    assert new.html.startswith(f"🟢 <b>CITA NUEVA</b>\n🐾 <b>{pet}</b>, vacuna\n📅 Lunes 9")
+    assert moved.html.startswith("🔄 <b>CITA CAMBIADA</b>") and "◀️ Era el lunes 9" in moved.html
+    assert gone.html.startswith("❌ <b>CITA ANULADA</b>")
     assert "Era el lunes 9 de noviembre a las cuatro y media de la tarde" in moved.text
     assert "Ahora es el martes 10 de noviembre a las nueve y media de la mañana" in moved.text
     assert gone.text.startswith("CITA ANULADA") and client.raw_name in gone.text
@@ -82,8 +89,9 @@ def test_an_unverified_booking_asks_reception_to_check(clinic, kb):
     _run(toolbox, "book_appointment", start=SLOT, reason="revisión", pet_name="Toby",
          contact_name="Marta Soler", contact_phone="600 11 22 33")
     (notice,) = toolbox.session.notices
-    assert "SIN VERIFICAR: dice ser Marta Soler, teléfono 600 112 233" in notice.text
-    assert "Comprobar antes de la visita" in notice.text
+    assert notice.text.endswith("SIN VERIFICAR: dice ser Marta Soler\nTeléfono: 600 112 233\n"
+                                "Comprobar antes de la visita")
+    assert "⚠️ <b>SIN VERIFICAR</b>: dice ser Marta Soler" in notice.html
     # What a tool refused is no news: a booking with a reason nobody gave tells nobody.
     _run(toolbox, "book_appointment", start="2026-11-10T09:30", reason="vacuna",
          pet_name="Toby", contact_name="Marta Soler", contact_phone="600 11 22 33")
@@ -126,6 +134,8 @@ def test_an_emergency_is_told_at_once_and_once(clinic, kb):
     assert notice.text == ("URGENCIA a las 03:20\nLlamaban desde: 600 111 222\n"
                            "«¡Mi perro se ha comido una tableta de chocolate!»\n"
                            "Se le ha dado el teléfono de urgencias.")
+    assert notice.html.startswith("🚨 <b>URGENCIA a las 03:20</b>\n📞 Llamaban desde: <b>600")
+    assert notice.html.endswith("</blockquote>\n✅ Se le ha dado el teléfono de urgencias.")
     quiet = agent.start_call(None)
     quiet.say("¿A qué hora abrís?")
     assert quiet.session.notices == []
@@ -157,22 +167,38 @@ def test_notices_are_sent_when_the_turn_is_over(clinic, kb):
             await asyncio.sleep(0.05)
 
     asyncio.run(run())
-    assert len(told) == 1 and told[0].startswith("CITA NUEVA\nToby, revisión")
+    assert len(told) == 1 and told[0].text.startswith("CITA NUEVA\nToby, revisión")
 
 
-def test_telegram_gets_the_text_and_a_failure_hurts_nobody(caplog):
-    sent = []
+def test_what_a_caller_said_cannot_break_the_formatting(clinic, kb):
+    """The caller's words go into a message that is marked up: they are escaped."""
+    toolbox = Toolbox(clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW, "+34600111222")
+    _run(toolbox, "take_message", message="Dice que pesa <5 kg & no come",
+         contact_name="Marta <Soler>", contact_phone=None)
+    (notice,) = toolbox.session.notices
+    assert "<blockquote>Dice que pesa &lt;5 kg &amp; no come</blockquote>" in notice.html
+    assert "<b>Marta &lt;Soler&gt;</b>" in notice.html and "<Soler>" in notice.text
+
+
+def test_telegram_gets_the_notice_marked_up_and_a_failure_hurts_nobody(caplog):
+    from vetdesk.notices import Notice
+
+    sent, answers = [], [200, 400, 200, 403]
 
     def post(url, json, timeout):
         sent.append((url, json))
-        return SimpleNamespace(status_code=200 if len(sent) == 1 else 403)
+        return SimpleNamespace(status_code=answers[len(sent) - 1])
 
     telegram = Telegram("123:secret", "-1001", post)
-    telegram.send("RECADO: llamar a Marta Soler")
-    telegram.send("URGENCIA a las 03:20")
+    telegram.send(Notice("message", "RECADO\nLlamar a Marta", "📩 <b>RECADO</b>\nLlamar a Marta"))
+    telegram.send(Notice("emergency", "URGENCIA", "🚨 <b>URGENCIA"))  # mark-up Telegram refuses
+    telegram.send(Notice("booked", "CITA NUEVA", "🟢 <b>CITA NUEVA</b>"))
     telegram.wait()
     assert sent[0] == ("https://api.telegram.org/bot123:secret/sendMessage",
-                       {"chat_id": "-1001", "text": "RECADO: llamar a Marta Soler"})
+                       {"chat_id": "-1001", "text": "📩 <b>RECADO</b>\nLlamar a Marta",
+                        "parse_mode": "HTML"})
+    # Refused as marked up, it is sent again plain: better plain than not at all.
+    assert sent[2][1] == {"chat_id": "-1001", "text": "URGENCIA"}
     assert "a notice was not delivered: Telegram answered 403" in caplog.text
     assert "secret" not in caplog.text  # the bot's key is never written to the log
 
@@ -180,6 +206,6 @@ def test_telegram_gets_the_text_and_a_failure_hurts_nobody(caplog):
         raise OSError("no network")
 
     down = Telegram("123:secret", "-1001", broken)
-    down.send("CITA NUEVA")
+    down.send(Notice("booked", "CITA NUEVA", "🟢 <b>CITA NUEVA</b>"))
     down.wait()
     assert "a notice was not delivered: OSError" in caplog.text

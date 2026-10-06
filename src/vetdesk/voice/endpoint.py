@@ -55,6 +55,7 @@ from ..language import SPOKEN
 from ..legacy import LegacySqliteSource
 from ..legacy.normalize import parse_phones
 from ..llm import create_client
+from ..notices import Notice
 from ..scheduling import Appointment, SqliteAgenda
 from ..scheduling.google_calendar import CALENDAR, GoogleCalendar, MirroredAgenda, session_from
 from ..scheduling.google_calendar import KEY as CALENDAR_KEY
@@ -196,7 +197,8 @@ def _chunk(request_id: str, model: str, delta: dict, finish: str | None = None) 
 
 
 def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | None = None,
-              admin_key: str = "", tell: Callable[[str], None] | None = None) -> web.Application:
+              admin_key: str = "",
+              tell: Callable[[Notice], None] | None = None) -> web.Application:
     """`model` is the agent's own model, named only to put a price on each answer. With a
     `desk` whose information is in a file and an `admin_key`, that information can be read
     and replaced through the server. `tell` is how reception is told what happens on a
@@ -220,7 +222,7 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                 notice = waiting_for_reception.pop(0)
                 log.info("for reception: %s", notice.kind)
                 if tell:
-                    tell(notice.text)
+                    tell(notice)
         return after
 
     async def chat_completions(request: web.Request) -> web.StreamResponse:

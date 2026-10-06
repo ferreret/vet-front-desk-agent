@@ -16,6 +16,8 @@ from typing import Any
 
 import httpx
 
+from ..notices import Notice
+
 log = logging.getLogger("vetdesk.telegram")
 
 TOKEN, CHAT = "VETDESK_TELEGRAM_TOKEN", "VETDESK_TELEGRAM_CHAT"
@@ -27,18 +29,22 @@ class Telegram:
                  post: Callable[..., Any] = httpx.post) -> None:
         self._url = API.format(token=token, method="sendMessage")
         self._chat, self._post = chat, post
-        self._outbox: queue.Queue[str] = queue.Queue()
+        self._outbox: queue.Queue[Notice] = queue.Queue()
         threading.Thread(target=self._work, daemon=True, name="telegram").start()
 
-    def send(self, text: str) -> None:
-        self._outbox.put(text)
+    def send(self, notice: Notice) -> None:
+        self._outbox.put(notice)
 
     def _work(self) -> None:
         while True:
-            text = self._outbox.get()
+            notice = self._outbox.get()
             try:
-                answer = self._post(self._url, json={"chat_id": self._chat, "text": text},
-                                    timeout=15)
+                answer = self._post(self._url, timeout=15, json={
+                    "chat_id": self._chat, "text": notice.html, "parse_mode": "HTML"})
+                if answer.status_code == 400:
+                    # Telegram could not make sense of the formatting: better plain than not.
+                    answer = self._post(self._url, timeout=15, json={
+                        "chat_id": self._chat, "text": notice.text})
                 if answer.status_code >= 400:
                     # Never the address: the bot's key is part of it.
                     log.warning("a notice was not delivered: Telegram answered %s",
