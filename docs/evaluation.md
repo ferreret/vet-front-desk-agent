@@ -257,6 +257,11 @@ What it found the first time it ran:
   too. A forthcoming caller says "Visc a Pinar del Mar", where "visc" settles it, so 82
   calls had never shown it. 29 of the 82 scenarios have a town with "del" in its name.
   Both "del" and "al" are off the list.
+- **A name spelled out did the same.** Found while checking something else by text the
+  same day: "V-I-D-A-L" turned a Spanish call into Catalan, because "i" is a Catalan word
+  and "y" a Spanish one, and both are letters. Neither counts any more. Checked against
+  the 3,413 caller lines of every stored run: the 12 lines read as the other language are
+  callers who did speak the other language.
 - **The simulated caller needed its lines given.** Told to say what it wanted "without the
   animal", it said "Vull una cita per al Kiko" or "para mi perro" in fifteen bookings of
   fifteen. Its answer

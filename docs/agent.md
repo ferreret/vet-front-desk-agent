@@ -71,6 +71,11 @@ hand anywhere else. Loading it fails if a placeholder or an empty value is left 
 phone number is malformed, or if the seasonal opening hours leave a day of the year
 uncovered or covered twice.
 
+The same file sets how soon an appointment can be given (`min_notice_minutes`, 60 for the
+demo clinic). On a voice call of 2026-10-06 the agent offered a time that began three
+minutes later. The agenda no longer hands out, books or moves an appointment to a time
+closer than that, so the model has nothing too soon to offer.
+
 ## Any provider
 
 The agent never imports a provider SDK. It talks to
