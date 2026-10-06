@@ -73,6 +73,9 @@ class Line:
                  clock: Callable[[], float] = time.monotonic) -> None:
         self.call = call
         self._clock = clock
+        # The language the platform is listening in, for a platform that listens in one
+        # language at a time and can be told to change. None: not known, or not its way.
+        self.listening_in: str | None = None
         # Seconds of nothing said before the waiting phrase is. None: never, for a platform
         # that fills its own silences.
         self.patience = patience

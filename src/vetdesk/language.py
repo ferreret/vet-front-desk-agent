@@ -37,6 +37,8 @@ _TELLING = {language: words - frozenset().union(*(other for name, other in _TELL
                                                  if name != language))
             for language, words in _TELLING.items()}
 _WORD = re.compile(r"[^\W\d_]+")
+# The languages this module can tell apart, which are the ones the agent speaks.
+SPOKEN = tuple(_TELLING)
 
 
 def spoken_language(text: str) -> str | None:

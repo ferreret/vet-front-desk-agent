@@ -19,11 +19,20 @@ tell this address which call a request belongs to and who is calling:
 
 The address has to be reachable from the internet, so every request must carry the key in
 VETDESK_ENDPOINT_KEY as a bearer token. Without the key nothing is answered.
+
+The platform listens in one language at a time. Set to Spanish, its recogniser wrote a
+caller's Catalan as Spanish ("dos quarts de cinc" arrived as "a dos cuartos de cinco"), and
+the agent, reading Spanish, answered in Spanish. It offers a tool to change the language it
+listens and speaks in, meant for its own model to call. Here the language is worked out in
+code from the caller's words, so it is this address that calls it: the first line that
+tells another language is answered with that tool call and nothing else, the platform
+changes language and asks again, and then it gets the answer.
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hashlib
 import hmac
 import json
@@ -42,6 +51,7 @@ from ..agent import FrontDeskAgent
 from ..agent.agent import Call, Turn
 from ..evals.cost import cost
 from ..kb import load_kb
+from ..language import SPOKEN, spoken_language
 from ..legacy import LegacySqliteSource
 from ..legacy.normalize import parse_phones
 from ..llm import create_client
@@ -56,6 +66,9 @@ IDLE_SECONDS = 30 * 60  # a call nobody has asked about for this long is over
 # anywhere in it, under names nothing else would use.
 _CONVERSATION = re.compile(r"vetdesk-conversation:\s*(\S+)")
 _CALLER = re.compile(r"vetdesk-caller:[ \t]*([+\d][\d ()-]*)?")
+# The platform's tool for changing the language it listens and speaks in, and the language
+# its agent is set up to start in (see `elevenlabs_agent`).
+LANGUAGE_TOOL, FIRST_LANGUAGE = "language_detection", "es"
 
 
 def _text(content) -> str:
@@ -98,10 +111,27 @@ class Switchboard:
             # is sent until more text follows, so the phrase never covered a wait: it was
             # spoken with the answer, in front of it. The platform's own filler does the
             # job (the soft timeout set in `elevenlabs_agent`).
-            self._lines[conversation] = (Line(self._start_call(number), patience=None), now)
+            line = Line(self._start_call(number), patience=None)
+            line.listening_in = FIRST_LANGUAGE
+            self._lines[conversation] = (line, now)
         line, _ = self._lines[conversation]
         self._lines[conversation] = (line, now)
         return line
+
+
+def _change_of_language(body: dict, messages: list[dict], line: Line) -> str | None:
+    """The language to tell the platform to change to before this line is answered."""
+    offered = any((tool.get("function") or {}).get("name") == LANGUAGE_TOOL
+                  for tool in body.get("tools") or [] if isinstance(tool, dict))
+    if not offered or messages[-1].get("role") != "user":
+        return None  # no such tool, or it has just been used and the answer is due
+    spoken = spoken_language(_text(messages[-1].get("content")))
+    return spoken if spoken in SPOKEN and spoken != line.listening_in else None
+
+
+async def _run(pieces) -> None:
+    async for _ in pieces:
+        pass
 
 
 def _chunk(request_id: str, model: str, delta: dict, finish: str | None = None) -> bytes:
@@ -113,6 +143,7 @@ def _chunk(request_id: str, model: str, delta: dict, finish: str | None = None) 
 def build_app(switchboard: Switchboard, key: str, model: str = "") -> web.Application:
     """`model` is the agent's own model, named only to put a price on each answer."""
     agent_model = model
+    waiting: set[asyncio.Future] = set()  # answers being worked out for a request to come
 
     def spent(turn: Turn) -> None:
         usage, price = turn.usage, cost(agent_model, turn.usage)
@@ -144,7 +175,29 @@ def build_app(switchboard: Switchboard, key: str, model: str = "") -> web.Applic
             await response.write(_chunk(request_id, model, {"role": "assistant", "content": ""}))
             if not said:  # asked to open the call: the agent's own greeting
                 await response.write(_chunk(request_id, model, {"content": line.call.greeting}))
+            elif language := _change_of_language(body, messages, line):
+                # Tell the platform first, and say nothing: it changes language and asks
+                # again. The answer is worked out meanwhile, so it is ready when it does.
+                log.info("caller: %s", said[-1])
+                log.info("the caller speaks %s and the platform listens in %s: told to change",
+                         language, line.listening_in)
+                line.listening_in = language
+                waiting.add(task := asyncio.ensure_future(
+                    _run(line.answer(said[-1], on_turn=spent, turn=len(said)))))
+                task.add_done_callback(waiting.discard)
+                arguments = json.dumps({"reason": "the caller is speaking this language",
+                                        "language": language})
+                call = {"index": 0, "id": "call_" + secrets.token_hex(8), "type": "function",
+                        "function": {"name": LANGUAGE_TOOL, "arguments": arguments}}
+                await response.write(_chunk(request_id, model, {"tool_calls": [call]}))
+                await response.write(_chunk(request_id, model, {}, "tool_calls"))
+                await response.write(b"data: [DONE]\n\n")
+                await response.write_eof()
+                return response
             else:
+                if messages[-1].get("role") == "tool":
+                    log.info("the platform answered the change of language: %s",
+                             _text(messages[-1].get("content"))[:200])
                 log.info("caller: %s", said[-1])
                 answer, first = [], None
                 async for piece in line.answer(said[-1], on_turn=spent, turn=len(said)):

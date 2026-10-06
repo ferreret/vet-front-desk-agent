@@ -50,15 +50,16 @@ def _messages(*said, caller="", prompt=PROMPT):
     return messages
 
 
-def _ask(app, *requests, key=KEY):
+def _ask(app, *requests, key=KEY, tools=None):
     """Send chat requests one after another; the text and status of each answer."""
     async def run():
         async with TestClient(TestServer(app)) as client:
             answers = []
             for messages in requests:
                 response = await client.post(
-                    "/v1/chat/completions", json={"model": "x", "stream": True,
-                                                  "messages": messages},
+                    "/v1/chat/completions",
+                    json={"model": "x", "stream": True, "messages": messages,
+                          **({"tools": tools} if tools else {})},
                     headers={"Authorization": f"Bearer {key}"} if key else {})
                 answers.append((response.status, response.headers.get("Content-Type"),
                                 await response.text()))
@@ -143,6 +144,67 @@ def test_a_line_sent_again_after_a_tool_ran_is_not_run_again(clinic, kb):
     assert len(model.transcript.tool_results) == 1
 
 
+CHANGE_LANGUAGE = [{"type": "function", "function": {
+    "name": "language_detection", "description": "Change the conversation language.",
+    "parameters": {"type": "object", "properties": {"reason": {"type": "string"},
+                                                    "language": {"type": "string"}}}}}]
+
+
+def _tool_call(stream: str) -> dict | None:
+    """The tool call an answer consists of, if it is one: (name, arguments), no words."""
+    chunks = [json.loads(line[6:]) for line in stream.splitlines()
+              if line.startswith("data: ") and line != "data: [DONE]"]
+    calls = [call for chunk in chunks
+             for call in chunk["choices"][0]["delta"].get("tool_calls", [])]
+    if not calls:
+        return None
+    assert chunks[-1]["choices"][0]["finish_reason"] == "tool_calls"
+    assert not any(chunk["choices"][0]["delta"].get("content") for chunk in chunks)
+    (call,) = calls
+    return {"name": call["function"]["name"], **json.loads(call["function"]["arguments"])}
+
+
+def test_the_platform_is_told_to_listen_in_the_callers_language(clinic, kb):
+    """Set to Spanish, the platform's recogniser wrote a caller's Catalan as Spanish. The
+    first line that tells Catalan is answered with the platform's own tool for changing
+    language and nothing else; it changes, asks again, and gets the answer then."""
+    steps = [Reply("Bon dia. En què el puc ajudar?"), Reply("Digui'm el nom."),
+             Reply("¿Me dice su nombre?")]
+    model, _, app = _front_desk(steps, clinic, kb)
+    hello = _messages("Hola, bon dia.")
+    told = [*hello,
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "call_1"}]},
+            {"role": "tool", "tool_call_id": "call_1", "content": "Language changed to ca"}]
+    later = [*told, {"role": "assistant", "content": "Bon dia."},
+             {"role": "user", "content": "Vull una cita."}]
+    back = [*later, {"role": "assistant", "content": "Digui'm el nom."},
+            {"role": "user", "content": "Quiero una cita para mi perro, por favor."}]
+    answers = [stream for _, _, stream in _ask(app, hello, told, later, back, back,
+                                               tools=CHANGE_LANGUAGE)]
+    assert _tool_call(answers[0])["name"] == "language_detection"
+    assert _tool_call(answers[0])["language"] == "ca"
+    assert _spoken(answers[1]) == "Bon dia. En què el puc ajudar?"  # worked out meanwhile
+    assert _tool_call(answers[2]) is None and _spoken(answers[2]) == "Digui'm el nom."
+    # The caller goes over to Spanish: the platform is told again, and asked again answers.
+    assert _tool_call(answers[3])["language"] == "es"
+    assert _tool_call(answers[4]) is None and _spoken(answers[4]) == "¿Me dice su nombre?"
+    assert len(model.transcript.user_messages) == 3  # each line reached the model once
+
+
+def test_a_platform_without_the_tool_is_told_nothing(clinic, kb):
+    model, _, app = _front_desk([Reply("Bon dia.")], clinic, kb)
+    (_, _, stream), = _ask(app, _messages("Hola, bon dia."))
+    assert _tool_call(stream) is None and _spoken(stream) == "Bon dia."
+
+
+def test_a_line_in_the_language_being_listened_in_changes_nothing(clinic, kb):
+    model, _, app = _front_desk([Reply("Dígame."), Reply("¿Su nombre?")], clinic, kb)
+    answers = _ask(app, _messages("Hola, buenos días."),
+                   _messages("Hola, buenos días.", "Joan Feliu Plana."), tools=CHANGE_LANGUAGE)
+    assert [_tool_call(stream) for _, _, stream in answers] == [None, None]
+    assert [_spoken(stream) for _, _, stream in answers] == ["Dígame.", "¿Su nombre?"]
+
+
 def test_two_conversations_are_two_calls(clinic, kb):
     model, calls, app = _front_desk([Reply("Dígame."), Reply("Digui.")], clinic, kb)
     other = _messages("Bon dia", prompt="vetdesk-conversation: conv_456\nvetdesk-caller: {caller}")
@@ -201,3 +263,17 @@ def test_the_platform_is_asked_to_fill_long_waits_itself(monkeypatch):
     assert turn["soft_timeout_config"] == {"timeout_seconds": 2.0, "message": "Mmm...",
                                            "use_llm_generated_message": False}
     assert turn["speculative_turn"] is False
+
+
+def test_the_platform_agent_can_be_told_to_change_language(monkeypatch):
+    """It starts in Spanish and holds the other languages, so that our address can tell it
+    which one to listen in. Its own model decides nothing: no model of theirs is used."""
+    from vetdesk.voice.elevenlabs_agent import config
+
+    monkeypatch.setenv("VETDESK_TTS_VOICE", "voice")
+    monkeypatch.delenv("VETDESK_LANGUAGES", raising=False)
+    settings = config("https://example.test", "secret")["conversation_config"]
+    assert settings["agent"]["language"] == "es"
+    assert list(settings["language_presets"]) == ["ca", "en", "de", "ru"]
+    tools = settings["agent"]["prompt"]["built_in_tools"]
+    assert tools["language_detection"]["params"]["system_tool_type"] == "language_detection"

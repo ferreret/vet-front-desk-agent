@@ -61,9 +61,25 @@ def config(url: str, secret_id: str) -> dict:
                     "llm": "custom-llm",
                     "custom_llm": {"url": url.rstrip("/") + "/v1", "model_id": "vetdesk",
                                    "api_key": {"secret_id": secret_id}},
+                    # The platform's tool for changing the language it listens and speaks
+                    # in. It is meant for the platform's model; here our address calls it,
+                    # when the caller's words tell another language (see `endpoint`).
+                    "built_in_tools": {"language_detection": {
+                        "type": "system", "name": "language_detection",
+                        "params": {"system_tool_type": "language_detection",
+                                   "only_at_conversation_start": False},
+                    }},
                 },
                 "first_message": f"Clínica veterinaria {kb.clinic.name}, dígame.",
                 "language": "es",
+            },
+            # The phone is answered in Spanish. The other languages are the ones the
+            # platform may be told to change to: without them its recogniser, set to
+            # Spanish, writes whatever it hears as Spanish. The clinic is on a tourist
+            # coast: Catalan, and the visitors' languages.
+            "language_presets": {
+                code.strip(): {"overrides": {}}
+                for code in os.environ.get("VETDESK_LANGUAGES", "ca,en,de,ru").split(",")
             },
             "tts": {
                 "voice_id": os.environ["VETDESK_TTS_VOICE"],
