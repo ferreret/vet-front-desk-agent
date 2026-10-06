@@ -100,6 +100,30 @@ def test_the_callers_number_reaches_the_agent(clinic, kb):
     assert calls == ["+34618065507"] and "+34618065507" in model.transcript.context
 
 
+def test_a_real_phone_can_stand_in_for_one_of_the_made_up_clinics(clinic, kb):
+    """Nobody's real phone is on file in an invented clinic. To try the usual call by voice,
+    the server is told which real number calls as which of the clinic's."""
+    from vetdesk.voice.endpoint import Switchboard, stand_ins
+
+    assert stand_ins("") == {}
+    pairs = stand_ins("600 111 222 = +34 612 000 001, 0034600333444=612000002")
+    assert pairs == {"+34600111222": "+34612000001", "+34600333444": "+34612000002"}
+    with pytest.raises(SystemExit):
+        stand_ins("600111222")
+    model = ScriptedClient([Reply("Dígame.")])
+    agent = FrontDeskAgent(model, clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW)
+    calls = []
+
+    def start_call(number):
+        calls.append(number)
+        return agent.start_call(number)
+
+    app = build_app(Switchboard(start_call, stand_ins=pairs), KEY)
+    _ask(app, _messages("Hola", caller="34600111222"))
+    assert calls == ["+34612000001"] and "+34612000001" in model.transcript.context
+    assert "600111222" not in model.transcript.context  # the real number goes no further
+
+
 def test_one_conversation_is_one_call_however_often_it_is_resent(clinic, kb):
     """The platform sends the whole conversation every time; the agent keeps its own."""
     steps = [Reply("¿Para qué animal?"), Reply("", (LOOKUP,), "tool_calls"),

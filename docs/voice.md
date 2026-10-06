@@ -201,6 +201,16 @@ if the first answer ran no tool, it is taken back (the model's conversation is r
 and the line answered as now written; if it ran one, the booking stands and the answer
 already given is repeated.
 
+### Trying the usual call by voice
+
+The usual call is from a phone on the caller's own record: nine in ten such callers have
+only to say their name. It cannot be tried from the platform's test panel, where the number
+always arrives hidden, and with a real phone line there is a second obstacle: every record
+in the clinic is invented, so nobody's real phone is on file. The server takes a setting,
+`VETDESK_CALLER_STANDS_IN_FOR`, that says which real number calls as which of the clinic's
+("real=clinic's"). The real number lives in the server's settings and nowhere in this
+repository; the agent never sees it, and the records stay made up.
+
 ## Two ways to carry the voice
 
 The first call with a microphone made one thing plain: the hard part of a voice line is

@@ -61,6 +61,7 @@ from .bridge import Line
 log = logging.getLogger("vetdesk.endpoint")
 
 KEY_NAME = "VETDESK_ENDPOINT_KEY"
+STAND_INS = "VETDESK_CALLER_STANDS_IN_FOR"
 IDLE_SECONDS = 30 * 60  # a call nobody has asked about for this long is over
 # ElevenLabs wraps the agent's prompt in text of its own, so the two markers are looked for
 # anywhere in it, under names nothing else would use.
@@ -82,9 +83,12 @@ class Switchboard:
     """Which call each request belongs to. One `Line` per conversation."""
 
     def __init__(self, start_call: Callable[[str | None], Call],
-                 clock: Callable[[], float] = time.monotonic) -> None:
+                 clock: Callable[[], float] = time.monotonic,
+                 stand_ins: dict[str, str] | None = None) -> None:
         self._start_call, self._clock = start_call, clock
         self._lines: dict[str, tuple[Line, float]] = {}
+        # Real numbers that call as a number of the made-up clinic: see `stand_ins`.
+        self._stand_ins = stand_ins or {}
 
     def line(self, messages: list[dict]) -> Line:
         system = " \n".join(_text(m.get("content")) for m in messages if m.get("role") == "system")
@@ -103,7 +107,11 @@ class Switchboard:
             caller = _CALLER.search(system)
             numbers, _ = parse_phones((caller.group(1) if caller else "") or "")
             number = numbers[0] if numbers else None
-            log.info("call %s from %s", conversation, number or "a hidden number")
+            if number in self._stand_ins:
+                number = self._stand_ins[number]
+                log.info("call %s from a number that stands in for %s", conversation, number)
+            else:
+                log.info("call %s from %s", conversation, number or "a hidden number")
             if not found:
                 log.info("no conversation id in what the platform sent as system text: %r",
                          system)
@@ -132,6 +140,24 @@ def _change_of_language(body: dict, messages: list[dict], line: Line) -> str | N
 async def _run(pieces) -> None:
     async for _ in pieces:
         pass
+
+
+def stand_ins(setting: str) -> dict[str, str]:
+    """Real phone numbers that are to count as numbers of the made-up clinic.
+
+    Every record in the clinic is invented, so nobody's real phone is on file, and the
+    usual call (from the number on one's record) could never be tried by voice. A setting
+    on the server, never in this repository, says which real number calls as which of the
+    clinic's: "real=clinic's, real=clinic's". The records stay made up.
+    """
+    pairs = {}
+    for pair in filter(None, (part.strip() for part in setting.split(","))):
+        real, _, pretend = pair.partition("=")
+        (real_numbers, _), (pretend_numbers, _) = parse_phones(real), parse_phones(pretend)
+        if not real_numbers or not pretend_numbers:
+            raise SystemExit(f"{STAND_INS} holds something that is not 'number=number'")
+        pairs[real_numbers[0]] = pretend_numbers[0]
+    return pairs
 
 
 def _chunk(request_id: str, model: str, delta: dict, finish: str | None = None) -> bytes:
@@ -263,7 +289,9 @@ def main() -> None:
     clinic = LegacySqliteSource(args.data / "clinic.db").load()
     llm = create_client()
     front_desk = FrontDeskAgent(llm, clinic, kb, SqliteAgenda(kb, datetime.now))
-    app = build_app(Switchboard(front_desk.start_call), key, getattr(llm, "model", ""))
+    switchboard = Switchboard(front_desk.start_call,
+                              stand_ins=stand_ins(os.environ.get(STAND_INS, "")))
+    app = build_app(switchboard, key, getattr(llm, "model", ""))
     print(f"The front desk answers at http://{args.host}:{args.port}/v1/chat/completions")
     web.run_app(app, host=args.host, port=args.port, print=None)
 
