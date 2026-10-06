@@ -10,10 +10,14 @@ No voice library is imported here, so it is tested without one.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
+import time
 from collections.abc import AsyncIterator, Callable
 
 from ..agent.agent import Call, Turn
+
+log = logging.getLogger("vetdesk.voice")
 
 # Said when the caller has been waiting a while and has heard nothing: on the phone, silence
 # is a dead line. By the clock, not by what the agent is doing. Said before every tool, a
@@ -51,11 +55,22 @@ def language_of(code: str | None) -> str:
     return _CODES.get((code or "").lower().split("-")[0], "es")
 
 
+# A recogniser goes on listening after it has handed a line over, and a moment later may
+# hand the same line over again, written differently: "Once i mitja." and then "Once y
+# media."; "655623964." and then the nine digits as words. The platform drops the answer
+# it was getting and asks again. Seen in four turns of ten on a call in Catalan, 0.4 to
+# 1.0 seconds apart. Asked for the same turn again within this many seconds, the words are
+# the same line heard twice, however they are written.
+HEARD_AGAIN_WITHIN = 3.0
+
+
 class Line:
     """One call on a voice line. It answers one thing at a time, and each thing once."""
 
-    def __init__(self, call: Call, patience: float | None = WAIT_BEFORE_PHRASE) -> None:
+    def __init__(self, call: Call, patience: float | None = WAIT_BEFORE_PHRASE,
+                 clock: Callable[[], float] = time.monotonic) -> None:
         self.call = call
+        self._clock = clock
         # Seconds of nothing said before the waiting phrase is. None: never, for a platform
         # that fills its own silences.
         self.patience = patience
@@ -66,8 +81,9 @@ class Line:
         # What was heard and answered in each numbered turn. Voice platforms ask again for
         # an answer they already have: after an interruption, on a retry, or because they
         # resend the whole conversation with every request. Answering twice would run the
-        # tools twice, and a booking is not something to make twice.
-        self._answered: dict[int, tuple[str, list[str]]] = {}
+        # tools twice, and a booking is not something to make twice. With the moment each
+        # was first asked for, to tell a line heard again from a new one.
+        self._answered: dict[int, tuple[str, list[str], float]] = {}
 
     async def answer(
         self,
@@ -80,6 +96,9 @@ class Line:
 
         `turn` numbers the caller's lines, when the platform can tell: asked again for the
         same line of the same turn, the agent repeats what it said instead of redoing it.
+        The same turn written differently a moment later is the same line heard again (see
+        `HEARD_AGAIN_WITHIN`): answered as a new line, the agent took "Once y media" for a
+        caller who had not answered the question it had just asked about "Once i mitja".
 
         `language` is for a platform that reports what its recogniser heard. Without it the
         stock phrases follow the language the call itself has worked out from the caller's
@@ -105,13 +124,18 @@ class Line:
 
         await self._busy.acquire()
         before = self._answered.get(turn) if turn is not None else None
-        if before is not None and before[0] == heard:
+        again = before is not None and (
+            before[0] == heard or self._clock() - before[2] <= HEARD_AGAIN_WITHIN)
+        if again:
             self._busy.release()
+            if before[0] != heard:
+                log.info("turn %d heard again as %r: answered as first heard, %r",
+                         turn, heard, before[0])
             for piece in before[1]:
                 yield piece
             return
         if turn is not None:
-            self._answered[turn] = (heard, said)
+            self._answered[turn] = (heard, said, self._clock())
         # Released when the turn ends, not when the listener leaves: an interrupted answer
         # stops being heard at once, but its turn runs on to keep the conversation whole.
         loop.run_in_executor(None, work).add_done_callback(lambda _: self._busy.release())

@@ -124,6 +124,15 @@ def test_a_line_asked_for_twice_is_answered_once(clinic, kb):
     assert len(model.transcript.tool_results) == 1
 
 
+def test_a_line_sent_again_in_other_words_is_answered_once(clinic, kb):
+    """The platform's recogniser rewrites a line it has just sent and asks again: the same
+    place in the conversation, other words. It is one line, and it is answered once."""
+    model, _, app = _front_desk([Reply("¿Me dice su teléfono?")], clinic, kb)
+    answers = _ask(app, _messages("Once i mitja."), _messages("Once y media."))
+    assert _spoken(answers[0][2]) == _spoken(answers[1][2]) == "¿Me dice su teléfono?"
+    assert model.transcript.user_messages == ["Once i mitja."]
+
+
 def test_two_conversations_are_two_calls(clinic, kb):
     model, calls, app = _front_desk([Reply("Dígame."), Reply("Digui.")], clinic, kb)
     other = _messages("Bon dia", prompt="vetdesk-conversation: conv_456\nvetdesk-caller: {caller}")

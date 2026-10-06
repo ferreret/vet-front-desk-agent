@@ -131,6 +131,44 @@ def test_an_answer_asked_for_again_repeats_the_waiting_phrase_it_was_given(clini
     assert first == again == [WAITING["es"] + " ", "Tengo el lunes."]
 
 
+def test_a_line_heard_again_a_moment_later_is_the_same_line(clinic, kb):
+    """Heard on a call in Catalan: the recogniser handed "Once i mitja." over, then "Once y
+    media." half a second later. Answered as two lines, the agent asked for the phone and
+    then scolded the caller for not giving it."""
+    model = ScriptedClient([Reply("¿Me dice su teléfono?"), Reply("Reservado.")])
+    now = [100.0]
+    line = Line(_call(model, clinic, kb), patience=None, clock=lambda: now[0])
+
+    async def call():
+        first = [piece async for piece in line.answer("Once i mitja.", turn=4)]
+        now[0] += 0.9
+        again = [piece async for piece in line.answer("Once y media.", turn=4)]
+        now[0] += 0.4
+        third = [piece async for piece in line.answer("Once i mitja.", turn=4)]
+        now[0] += 8
+        following = [piece async for piece in line.answer("655 623 964.", turn=5)]
+        return first, again, third, following
+
+    first, again, third, following = asyncio.run(call())
+    assert first == again == third == ["¿Me dice su teléfono?"]
+    assert following == ["Reservado."]
+    assert model.transcript.user_messages == ["Once i mitja.", "655 623 964."]
+
+
+def test_other_words_for_the_same_turn_long_after_are_a_new_line(clinic, kb):
+    """Only a moment makes it the same line: a turn number met again later is not trusted."""
+    model = ScriptedClient([Reply("Dígame."), Reply("Abrimos a las diez.")])
+    now = [100.0]
+    line = Line(_call(model, clinic, kb), patience=None, clock=lambda: now[0])
+
+    async def call():
+        first = [piece async for piece in line.answer("Hola.", turn=1)]
+        now[0] += 10
+        return first, [piece async for piece in line.answer("¿A qué hora abrís?", turn=1)]
+
+    assert asyncio.run(call()) == (["Dígame."], ["Abrimos a las diez."])
+
+
 def test_a_broken_model_does_not_leave_the_caller_in_silence(clinic, kb):
     def fails(transcript):
         raise LLMError("529: overloaded", retryable=True)
