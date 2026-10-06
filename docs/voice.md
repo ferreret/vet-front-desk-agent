@@ -211,6 +211,27 @@ in the clinic is invented, so nobody's real phone is on file. The server takes a
 ("real=clinic's"). The real number lives in the server's settings and nowhere in this
 repository; the agent never sees it, and the records stay made up.
 
+### The appointments, where the clinic can see them
+
+The agenda the agent books into lives in the server's memory: nobody could look at it, and
+every deployment emptied it. The voice server can keep it in a Google Calendar as well
+([`google_calendar.py`](../src/vetdesk/scheduling/google_calendar.py)), when
+`VETDESK_GOOGLE_CALENDAR` and `VETDESK_GOOGLE_KEY` are set:
+
+- An appointment booked, moved or cancelled on a call shows up in the calendar: the animal
+  and the reason as the title, "(sin verificar)" when the caller could not be confirmed,
+  and whose it is in the description.
+- When the server starts it reads back the appointments still to come, so a restart loses
+  nothing.
+- The agenda stays the one the agent asks. The calendar is written to afterwards, on a
+  worker thread: a slow or failing calendar makes no caller wait and fails no booking.
+- One way only. An event deleted by hand in the calendar is still an appointment for the
+  agent until the server restarts. Only events it made itself are ever read or changed.
+
+Access is a Google service account that the calendar is shared with; nobody signs in. The
+calendar's account and the key live in the server's settings and nowhere in this
+repository.
+
 ## Two ways to carry the voice
 
 The first call with a microphone made one thing plain: the hard part of a voice line is

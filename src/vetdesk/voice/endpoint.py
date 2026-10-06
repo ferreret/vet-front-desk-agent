@@ -55,7 +55,9 @@ from ..language import SPOKEN
 from ..legacy import LegacySqliteSource
 from ..legacy.normalize import parse_phones
 from ..llm import create_client
-from ..scheduling import SqliteAgenda
+from ..scheduling import Appointment, SqliteAgenda
+from ..scheduling.google_calendar import CALENDAR, GoogleCalendar, MirroredAgenda, session_from
+from ..scheduling.google_calendar import KEY as CALENDAR_KEY
 from .bridge import Line
 
 log = logging.getLogger("vetdesk.endpoint")
@@ -274,6 +276,29 @@ def _key(host: str, path: Path = Path(".env")) -> str:
     return os.environ[KEY_NAME]
 
 
+def _agenda(kb, clinic):
+    """The appointment book: in memory, and kept in a calendar as well when one is set."""
+    agenda = SqliteAgenda(kb, datetime.now)
+    calendar_id, key = os.environ.get(CALENDAR), os.environ.get(CALENDAR_KEY)
+    if not (calendar_id and key):
+        return agenda
+
+    def who(appointment: Appointment) -> str:
+        client = clinic.clients.get(appointment.client_code)
+        if client is not None:
+            return f"Cliente: {client.raw_name}"
+        return f"Sin verificar: {appointment.contact_name}, {appointment.contact_phone}"
+
+    calendar = GoogleCalendar(calendar_id, session_from(key), kb.appointments.slot_minutes)
+    mirrored = MirroredAgenda(agenda, calendar, who)
+    try:
+        log.info("appointments are kept in a calendar: %d still to come were read back",
+                 mirrored.restore(datetime.now()))
+    except Exception as error:  # a calendar that cannot be read must not stop the phone
+        log.warning("the calendar could not be read; starting with an empty agenda: %s", error)
+    return mirrored
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="vetdesk.voice.endpoint", description=__doc__)
     parser.add_argument("--data", type=Path, default=Path(os.environ.get("VETDESK_DATA", "data")))
@@ -288,7 +313,7 @@ def main() -> None:
     kb = load_kb()
     clinic = LegacySqliteSource(args.data / "clinic.db").load()
     llm = create_client()
-    front_desk = FrontDeskAgent(llm, clinic, kb, SqliteAgenda(kb, datetime.now))
+    front_desk = FrontDeskAgent(llm, clinic, kb, _agenda(kb, clinic))
     switchboard = Switchboard(front_desk.start_call,
                               stand_ins=stand_ins(os.environ.get(STAND_INS, "")))
     app = build_app(switchboard, key, getattr(llm, "model", ""))
