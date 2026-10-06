@@ -90,6 +90,9 @@ def config(url: str, secret_id: str) -> dict:
             # answers have effects (a booking), so it is asked only when the turn is over.
             "turn": {
                 "turn_timeout": 7, "turn_eagerness": "normal", "speculative_turn": False,
+                # Our address can say goodbye to a silent line; only the platform can hang
+                # up. Without this a call nobody is on stays open, and is paid for.
+                "silence_end_call_timeout": float(os.environ.get("VETDESK_HANG_UP_AFTER", "30")),
                 # When our address takes longer than this to answer, the platform says the
                 # filler itself, at once. A phrase sent from our side was held back until
                 # the answer came (measured on three calls), so it covered nothing. The

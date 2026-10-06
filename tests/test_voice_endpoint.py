@@ -263,6 +263,7 @@ def test_the_platform_is_asked_to_fill_long_waits_itself(monkeypatch):
     assert turn["soft_timeout_config"] == {"timeout_seconds": 2.0, "message": "Mmm...",
                                            "use_llm_generated_message": False}
     assert turn["speculative_turn"] is False
+    assert turn["silence_end_call_timeout"] == 30.0  # a line nobody is on is hung up
 
 
 def test_the_platform_agent_can_be_told_to_change_language(monkeypatch):
