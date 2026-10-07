@@ -161,7 +161,7 @@ def report(voice: list[VoiceCall], model: list[ModelCall], today: datetime, *,
            model_name: str = "", calls_per_month: tuple[int, ...] = (300, 1000, 3000),
            minutes: float | None = None, phone_per_minute: float | None = None,
            fixed_per_month: float | None = None, fixed_is: str = "",
-           tariff: tuple[Plan, ...] = ()) -> str:
+           tariff: tuple[Plan, ...] = (), tariff_is: str = "") -> str:
     """The report, in Markdown and in Spanish: it is for whoever decides on the money."""
     out = [f"# Lo que cuesta la centralita — {today:%d/%m/%Y}", ""]
     spoken = [call for call in voice if call.seconds > 0]
@@ -300,8 +300,9 @@ def report(voice: list[VoiceCall], model: list[ModelCall], today: datetime, *,
                 "al mes que cubre unos minutos, y un precio por cada minuto de más. Las "
                 "llamadas hechas hasta hoy se han cobrado de otra manera, "
                 f"{_n(credits_a_minute, 0)} créditos por minuto, que la propia plataforma "
-                f"valora en {_usd(per_minute, 4)} por minuto. **No se sabe cuál de las dos "
-                "cuentas manda en la factura: la real estará entre las dos.**", ""]
+                f"valora en {_usd(per_minute, 4)} por minuto. "
+                + (tariff_is or "**No se sabe cuál de las dos cuentas manda en la factura: "
+                                "la real estará entre las dos.**"), ""]
         out += _table(("Plan", "Cuota al mes", "Minutos que cubre", "Minuto de más"),
                       [(plan.name, _usd(plan.per_month), _n(plan.minutes, 0),
                         _usd(plan.extra_per_minute)) for plan in tariff])

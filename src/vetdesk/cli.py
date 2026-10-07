@@ -229,6 +229,11 @@ def _costs(args: argparse.Namespace) -> int:
               file=sys.stderr)
         return 1
     voice = voice_calls(key, agent, cache=args.data / "costs" / "elevenlabs.json")
+    if demo_agent := os.environ.get("VETDESK_ELEVENLABS_DEMO_AGENT_ID"):
+        # The public demo has an agent of its own on the platform: its calls are calls too.
+        voice = sorted(voice + voice_calls(key, demo_agent,
+                                           cache=args.data / "costs" / "elevenlabs.json"),
+                       key=lambda call: call.started)
     server = args.server or os.environ.get("VETDESK_SERVER")
     admin = os.environ.get("VETDESK_ADMIN_KEY")
     model = []
@@ -247,7 +252,7 @@ def _costs(args: argparse.Namespace) -> int:
                   calls_per_month=tuple(int(n) for n in args.calls_per_month.split(",")),
                   minutes=args.minutes, phone_per_minute=args.phone_per_minute,
                   fixed_per_month=args.fixed_per_month, fixed_is=args.fixed_is,
-                  tariff=plans(args.voice_tariff))
+                  tariff=plans(args.voice_tariff), tariff_is=args.tariff_is)
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(text, encoding="utf-8")
@@ -576,6 +581,9 @@ def main(argv: list[str] | None = None) -> int:
                        help="the voice platform's published plans, to work the month out "
                             "at them too: name:dollars a month:minutes covered:dollars per "
                             "extra minute, separated by commas")
+    costs.add_argument("--tariff-is", default="",
+                       help="which of the two bills applies to whom, once it is known, "
+                            "written into the report")
     costs.add_argument("--fixed-is", default="",
                        help="what that monthly figure is made of, written into the report")
     costs.add_argument("--out", type=Path, default=None, help="write the report to this file")

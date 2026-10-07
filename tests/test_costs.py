@@ -129,3 +129,8 @@ def test_the_month_is_worked_out_at_the_published_prices_too():
     # 3.000: the bigger plan and 1.900 minutes more at 0,08 $.
     assert "| 3.000 | 3.000 | Pro | 232,00 $ | **272,00 $** | **130,00 $** |" in text
     assert "a la tarifa publicada" not in report(voice, model, TODAY)
+    # Once the platform has said which bill is whose, the report says that instead.
+    known = report(voice, model, TODAY, tariff=tariff, tariff_is="La cuenta de hoy paga lo "
+                   "cobrado; una cuenta nueva, la tarifa.")
+    assert "La cuenta de hoy paga lo cobrado; una cuenta nueva, la tarifa." in known
+    assert "No se sabe cuál" not in known
