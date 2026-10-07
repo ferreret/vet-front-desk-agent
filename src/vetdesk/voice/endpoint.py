@@ -64,13 +64,23 @@ from ..scenario import load_jsonl
 from ..scheduling import AgendaError, Appointment, SqliteAgenda
 from ..scheduling.google_calendar import CALENDAR, GoogleCalendar, MirroredAgenda, session_from
 from ..scheduling.google_calendar import KEY as CALENDAR_KEY
+from ..spoken import say_en, say_es
 from .bridge import TROUBLE, Line, is_goodbye, may_end, silence
 from .call_log import FILE as CALLS_FILE
 from .call_log import KEEP_DAYS as CALLS_KEEP_DAYS
 from .call_log import PAGE as CALLS_PAGE
 from .call_log import CallLog
 from .clinic_file import PAGE, ClinicFile
-from .demo import NO_PASS, TIME_IS_UP, Demo, Full, personas
+from .demo import (
+    NO_PASS,
+    TIME_IS_UP,
+    Demo,
+    Full,
+    Persona,
+    personas,
+    slot_ahead,
+    with_an_appointment,
+)
 from .demo_page import PAGE as DEMO_PAGE
 from .telegram import CHAT as TELEGRAM_CHAT
 from .telegram import TOKEN as TELEGRAM_TOKEN
@@ -137,11 +147,14 @@ class Switchboard:
     def __init__(self, start_call: Callable[[str | None], Call],
                  clock: Callable[[], float] = time.monotonic,
                  stand_ins: dict[str, str] | None = None, demo: Demo | None = None,
-                 start_demo_call: Callable[[str | None], Call] | None = None) -> None:
+                 start_demo_call: Callable[[Persona | None], Call] | None = None) -> None:
         self._start_call, self._clock = start_call, clock
-        # The public demo's passes, and how one of its calls is started: with an
-        # appointment book of its own, so that it touches nothing a real call would.
-        self._demo, self._start_demo_call = demo, start_demo_call or start_call
+        # The public demo's passes, and how one of its calls is started, given who the
+        # visitor calls as (nobody, with no pass): with an appointment book of its own,
+        # so that it touches nothing a real call would.
+        self._demo = demo
+        self._start_demo_call = start_demo_call or (
+            lambda persona: start_call(persona.caller_number if persona else None))
         self._lines: dict[str, tuple[Line, float]] = {}
         # Real numbers that call as a number of the made-up clinic: see `stand_ins`.
         self._stand_ins = stand_ins or {}
@@ -166,8 +179,7 @@ class Switchboard:
             given = self._demo.call(from_demo.group(1)) if self._demo else None
             log.info("call %s from the demo, %s", conversation,
                      f"as '{given.persona.key}'" if given else "with no pass")
-            line = Line(self._start_demo_call(given.persona.caller_number if given else None),
-                        patience=None)
+            line = Line(self._start_demo_call(given.persona if given else None), patience=None)
             line.listening_in, line.name = FIRST_LANGUAGE, conversation
             line.demo = from_demo.group(1) if given else ""
             self._lines[conversation] = (line, now)
@@ -208,11 +220,12 @@ class Desk:
 
     def __init__(self, make: Callable[[KnowledgeBase], FrontDeskAgent], agenda,
                  kb: KnowledgeBase, file: ClinicFile | None = None,
-                 make_demo: Callable[[KnowledgeBase], FrontDeskAgent] | None = None) -> None:
+                 make_demo: Callable[[KnowledgeBase, Persona | None], FrontDeskAgent] | None
+                 = None) -> None:
         self._make, self._agenda, self.file = make, agenda, file
         self._agent = make(kb)
-        # For the public demo: an agent made for one call, with whatever it is made with.
-        self._make_demo, self._kb = make_demo or make, kb
+        # For the public demo: an agent made for one call, as whoever the visitor chose.
+        self._make_demo, self.kb = make_demo or (lambda kb, persona: make(kb)), kb
 
     @property
     def agenda(self):
@@ -222,13 +235,14 @@ class Desk:
     def start_call(self, number: str | None, can_transfer: bool = False) -> Call:
         return self._agent.start_call(number, can_transfer)
 
-    def start_demo_call(self, number: str | None, can_transfer: bool = False) -> Call:
+    def start_demo_call(self, persona: Persona | None) -> Call:
         """A call from the demo's page: never put through to anybody."""
-        return self._make_demo(self._kb).start_call(number)
+        return self._make_demo(self.kb, persona).start_call(
+            persona.caller_number if persona else None)
 
     def replace(self, text: str) -> None:
         kb = self.file.replace(text)  # raises, and changes nothing, if the text is wrong
-        self._agent, self._kb = self._make(kb), kb
+        self._agent, self.kb = self._make(kb), kb
         self._agenda.follow(kb)
 
 
@@ -543,10 +557,18 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
         log.info("appointment %s was cancelled by the clinic", name)
         return web.json_response({"status": "cancelled"})
 
+    def starts_with(persona: Persona) -> dict | None:
+        """The appointment a call as this caller starts with, as the page says it."""
+        start = demo.booked(persona)
+        if start is None:
+            return None
+        return {"pet": persona.pets[0], "es": say_es(start), "en": say_en(start)}
+
     def people() -> dict:
         return {"people": [{"key": p.key, "name": p.name, "town": p.town, "pets": list(p.pets),
                             "phone": spoken_phone(p.caller_number) if p.caller_number else None,
-                            "language": p.language} for p in demo.people.values()],
+                            "language": p.language, "appointment": starts_with(p)}
+                           for p in demo.people.values()],
                 "minutes_left": int(demo.left().total_seconds() // 60),
                 "seconds_a_call": int(demo.limit.total_seconds())}
 
@@ -697,10 +719,20 @@ def main() -> None:
     clinic = LegacySqliteSource(args.data / "clinic.db").load()
     llm = create_client()
     agenda = _agenda(kb, clinic)
-    # A call from the public demo's page gets an appointment book of its own, in memory.
+    # A call from the public demo's page gets an appointment book of its own, in memory,
+    # with an appointment already in it for the caller who rings from their own phone.
+    def for_the_demo(kb: KnowledgeBase, persona: Persona | None) -> FrontDeskAgent:
+        book = SqliteAgenda(kb, datetime.now)
+        with_an_appointment(book, persona, clinic, datetime.now())
+        return FrontDeskAgent(llm, clinic, kb, book)
+
     desk = Desk(lambda kb: FrontDeskAgent(llm, clinic, kb, agenda), agenda, kb, file,
-                lambda kb: FrontDeskAgent(llm, clinic, kb, SqliteAgenda(kb, datetime.now)))
+                for_the_demo)
     demo, sign = _demo(args.data, clinic)
+    if demo is not None:
+        demo.booked = lambda persona: slot_ahead(
+            SqliteAgenda(desk.kb, datetime.now), datetime.now()) \
+            if persona.client_code is not None and persona.pets else None
     switchboard = Switchboard(desk.start_call,
                               stand_ins=stand_ins(os.environ.get(STAND_INS, "")),
                               demo=demo, start_demo_call=desk.start_demo_call)

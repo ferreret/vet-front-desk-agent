@@ -91,6 +91,8 @@ const TEXT = {
   call: "Llamar", hang: "Colgar", lang: "English",
   name: "Te llamas", town: "Vives en", pets: "Tus animales", phone: "Llamas desde",
   hidden: "número oculto", none: "ninguno en la clínica",
+  booked: (pet, when) => `Tienes una cita puesta: ${pet}, ${when}. Prueba a cambiarla o a `
+      + "anularla.",
   own: ["Cliente, desde su teléfono",
       "El número está en tu ficha. Con tu nombre debería bastar."],
   hidden_role: ["Cliente, con número oculto",
@@ -120,6 +122,8 @@ const TEXT = {
   call: "Call", hang: "Hang up", lang: "Español",
   name: "Your name", town: "You live in", pets: "Your animals", phone: "You call from",
   hidden: "a hidden number", none: "none at the clinic",
+  booked: (pet, when) => `You have a visit booked: ${pet}, ${when}. Try moving it or `
+      + "cancelling it.",
   own: ["A client, from their own phone",
       "The number is on your record. Your name should be enough."],
   hidden_role: ["A client, from a hidden number",
@@ -178,6 +182,11 @@ function sheet() {
   what.className = "soft";
   what.textContent = t(ROLE[person.key])[1];
   $("sheet").replaceChildren(what, list);
+  if (person.appointment) {
+    const visit = document.createElement("p");
+    visit.textContent = t("booked")(person.appointment.pet, person.appointment[lang]);
+    $("sheet").append(visit);
+  }
 }
 
 function draw() {

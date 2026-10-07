@@ -386,6 +386,10 @@ and `ELEVEN_API_KEY`); without them its addresses do not exist.
   its higher price for calls beyond the limit).
 - **Nothing real is touched.** A demo call gets an appointment book of its own, reception
   is told nothing, and the call log marks it as the demo's.
+- **One caller starts with an appointment.** Cancelling and moving one is what the 2025
+  pilot could not do, and nobody books an appointment first, in a call of three minutes,
+  to see it changed. Whoever calls from the phone on their record has one already, two
+  days on in the morning, and the page says when.
 - **The page** (`/demo`, `voice/demo_page.py`) is one file with no build step, in Spanish
   and English, and uses the platform's browser library at a fixed version. What is said
   is written on it as text, never as markup.

@@ -24,6 +24,7 @@ from datetime import datetime, timedelta
 from ..identity.resolver import Evidence, IdentityResolver
 from ..legacy.models import Clinic
 from ..scenario import Scenario
+from ..scheduling import Agenda, Appointment
 
 # Who a visitor can call as: the key the page uses, and the kind of test caller it is.
 ROLES = {
@@ -51,6 +52,8 @@ TIME_IS_UP = {
           "свидания.",
 }
 NO_PASS = "Esta demostración no está disponible ahora mismo. Adiós."
+# What the appointment a demo call starts with is for, as reception would have typed it.
+BOOKED_FOR = "Vacunación anual"
 
 
 @dataclass(frozen=True)
@@ -63,6 +66,9 @@ class Persona:
     pets: tuple[str, ...]
     caller_number: str | None  # the number the call is taken as coming from
     language: str
+    # The record the name and the number confirm, for the caller who rings from their own
+    # phone: the one a visitor can have an appointment moved or cancelled as.
+    client_code: int | None = None
 
 
 def _as_the_page_says(key: str, scenario: Scenario, resolver: IdentityResolver) -> bool:
@@ -95,10 +101,39 @@ def personas(scenarios: Iterable[Scenario], clinic: Clinic) -> tuple[Persona, ..
         key = kinds.get(scenario.category)
         if key and key not in found and _as_the_page_says(key, scenario, resolver):
             caller = scenario.caller
+            known = resolver.resolve(Evidence(scenario.call.caller_number, caller.says_name))
             found[key] = Persona(key, caller.says_name, caller.town,
                                  tuple(pet.name for pet in caller.pets),
-                                 scenario.call.caller_number, scenario.language)
+                                 scenario.call.caller_number, scenario.language,
+                                 known.client.code if key == "own" and known.client else None)
     return tuple(found[key] for key in ROLES if key in found)
+
+
+def slot_ahead(agenda: Agenda, now: datetime) -> datetime | None:
+    """The hour of the appointment a demo call starts with: the first free one in the
+    morning, two days on. On an empty book it is the same for the page and for the call."""
+    first = (now + timedelta(days=2)).date()
+    slots = agenda.free_slots(first, first + timedelta(days=10), "morning", limit=1)
+    return slots[0] if slots else None
+
+
+def with_an_appointment(agenda: Agenda, persona: Persona | None, clinic: Clinic,
+                        now: datetime) -> Appointment | None:
+    """Put an appointment on the record of the caller who rings from their own phone.
+
+    Cancelling and moving an appointment is what the 2025 pilot could not do, and a demo
+    call starts with an empty book and lasts three minutes: nobody would book one first to
+    see it changed. So that caller has one already, and the page says when it is.
+    """
+    if persona is None or persona.client_code is None or not persona.pets:
+        return None
+    start = slot_ahead(agenda, now)
+    if start is None:
+        return None
+    animal = next((a for a in clinic.animals_of(persona.client_code)
+                   if a.name == persona.pets[0]), None)
+    return agenda.book(start, BOOKED_FOR, persona.pets[0], client_code=persona.client_code,
+                       animal_code=animal.code if animal else None)
 
 
 class Full(Exception):
@@ -123,8 +158,11 @@ class Demo:
 
     def __init__(self, people: Iterable[Persona], now: Callable[[], datetime] = datetime.now,
                  minutes_a_day: float = 60, minutes_a_call: float = 3,
-                 calls_an_address: int = 6) -> None:
+                 calls_an_address: int = 6,
+                 booked: Callable[[Persona], datetime | None] = lambda persona: None) -> None:
         self.people = {persona.key: persona for persona in people}
+        # When the appointment is that a call as this caller would start with, if any.
+        self.booked = booked
         self._now = now
         self._day = timedelta(minutes=minutes_a_day)
         self.limit = timedelta(minutes=minutes_a_call)

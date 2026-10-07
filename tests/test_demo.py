@@ -159,7 +159,8 @@ def _front_desk(clinic, steps, demo, sign=lambda: "wss://voice.example/one-call"
     model = ScriptedClient(list(steps))
     numbers = []
 
-    def start_demo_call(number):
+    def start_demo_call(persona):
+        number = persona.caller_number if persona else None
         numbers.append(number)
         return FrontDeskAgent(model, clinic, kb, SqliteAgenda(kb, lambda: NOW),
                               lambda: NOW).start_call(number)
@@ -187,7 +188,8 @@ def test_the_page_asks_for_a_call_and_gets_a_pass_and_where_to_call(clinic):
     shown = json.loads(people[1])
     assert people[0] == 200 and shown["minutes_left"] == 0 and shown["seconds_a_call"] == 180
     assert shown["people"][0] == {"key": "own", "name": "Marta Soler Vidal", "town": "Port Blau",
-                                  "pets": ["Toby"], "phone": "600 111 222", "language": "es"}
+                                  "pets": ["Toby"], "phone": "600 111 222", "language": "es",
+                                  "appointment": None}
     assert shown["people"][1]["phone"] is None
 
 
@@ -288,3 +290,40 @@ def test_the_page_is_served_only_when_the_demo_is_set_up(clinic):
     assert asyncio.run(get(on, "/demo")) == [(200, "<p>demo</p>")]
     off = build_app(Switchboard(lambda number: None), KEY, demo_page="<p>demo</p>")
     assert [status for status, _ in asyncio.run(get(off, "/demo", "/demo/people"))] == [404, 404]
+
+
+def test_the_caller_on_their_own_phone_starts_with_an_appointment_to_move_or_cancel(
+        scenarios, clinic):
+    """What the 2025 pilot could not do, and what nobody would see in a call of three
+    minutes that starts with an empty book."""
+    from vetdesk.voice.demo import BOOKED_FOR, slot_ahead, with_an_appointment
+
+    kb = load_kb()
+    people = {persona.key: persona for persona in personas(scenarios, clinic)}
+    own = people["own"]
+    assert own.client_code is not None
+    assert all(people[key].client_code is None for key in ("hidden", "borrowed", "stranger"))
+
+    book = SqliteAgenda(kb, lambda: NOW)
+    told = slot_ahead(SqliteAgenda(kb, lambda: NOW), NOW)  # what the page says, beforehand
+    made = with_an_appointment(book, own, clinic, NOW)
+    assert made.start == told and told.date() >= (NOW + timedelta(days=2)).date()
+    assert told.hour < 14 and (made.reason, made.pet_name) == (BOOKED_FOR, own.pets[0])
+    assert made.verified and [a.appointment_id for a in book.for_client(own.client_code)] == [
+        made.appointment_id]
+    # Nobody else starts with one, and a call with no pass starts with nothing.
+    for other in (people["hidden"], people["borrowed"], None):
+        assert with_an_appointment(SqliteAgenda(kb, lambda: NOW), other, clinic, NOW) is None
+
+
+def test_the_page_is_told_when_that_appointment_is(clinic):
+    start = datetime(2026, 11, 5, 9, 30)
+    demo = Demo([MARTA, NOBODY], Clock(),
+                booked=lambda persona: start if persona is MARTA else None)
+    app, _, _ = _front_desk(clinic, [], demo)
+    _, people = _post(app)
+    shown = json.loads(people[1])["people"]
+    assert shown[0]["appointment"] == {
+        "pet": "Toby", "es": "jueves 5 de noviembre a las nueve y media de la mañana",
+        "en": "Thursday 5 November at nine thirty in the morning"}
+    assert shown[1]["appointment"] is None
