@@ -67,7 +67,8 @@ def test_the_report_adds_up_a_call_a_minute_and_a_month():
              ModelCall("b", 6, 9, 20000, 120, 0.008, 110),
              ModelCall("typed", 2, 2, 5000, 30, 0.0015, 30)]
     text = report(voice, model, TODAY, model_name="gemini-3.5-flash-lite",
-                  calls_per_month=(1000,), phone_per_minute=0.01, fixed_per_month=50)
+                  calls_per_month=(1000,), phone_per_minute=0.01, fixed_per_month=50,
+                  fixed_is="la línea, 44 € al mes.")
     assert "Del 05/10/2026 al 06/10/2026." in text
     assert "| Voz: teléfono | 1 | 1,0 | 0,03 $ | 0,030 $ | 0,0300 $ |" in text
     assert "| **Voz: todas** | 2 | 3,0 | 0,09 $ | 0,045 $ | 0,0300 $ |" in text
@@ -85,6 +86,10 @@ def test_the_report_adds_up_a_call_a_minute_and_a_month():
     assert "| **Total** | **0,0660 $** | **0,0440 $** |" in text
     assert "| 1.000 | 1.500 | 66,00 $ | 50,00 $ | **116,00 $** |" in text
     assert "--phone-per-minute" not in text and "--fixed-per-month" not in text
+    # What the monthly figure is made of is written down, and the voice plan's fee is not
+    # in it: the credits spent are already counted at its price.
+    assert "El fijo es: la línea, 44 € al mes." in text
+    assert "La cuota del plan de la plataforma de voz no se suma a los fijos" in text
 
 
 def test_what_was_not_measured_is_said_to_be_missing_not_guessed():

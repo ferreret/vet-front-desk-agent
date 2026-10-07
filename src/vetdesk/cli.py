@@ -246,7 +246,7 @@ def _costs(args: argparse.Namespace) -> int:
                   model_name=os.environ.get("VETDESK_LLM_MODEL", "gemini-3.5-flash-lite"),
                   calls_per_month=tuple(int(n) for n in args.calls_per_month.split(",")),
                   minutes=args.minutes, phone_per_minute=args.phone_per_minute,
-                  fixed_per_month=args.fixed_per_month)
+                  fixed_per_month=args.fixed_per_month, fixed_is=args.fixed_is)
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(text, encoding="utf-8")
@@ -571,6 +571,8 @@ def main(argv: list[str] | None = None) -> int:
                        help="what the phone line charges per minute, in dollars")
     costs.add_argument("--fixed-per-month", type=float, default=None,
                        help="what is paid every month whatever the calls, in dollars")
+    costs.add_argument("--fixed-is", default="",
+                       help="what that monthly figure is made of, written into the report")
     costs.add_argument("--out", type=Path, default=None, help="write the report to this file")
     costs.set_defaults(run=_costs)
 

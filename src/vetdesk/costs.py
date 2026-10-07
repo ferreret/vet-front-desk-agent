@@ -136,7 +136,7 @@ def _table(head: Iterable[str], rows: Iterable[Iterable[str]]) -> list[str]:
 def report(voice: list[VoiceCall], model: list[ModelCall], today: datetime, *,
            model_name: str = "", calls_per_month: tuple[int, ...] = (300, 1000, 3000),
            minutes: float | None = None, phone_per_minute: float | None = None,
-           fixed_per_month: float | None = None) -> str:
+           fixed_per_month: float | None = None, fixed_is: str = "") -> str:
     """The report, in Markdown and in Spanish: it is for whoever decides on the money."""
     out = [f"# Lo que cuesta la centralita — {today:%d/%m/%Y}", ""]
     spoken = [call for call in voice if call.seconds > 0]
@@ -254,6 +254,8 @@ def report(voice: list[VoiceCall], model: list[ModelCall], today: datetime, *,
                         _usd(fixed_per_month),
                         f"**{_usd(count * one_call + fixed_per_month)}**")
                        for count in calls_per_month])
+        if fixed_is:  # a figure nobody can check says what it is made of
+            out += ["", f"El fijo es: {fixed_is}"]
 
     out += ["", "## Lo que no entra en estas cifras", ""]
     missing = []
@@ -263,9 +265,12 @@ def report(voice: list[VoiceCall], model: list[ModelCall], today: datetime, *,
         missing.append("**La línea telefónica** (el número y lo que cobre el operador por "
                        "minuto): no se ha medido. Se puede añadir con `--phone-per-minute`.")
     if fixed_per_month is None:
-        missing.append("**Los gastos fijos**: el servidor y la cuota del plan de la "
-                       "plataforma de voz. Se pueden añadir con `--fixed-per-month`.")
+        missing.append("**Los gastos fijos**: el servidor y la cuota de la línea. Se pueden "
+                       "añadir con `--fixed-per-month`.")
     missing += [
+        "La cuota del plan de la plataforma de voz no se suma a los fijos: los créditos "
+        "gastados ya están contados a su precio. Es un mínimo, que se paga aunque no se "
+        "gasten.",
         "El precio de voz es el del plan contratado hoy; un plan mayor baja el precio por "
         "minuto y uno menor lo sube.",
         "Los avisos por Telegram y el calendario no cuestan nada.",
