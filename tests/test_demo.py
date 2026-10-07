@@ -254,14 +254,16 @@ def test_the_page_is_served_only_when_the_demo_is_set_up(clinic):
     assert "@elevenlabs/client@1." in SDK and SDK in PAGE  # a version somebody saw work
     assert 'fetch("demo/call"' in PAGE and "demo_pass" in PAGE
 
-    async def get(app, path):
+    async def get(app, *paths):
         async with TestClient(TestServer(app)) as client:
-            response = await client.get(path)
-            return response.status, await response.text()
+            answers = []
+            for path in paths:
+                response = await client.get(path)
+                answers.append((response.status, await response.text()))
+            return answers
 
     demo = Demo([MARTA], Clock())
     on, _, _ = _front_desk(clinic, [], demo)
-    assert asyncio.run(get(on, "/demo")) == (200, "<p>demo</p>")
+    assert asyncio.run(get(on, "/demo")) == [(200, "<p>demo</p>")]
     off = build_app(Switchboard(lambda number: None), KEY, demo_page="<p>demo</p>")
-    assert asyncio.run(get(off, "/demo"))[0] == 404
-    assert asyncio.run(get(off, "/demo/people"))[0] == 404
+    assert [status for status, _ in asyncio.run(get(off, "/demo", "/demo/people"))] == [404, 404]
