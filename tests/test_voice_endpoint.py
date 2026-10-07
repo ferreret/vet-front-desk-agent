@@ -262,6 +262,20 @@ def test_when_the_goodbyes_are_said_the_platform_is_told_to_hang_up(clinic, kb):
     (_, _, stream), = _ask(other, _messages("Buenos días, nada más quería saber el horario."),
                            tools=HANG_UP)
     assert _tool_call(stream) is None
+    # Heard on another: asked "¿Necesita algo más?", the caller said "Vale, gracias. No,
+    # no necesito nada", the agent wished a good afternoon, and the line stayed open. No
+    # to that question may end a call; the same words to another question do not.
+    for asked, hangs_up in (("Abrimos a las diez. ¿Necesita algo más?", True),
+                            ("¿Quiere que le apunte para el lunes?", False)):
+        _, _, app = _front_desk([Reply("De nada. ¡Que tenga una buena tarde!")], clinic, kb)
+        told = [*_messages("¿A qué hora abrís?"), {"role": "assistant", "content": asked},
+                {"role": "user", "content": "Vale, gracias. No, no necesito nada."}]
+        (_, _, stream), = _ask(app, told, tools=HANG_UP)
+        bye = "De nada. ¡Que tenga una buena tarde!"
+        if hangs_up:
+            assert _tool_call(stream, after=bye)["name"] == "end_call"
+        else:
+            assert _tool_call(stream) is None and _spoken(stream) == bye
     # A goodbye that the agent does not take for one ends nothing: it is said, as ever.
     model, _, app = _front_desk([Reply("¿Para qué día la quiere?")], clinic, kb)
     (_, _, stream), = _ask(app, _messages("Adiós, digo, quería una cita."), tools=HANG_UP)

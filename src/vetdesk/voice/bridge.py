@@ -85,6 +85,23 @@ _CLOSING = re.compile(
     r"nient'altro|до свидания|это вс[её]|больше ничего)\b", re.IGNORECASE)
 
 
+# The agent asking whether the caller wants anything else, and a caller saying no to it.
+# "Vale, gracias. No, no necesito nada" has none of the words that close a call, and after
+# the agent's goodbye the line stayed open: it is one in answer to that question.
+_ANYTHING_ELSE = re.compile(
+    r"(algo m[aá]s|alguna (otra )?cosa|cosa m[eé]s|res m[eé]s|anything else|sonst noch|"
+    r"autre chose|in altro|ещ[её])[^?]*\?\s*$", re.IGNORECASE)
+_NO = re.compile(r"\b(no|nada|res|nope|nothing|nein|nichts|non|rien|niente|нет|ничего)\b",
+                 re.IGNORECASE)
+
+
+def says_no_more(asked: str, heard: str) -> bool:
+    """Whether a call may be over after this line because the agent had asked whether the
+    caller wanted anything else and they say no. Whether it is over is still for the
+    agent's answer to tell: a goodbye, or one more thing done."""
+    return bool(_ANYTHING_ELSE.search(asked)) and bool(_NO.search(heard)) and "?" not in heard
+
+
 def silence(heard: str) -> bool:
     """Whether what the platform handed over as a line is the caller saying nothing."""
     return not any(letter.isalnum() for letter in heard)

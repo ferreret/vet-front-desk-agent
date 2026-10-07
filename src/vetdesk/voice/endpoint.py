@@ -65,7 +65,7 @@ from ..scheduling import AgendaError, Appointment, SqliteAgenda
 from ..scheduling.google_calendar import CALENDAR, GoogleCalendar, MirroredAgenda, session_from
 from ..scheduling.google_calendar import KEY as CALENDAR_KEY
 from ..spoken import say_en, say_es
-from .bridge import TROUBLE, Line, is_goodbye, may_end, silence
+from .bridge import TROUBLE, Line, is_goodbye, may_end, says_no_more, silence
 from .call_log import FILE as CALLS_FILE
 from .call_log import KEEP_DAYS as CALLS_KEEP_DAYS
 from .call_log import PAGE as CALLS_PAGE
@@ -429,7 +429,10 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                 # A call may be over after this line (nothing said, or a goodbye). Then
                 # the answer is not said piece by piece but kept whole: if it is a
                 # goodbye too, the platform is handed it to say and told to hang up.
-                closing = _offers(body, END_TOOL) and not after_a_tool and may_end(said[-1])
+                asked = next((_text(m.get("content")) for m in reversed(messages[:-1])
+                              if m.get("role") == "assistant"), "")
+                closing = _offers(body, END_TOOL) and not after_a_tool and (
+                    may_end(said[-1]) or says_no_more(asked, said[-1]))
                 session = line.call.session
                 answer, first = [], None
                 on_turn = finished(line, "" if note else heard, turn,
