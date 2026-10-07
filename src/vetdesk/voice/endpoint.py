@@ -41,6 +41,8 @@ import os
 import re
 import secrets
 import time
+import urllib.parse
+import urllib.request
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -58,6 +60,7 @@ from ..legacy import LegacySqliteSource
 from ..legacy.normalize import parse_phones
 from ..llm import create_client
 from ..notices import Notice
+from ..scenario import load_jsonl
 from ..scheduling import AgendaError, Appointment, SqliteAgenda
 from ..scheduling.google_calendar import CALENDAR, GoogleCalendar, MirroredAgenda, session_from
 from ..scheduling.google_calendar import KEY as CALENDAR_KEY
@@ -67,7 +70,8 @@ from .call_log import KEEP_DAYS as CALLS_KEEP_DAYS
 from .call_log import PAGE as CALLS_PAGE
 from .call_log import CallLog
 from .clinic_file import PAGE, ClinicFile
-from .demo import NO_PASS, TIME_IS_UP, Demo, Full
+from .demo import NO_PASS, TIME_IS_UP, Demo, Full, personas
+from .demo_page import PAGE as DEMO_PAGE
 from .telegram import CHAT as TELEGRAM_CHAT
 from .telegram import TOKEN as TELEGRAM_TOKEN
 from .telegram import Telegram
@@ -78,6 +82,11 @@ KEY_NAME = "VETDESK_ENDPOINT_KEY"
 STAND_INS = "VETDESK_CALLER_STANDS_IN_FOR"
 AGENDA_FILE = "VETDESK_AGENDA"
 CLINIC_FILE, ADMIN_KEY = "VETDESK_CLINIC", "VETDESK_ADMIN_KEY"
+# The public demo: its agent on the voice platform, the key to ask that platform for the
+# address of each call, and how many minutes it may use.
+DEMO_AGENT, VOICE_KEY = "VETDESK_ELEVENLABS_DEMO_AGENT_ID", "ELEVEN_API_KEY"
+DEMO_MINUTES_A_DAY = "VETDESK_DEMO_MINUTES_A_DAY"
+DEMO_MINUTES_A_CALL = "VETDESK_DEMO_MINUTES_A_CALL"
 IDLE_SECONDS = 30 * 60  # a call nobody has asked about for this long is over
 # ElevenLabs wraps the agent's prompt in text of its own, so the two markers are looked for
 # anywhere in it, under names nothing else would use.
@@ -617,6 +626,31 @@ def _key(host: str, path: Path = Path(".env")) -> str:
     return os.environ[KEY_NAME]
 
 
+def _demo(data: Path) -> tuple[Demo | None, Callable[[], str] | None]:
+    """The public demo, when it is set up: its agent on the voice platform, a key to ask
+    that platform for the address of each call, and the clinic's test callers to call as."""
+    agent, key = os.environ.get(DEMO_AGENT), os.environ.get(VOICE_KEY)
+    scenarios = data / "scenarios.jsonl"
+    if not (agent and key and scenarios.exists()):
+        log.info("the public demo is off: it needs %s, %s and the test callers",
+                 DEMO_AGENT, VOICE_KEY)
+        return None, None
+    demo = Demo(personas(load_jsonl(scenarios.read_text(encoding="utf-8"))),
+                minutes_a_day=float(os.environ.get(DEMO_MINUTES_A_DAY, "60")),
+                minutes_a_call=float(os.environ.get(DEMO_MINUTES_A_CALL, "3")))
+    url = ("https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?"
+           + urllib.parse.urlencode({"agent_id": agent}))
+
+    def sign() -> str:
+        request = urllib.request.Request(url, headers={"xi-api-key": key})
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read())["signed_url"]
+
+    log.info("the public demo is on: %d callers to call as, %.0f minutes a day",
+             len(demo.people), demo.left().total_seconds() / 60)
+    return demo, sign
+
+
 def _agenda(kb, clinic):
     """The appointment book: in a file when one is set, so that it outlives a restart,
     and shown in a calendar as well when one is set."""
@@ -663,9 +697,13 @@ def main() -> None:
     clinic = LegacySqliteSource(args.data / "clinic.db").load()
     llm = create_client()
     agenda = _agenda(kb, clinic)
-    desk = Desk(lambda kb: FrontDeskAgent(llm, clinic, kb, agenda), agenda, kb, file)
+    # A call from the public demo's page gets an appointment book of its own, in memory.
+    desk = Desk(lambda kb: FrontDeskAgent(llm, clinic, kb, agenda), agenda, kb, file,
+                lambda kb: FrontDeskAgent(llm, clinic, kb, SqliteAgenda(kb, datetime.now)))
+    demo, sign = _demo(args.data)
     switchboard = Switchboard(desk.start_call,
-                              stand_ins=stand_ins(os.environ.get(STAND_INS, "")))
+                              stand_ins=stand_ins(os.environ.get(STAND_INS, "")),
+                              demo=demo, start_demo_call=desk.start_demo_call)
     token, chat = os.environ.get(TELEGRAM_TOKEN), os.environ.get(TELEGRAM_CHAT)
     reception = Telegram(token, chat) if token and chat else None
     log.info("reception is told what happens %s",
@@ -680,7 +718,7 @@ def main() -> None:
              else "not written down: no file is set for them")
     app = build_app(switchboard, key, getattr(llm, "model", ""), desk,
                     os.environ.get(ADMIN_KEY, ""), reception.send if reception else None,
-                    numbers[0] if numbers else "", calls)
+                    numbers[0] if numbers else "", calls, demo, sign, DEMO_PAGE)
     print(f"The front desk answers at http://{args.host}:{args.port}/v1/chat/completions")
     web.run_app(app, host=args.host, port=args.port, print=None)
 

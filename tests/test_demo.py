@@ -246,3 +246,22 @@ def test_the_demos_agent_needs_a_pass_has_limits_and_nobody_to_put_a_call_throug
     assert platform["call_limits"] == {"agent_concurrency_limit": 2, "daily_limit": 60,
                                        "bursting_enabled": False}
     assert platform["privacy"] == {"record_voice": False, "retention_days": 30}
+
+
+def test_the_page_is_served_only_when_the_demo_is_set_up(clinic):
+    from vetdesk.voice.demo_page import PAGE, SDK
+
+    assert "@elevenlabs/client@1." in SDK and SDK in PAGE  # a version somebody saw work
+    assert 'fetch("demo/call"' in PAGE and "demo_pass" in PAGE
+
+    async def get(app, path):
+        async with TestClient(TestServer(app)) as client:
+            response = await client.get(path)
+            return response.status, await response.text()
+
+    demo = Demo([MARTA], Clock())
+    on, _, _ = _front_desk(clinic, [], demo)
+    assert asyncio.run(get(on, "/demo")) == (200, "<p>demo</p>")
+    off = build_app(Switchboard(lambda number: None), KEY, demo_page="<p>demo</p>")
+    assert asyncio.run(get(off, "/demo"))[0] == 404
+    assert asyncio.run(get(off, "/demo/people"))[0] == 404

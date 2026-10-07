@@ -362,6 +362,37 @@ path. Calls older than ninety days are dropped when the server starts
 (`VETDESK_CALLS_KEEP_DAYS`): what clients said on the phone is not kept for ever. On the
 page a caller's words are put as text, never as markup.
 
+## The public demo: a call from a browser
+
+Not published yet. Built on the route that works, the voice platform with our agent
+behind it, and switched on by two settings on the server (`VETDESK_ELEVENLABS_DEMO_AGENT_ID`
+and `ELEVEN_API_KEY`); without them its addresses do not exist.
+
+- **A visitor picks who they call as.** A browser brings no calling number, and the
+  number is the first clue of who is on the line: without one every visitor would be a
+  hidden number and the point of the project could not be tried. The page offers four of
+  the clinic's own test callers (`voice/demo.py`): from the phone on their record, from a
+  hidden number, from another client's phone, and somebody who is no client and is named
+  almost like one. The call is taken as coming from that caller's phone.
+- **A pass for each call, and a budget.** Every minute is paid for and anybody can open
+  the page. The server gives a pass for each call and counts them: 60 minutes a day, 3 a
+  call, 6 calls a day from one address. A call still going on counts whole; after that,
+  for what it took. A call with no pass, or one that has run its time, is said goodbye to
+  and closed with no model asked. The count is kept in memory: a restart starts it again.
+- **An agent of its own on the platform** (`elevenlabs_agent --demo`): the same voice and
+  address as the phone's, but a call can only be started with an address our server asked
+  for, nobody is put through, a visitor's voice is not recorded, and the platform holds
+  limits of its own beside ours (200 seconds a call, 60 calls a day, two at once, never at
+  its higher price for calls beyond the limit).
+- **Nothing real is touched.** A demo call gets an appointment book of its own, reception
+  is told nothing, and the call log marks it as the demo's.
+- **The page** (`/demo`, `voice/demo_page.py`) is one file with no build step, in Spanish
+  and English, and uses the platform's browser library at a fixed version. What is said
+  is written on it as text, never as markup.
+
+Seen so far: the page, loaded from a server on this computer, with its four callers. **No
+call has been made from it yet.**
+
 ## Two ways to carry the voice
 
 The first call with a microphone made one thing plain: the hard part of a voice line is
