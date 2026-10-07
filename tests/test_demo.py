@@ -253,6 +253,8 @@ def test_the_page_is_served_only_when_the_demo_is_set_up(clinic):
 
     assert "@elevenlabs/client@1." in SDK and SDK in PAGE  # a version somebody saw work
     assert 'fetch("demo/call"' in PAGE and "demo_pass" in PAGE
+    # The page names nobody: it is served from an address that is not the author's own.
+    assert "Barceló" not in PAGE and "portfolio" not in PAGE.lower()
 
     async def get(app, *paths):
         async with TestClient(TestServer(app)) as client:
