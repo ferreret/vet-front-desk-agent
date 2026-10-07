@@ -239,6 +239,12 @@ the answer to "why is there no database for the appointments?".
 Access is a Google service account that the calendar is shared with; nobody signs in. The
 calendar's id and the key live in the server's settings and nowhere in this repository.
 
+The clinic can read the book and cancel an appointment through the server, with its own
+key (`GET /agenda`, `DELETE /agenda/<id>`, since 2026-10-07). It was missing: an
+appointment booked for a caller who was not confirmed is on nobody's record, so the agent
+cancels it for no caller, and nothing else could. A cancellation made this way leaves the
+calendar as any other does. There is no page for it yet.
+
 ### The clinic's information, changed without a deployment
 
 Opening hours, prices, services and the emergency number live in one validated file. Built

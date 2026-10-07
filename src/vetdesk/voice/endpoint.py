@@ -57,7 +57,7 @@ from ..legacy import LegacySqliteSource
 from ..legacy.normalize import parse_phones
 from ..llm import create_client
 from ..notices import Notice
-from ..scheduling import Appointment, SqliteAgenda
+from ..scheduling import AgendaError, Appointment, SqliteAgenda
 from ..scheduling.google_calendar import CALENDAR, GoogleCalendar, MirroredAgenda, session_from
 from ..scheduling.google_calendar import KEY as CALENDAR_KEY
 from .bridge import TROUBLE, Line, is_goodbye, may_end, silence
@@ -178,6 +178,11 @@ class Desk:
                  kb: KnowledgeBase, file: ClinicFile | None = None) -> None:
         self._make, self._agenda, self.file = make, agenda, file
         self._agent = make(kb)
+
+    @property
+    def agenda(self):
+        """The appointment book, for the clinic's own look at it: see `/agenda`."""
+        return self._agenda
 
     def start_call(self, number: str | None, can_transfer: bool = False) -> Call:
         return self._agent.start_call(number, can_transfer)
@@ -454,6 +459,30 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
     async def view(request: web.Request) -> web.Response:
         return web.Response(text=CALLS_PAGE, content_type="text/html")
 
+    # The appointment book, for the clinic and not for a caller: an appointment nobody was
+    # confirmed for belongs to no record, so no call can cancel it. Reception can.
+    def booked() -> list[dict]:
+        return [{"id": a.appointment_id, "start": a.start.isoformat(timespec="minutes"),
+                 "pet": a.pet_name, "reason": a.reason, "client": a.client_code,
+                 "contact": a.contact_name, "phone": a.contact_phone, "verified": a.verified}
+                for a in desk.agenda.all() if a.status == "booked"]
+
+    async def appointments(request: web.Request) -> web.Response:
+        if not may_edit(request):
+            return web.json_response({"error": "invalid key"}, status=401)
+        return web.json_response({"appointments": await asyncio.to_thread(booked)})
+
+    async def cancel(request: web.Request) -> web.Response:
+        if not may_edit(request):
+            return web.json_response({"error": "invalid key"}, status=401)
+        name = request.match_info["appointment"]
+        try:
+            await asyncio.to_thread(desk.agenda.cancel, name)
+        except AgendaError:
+            return web.json_response({"error": "no such appointment"}, status=404)
+        log.info("appointment %s was cancelled by the clinic", name)
+        return web.json_response({"status": "cancelled"})
+
     app = web.Application()
     app.router.add_post("/v1/chat/completions", chat_completions)
     app.router.add_post("/chat/completions", chat_completions)
@@ -462,6 +491,9 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
         app.router.add_get("/clinic", clinic)
         app.router.add_put("/clinic", clinic)
         app.router.add_get("/clinic/edit", edit)
+    if desk is not None and admin_key:
+        app.router.add_get("/agenda", appointments)
+        app.router.add_delete("/agenda/{appointment}", cancel)
     if calls is not None and admin_key:
         app.router.add_get("/calls", taken)
         app.router.add_get("/calls/view", view)

@@ -1,6 +1,7 @@
 """The clinic's information, changed while the server runs: checked, or not changed at all."""
 
 import asyncio
+import json
 from datetime import datetime
 
 import pytest
@@ -118,3 +119,32 @@ def test_without_an_admin_key_there_is_nothing_to_edit(clinic, tmp_path):
     app = build_app(Switchboard(desk.start_call), "the-platforms-key", desk=desk)
     assert [status for status, _ in _http(app, ("GET", "/clinic", "", None),
                                           ("GET", "/clinic/edit", None, None))] == [404, 404]
+
+
+def test_the_clinic_sees_its_appointments_and_can_cancel_one_no_call_could(clinic, tmp_path):
+    """An appointment booked for somebody who was not confirmed is on nobody's record: the
+    agent cancels it for no caller. The clinic can, with its own key."""
+    desk, agenda, _ = _desk(clinic, tmp_path / "clinic.toml")
+    kept = agenda.book(datetime(2026, 11, 4, 10, 0), "vacuna", "Luna", client_code=10)
+    loose = agenda.book(datetime(2026, 11, 5, 9, 30), "revisión", "Toby",
+                        contact_name="Marta", contact_phone="+34600111222")
+    app = build_app(Switchboard(desk.start_call), "the-platforms-key", desk=desk,
+                    admin_key=ADMIN)
+    path = f"/agenda/{loose.appointment_id}"
+    no_key, platform, listed, gone, again, after = _http(
+        app,
+        ("GET", "/agenda", None, None),
+        ("DELETE", path, "the-platforms-key", None),  # the voice platform cannot
+        ("GET", "/agenda", ADMIN, None),
+        ("DELETE", path, ADMIN, None),
+        ("DELETE", path, ADMIN, None),
+        ("GET", "/agenda", ADMIN, None),
+    )
+    assert no_key[0] == platform[0] == 401
+    before = json.loads(listed[1])["appointments"]
+    assert [(a["pet"], a["verified"], a["contact"]) for a in before] == [
+        ("Luna", True, None), ("Toby", False, "Marta")]
+    assert gone[0] == 200 and again[0] == 404
+    assert [a["id"] for a in json.loads(after[1])["appointments"]] == [kept.appointment_id]
+    assert agenda.get(loose.appointment_id).status == "cancelled"
+    assert agenda.is_free(datetime(2026, 11, 5, 9, 30))  # the hour can be given again
