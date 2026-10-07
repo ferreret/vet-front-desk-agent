@@ -48,9 +48,10 @@ def test_a_visitor_calls_as_one_of_the_clinics_own_test_callers(scenarios, clini
 
 
 def test_each_caller_is_taken_the_way_the_page_tells_the_visitor(scenarios, clinic):
-    """The first caller of the usual kind has their name misspelt on file ("Deigo") and is
-    identified by nobody: offered to a visitor as "your name should be enough", they were
-    asked to spell it twice. Whoever the page offers is asked of the resolver first."""
+    """The first caller of the usual kind has their name mistyped on file ("Deigo"). Offered
+    to a visitor as "your name should be enough" while the resolver did not forgive it,
+    they were asked to spell it twice. Whoever the page offers is asked of the resolver
+    first, whatever its rules are that day."""
     from vetdesk.identity.resolver import Evidence, IdentityResolver
 
     resolver = IdentityResolver(clinic)
@@ -60,7 +61,6 @@ def test_each_caller_is_taken_the_way_the_page_tells_the_visitor(scenarios, clin
         more = {"pet_name": persona.pets[0], "town": persona.town} if everything else {}
         return resolver.resolve(Evidence(persona.caller_number, persona.name, **more)).level
 
-    assert people["own"].name != "Diego Esteve Planas"  # the misspelt one is passed over
     assert level(people["own"], False) == "confirmed"
     assert level(people["hidden"], False) != "confirmed"
     assert level(people["hidden"], True) == "confirmed"

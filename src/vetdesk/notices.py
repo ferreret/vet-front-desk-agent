@@ -115,6 +115,15 @@ def emergency(now: datetime, caller_number: str | None, said: str) -> Notice:
         said=said, after=("👀", "Puede ser una urgencia o una pregunta por el servicio."))
 
 
+def record_mistyped(on_file: str, said: str) -> Notice:
+    """A caller identified in spite of a given name with two letters swapped on file."""
+    return _notice("record", "📝", "FICHA A REVISAR", [
+        ("👤", f"Ficha: «{on_file}»", on_file),
+        ("🗣️", f"Dice llamarse «{said}»", said),
+        ("💡", "Puede ser una errata en la ficha", ""),
+        ("✅", "Se le ha identificado: lo demás coincide", "")])
+
+
 def record(on_file: str, spelled: str, caller_number: str | None) -> Notice:
     return _notice("record", "📝", "FICHA A REVISAR", [
         ("📞", f"Han llamado desde {_phone(caller_number)}, teléfono de la ficha de «{on_file}»",

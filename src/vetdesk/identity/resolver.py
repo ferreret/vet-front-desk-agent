@@ -31,11 +31,13 @@ pet and town backing it.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from typing import Literal
 
 from ..legacy.models import Client, Clinic
 from ..legacy.normalize import fold, osa_distance
+from ..names import given_name_forms
 from .matching import (
     EXACT,
     GRADE_NAMES,
@@ -105,6 +107,17 @@ class Resolution:
     why: str
 
 
+# How a resolution says that it went by a given name mistyped on file.
+MISTYPED_ON_FILE = "given name on file has two letters swapped"
+
+
+def _swapped(a: str, b: str) -> bool:
+    """Two neighbouring letters changed places, and nothing else."""
+    apart = [i for i in range(min(len(a), len(b))) if a[i] != b[i]]
+    return len(a) == len(b) and len(apart) == 2 and apart[1] == apart[0] + 1 \
+        and a[apart[0]] == b[apart[1]] and a[apart[1]] == b[apart[0]]
+
+
 def _one_word(place: str) -> str:
     """A place name as a single word, so it is compared whole and by sound."""
     return "".join(place.lower().split())
@@ -119,6 +132,9 @@ class IdentityResolver:
         for client in clinic.clients.values():
             if client.name is not None:
                 self._by_surname.setdefault(client.name.surname1.lower(), []).append(client)
+        # How many clients carry each given name as it is written on file: a name nobody
+        # else has may be a slip of the keyboard, and one that others have is a name.
+        self._givens = Counter(fold(c.name.given) for c in clinic.clients.values() if c.name)
         towns = {_one_word(c.town) for c in clinic.clients.values() if c.town}
         self._towns = {town: phonetic_key(town) for town in sorted(towns)}
 
@@ -146,6 +162,21 @@ class IdentityResolver:
                 grade = name_grade(said, client.name, evidence.name_verified)
                 if grade:
                     matches.append(self._candidate(client, said, grade, on_phone, evidence))
+        if not matches and evidence.name_verified:
+            # Spelled out, a name is compared letter by letter and a given name with two
+            # letters swapped on file matches nobody. Heard, the same caller is confirmed:
+            # spelling it must not turn them into a stranger.
+            mistyped = [
+                self._candidate(client, said, SIMILAR, on_phone, evidence)
+                for surname, clients in self._by_surname.items()
+                if surname_grade(said.surname1, surname)
+                for client in clients
+                if _swapped(fold(client.name.given), fold(said.given))
+                and bool(said.surname2) == bool(client.name.surname2)
+            ]
+            backed = self._letters_swapped_on_file(mistyped, said, on_phone, evidence)
+            if backed is not None:
+                return backed
         if not matches:
             return Resolution("not_found", "none", None, (), None,
                               "no client on file has this name")
@@ -154,7 +185,8 @@ class IdentityResolver:
         weak = [m for m in matches if m.name_grade == SIMILAR]
         if not evidence.name_verified:
             if not strong:
-                backed = self._one_surname_off(matches, said, on_phone, evidence)
+                backed = self._one_surname_off(matches, said, on_phone, evidence) \
+                    or self._letters_swapped_on_file(matches, said, on_phone, evidence)
                 if backed is not None:
                     return backed
                 return self._ask(weak, "confirm_name",
@@ -240,6 +272,52 @@ class IdentityResolver:
         if not evidence.pet_name:
             return self._ask([match], "pet_name",
                              "one surname is slightly off: a pet may make spelling needless")
+        if match.pet_grade >= SOUNDS_SAME:
+            if not evidence.town:
+                return self._ask([match], "town", "name and pet agree: the town will settle it")
+            if match.town_matches:
+                return confirmed
+        return None
+
+    def _letters_swapped_on_file(
+        self, matches: list[Candidate], said: SpokenName, on_phone: set[int],
+        evidence: Evidence,
+    ) -> Resolution | None:
+        """A given name typed on file with two letters the wrong way round ("Deigo").
+
+        The given name gets no room for a sound or a letter (see `_one_surname_off`): a
+        Joan and a Joana are brother and sister. But two neighbouring letters changed
+        places is what a hand does at a keyboard, and no two names in use are that far
+        apart. It counts only when what is on file is a name nobody else in the clinic
+        has and what the caller said is one that others do, both surnames were heard
+        right, a single client fits, and the rest backs it as for any other name: the
+        call comes from that client's phone, or the pet and the town agree.
+
+        Measured on 2026-10-06 and again on 2026-10-07: it confirms no relative that was
+        not confirmed already, and the sweep stays at no false identification. Any single
+        letter, instead of two swapped, confirmed 124 more relatives of 236.
+        """
+        if len(matches) != 1 or not matches[0].full_name:
+            return None
+        (match,) = matches
+        on_file = match.client.name
+        written, heard = fold(on_file.given), fold(said.given)
+        if not _swapped(written, heard) or self._givens[written] != 1 \
+                or not self._givens[heard] or len(given_name_forms(written)) != 1:
+            return None
+        if min(heard_grade(said.surname1, on_file.surname1.lower()),
+               heard_grade(said.surname2, on_file.surname2.lower())) < SOUNDS_SAME:
+            return None
+        confirmed = Resolution(
+            "resolved", "confirmed", match.client, (match,), None,
+            MISTYPED_ON_FILE + "; " + "; ".join(match.reasons(False)))
+        if match.phone_on_file:
+            return confirmed if self._phone_confirms(match, on_phone) else None
+        if on_phone:
+            return None  # somebody else's phone: nothing confirms
+        if not evidence.pet_name:
+            return self._ask([match], "pet_name",
+                             "the name on file looks mistyped: a pet may settle who this is")
         if match.pet_grade >= SOUNDS_SAME:
             if not evidence.town:
                 return self._ask([match], "town", "name and pet agree: the town will settle it")

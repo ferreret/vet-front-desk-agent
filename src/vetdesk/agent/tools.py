@@ -20,6 +20,7 @@ from datetime import date, datetime
 from .. import notices
 from ..identity import Evidence, IdentityResolver, Resolution
 from ..identity.matching import SOUNDS_SAME, pet_grade
+from ..identity.resolver import MISTYPED_ON_FILE
 from ..identity.spelling import SPELLED_WORD, spelled_words, was_spelled
 from ..kb import KnowledgeBase
 from ..kb.model import WEEKDAYS_ES
@@ -360,6 +361,12 @@ class Toolbox:
             session.resolution = self.resolver.resolve(evidence)
             if session.resolution.decision == "resolved":
                 session.client = session.resolution.client
+                if session.resolution.why.startswith(MISTYPED_ON_FILE):
+                    # Identified all the same; the clinic is told, to mend the record.
+                    notice = notices.record_mistyped(session.client.raw_name,
+                                                     evidence.client_name)
+                    if notice not in session.notices:
+                        session.notices.append(notice)
             elif session.resolution.decision == "not_found" and evidence.name_verified:
                 self._misspelt_on_file(evidence.client_name)
         if session.client is not None:

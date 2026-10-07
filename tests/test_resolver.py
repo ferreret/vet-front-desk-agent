@@ -19,6 +19,7 @@ ROCA_FAMILY = "+34971000002"
 DAVID_MOBILE = "+34600000004"
 JOAN_MOBILE = "+34600000005"
 PONS_LANDLINE = "+34971000003"
+DIEGO_MOBILE = "+34600000006"
 TOWN = "Vallserena"
 TOWNS = {12: "Port Blau", 3: "Pinar del Mar"}
 
@@ -35,6 +36,8 @@ CLIENTS = [
     (10, "Lozano Font, Joan", [JOAN_MOBILE]),
     (11, "Pons Riera, María", [PONS_LANDLINE]),
     (12, "VICH SOCIAS, FRANCESC", []),
+    (13, "Tous Bosch, Deigo", [DIEGO_MOBILE]),  # typed with two letters swapped: Diego
+    (14, "Ramis Coll, Diego", []),
 ]
 ANIMALS = [
     (1, "Xispa", [1]),
@@ -44,6 +47,7 @@ ANIMALS = [
     (5, "Kira", [8]),
     (6, "Lluna", [12]),
     (7, "Trufa", [10]),
+    (8, "Nala", [13]),
 ]
 
 
@@ -167,6 +171,37 @@ def test_a_given_name_slightly_off_is_never_waved_through(resolver):
                      Evidence(MARGA_MOBILE, "Margalia Ferrer Oliver")):
         r = resolver.resolve(evidence)
         assert (r.decision, r.ask_for, _code(r)) == ("ask", "confirm_name", None), evidence
+
+
+def test_two_letters_swapped_in_a_given_name_on_file_are_a_slip_of_the_keyboard(resolver):
+    """Asked to spell "Diego" twice, a caller on his own phone, because the record says
+    "Deigo". Nobody is called Deigo, somebody else on file is called Diego, and no two
+    names are two swapped letters apart: with the rest backing it, the name counts."""
+    r = resolver.resolve(Evidence(DIEGO_MOBILE, "Diego Tous Bosch"))
+    assert (r.decision, r.level, _code(r)) == ("resolved", "confirmed", 13)
+    assert r.why.startswith("given name on file has two letters swapped")
+    # Spelled out it is the same caller, not a stranger.
+    spelled = resolver.resolve(Evidence(DIEGO_MOBILE, "Diego Tous Bosch", name_verified=True))
+    assert (spelled.level, _code(spelled)) == ("confirmed", 13)
+    # With no number, the pet and the town are asked for, as for anybody.
+    hidden = Evidence(None, "Diego Tous Bosch")
+    assert resolver.resolve(hidden).ask_for == "pet_name"
+    assert resolver.resolve(replace(hidden, pet_name="Nala")).ask_for == "town"
+    known = resolver.resolve(replace(hidden, pet_name="Nala", town=TOWN))
+    assert (known.level, _code(known)) == ("confirmed", 13)
+    assert resolver.resolve(replace(hidden, pet_name="Nala", town="Port Blau")).level != "confirmed"
+
+
+def test_swapped_letters_are_forgiven_for_nothing_else(resolver):
+    for evidence in (
+        Evidence(MARGA_MOBILE, "Diego Tous Bosch"),  # from another client's phone
+        Evidence(DIEGO_MOBILE, "Diego Tous"),  # one surname of the two
+        Evidence(DIEGO_MOBILE, "Diego Tous Boch"),  # and a surname off as well
+        Evidence(DIEGO_MOBILE, "Diega Tous Bosch"),  # a letter changed, not two swapped
+        Evidence(JOAN_MOBILE, "Jaon Lozano Font"),  # what is on file is a name; this is not
+        Evidence(PONS_LANDLINE, "Mraía Pons Riera"),
+    ):
+        assert resolver.resolve(evidence).level != "confirmed", evidence
 
 
 def test_a_pet_name_that_only_resembles_one_on_file_must_be_confirmed(resolver):

@@ -140,9 +140,25 @@ soon as they give their name.
   confirmed as that client: in two of three such calls before the exception above, because
   a spelled surname is allowed one typing mistake on file, and in four of five with it.
   None turned up among 36,000 random non-clients; the case had to be built on purpose.
-- **Typos in a given name on file** (`Deigo`) are never matched: the caller is treated as
-  not a client. That is the safe direction. `uv run vetdesk legacy inspect` lists these
-  records as `given_name_suspect` so the clinic can fix them at the source.
+- **Typos in a given name on file** are not matched, with one exception: the caller is
+  treated as not a client. That is the safe direction. `uv run vetdesk legacy inspect`
+  lists these records as `given_name_suspect` so the clinic can fix them at the source.
+
+  The exception, since 2026-10-07: **two neighbouring letters swapped** (`Deigo` for
+  Diego). It counts when what is on file is a name nobody else in the clinic has and what
+  the caller says is one that others do, both surnames are heard right, one client fits,
+  and the rest backs it as for any name: the call comes from that client's phone, or the
+  pet and the town agree. Heard or spelled, it is the same caller. Reception is told that
+  the record looks mistyped. It came from the first call made from the public demo: a
+  caller on his own phone, asked twice to spell "Diego". Measured again that day on the
+  rule as built: no false identification in the sweep (10,800 calls), nine more calls
+  identified in it, and of 236 relatives built on purpose (the client's surnames, a given
+  name one letter from the record, from the client's phone or knowing pet and town) not
+  one confirmed that was not confirmed before. The same measure for any single letter
+  instead of two swapped: 124 more relatives confirmed from the client's phone. And for
+  the calling number alone confirming whoever's record it is on: 2,574 false
+  identifications in the 10,800 calls, 1,014 of them clients on another client's phone
+  and 1,557 people who are not clients and hold a number that used to be one's.
 
   Forgiving them was measured on 2026-10-06, for a caller who spells their name and calls
   from a phone on the record. Five of the 400 clients have a misspelled given name on file
