@@ -52,6 +52,7 @@ from ..agent.agent import Call, Turn
 from ..agent.prompt import THROUGH
 from ..evals.cost import cost
 from ..kb import KnowledgeBase, load_kb, why_not
+from ..kb.model import spoken_phone
 from ..language import SPOKEN
 from ..legacy import LegacySqliteSource
 from ..legacy.normalize import parse_phones
@@ -66,6 +67,7 @@ from .call_log import KEEP_DAYS as CALLS_KEEP_DAYS
 from .call_log import PAGE as CALLS_PAGE
 from .call_log import CallLog
 from .clinic_file import PAGE, ClinicFile
+from .demo import NO_PASS, TIME_IS_UP, Demo, Full
 from .telegram import CHAT as TELEGRAM_CHAT
 from .telegram import TOKEN as TELEGRAM_TOKEN
 from .telegram import Telegram
@@ -81,6 +83,9 @@ IDLE_SECONDS = 30 * 60  # a call nobody has asked about for this long is over
 # anywhere in it, under names nothing else would use.
 _CONVERSATION = re.compile(r"vetdesk-conversation:\s*(\S+)")
 _CALLER = re.compile(r"vetdesk-caller:[ \t]*([+\d][\d ()-]*)?")
+# The pass of a call made from the public demo's page: see `demo`. A platform agent that
+# sends this line is the demo's, and a call of its without a good pass is not answered.
+_DEMO = re.compile(r"vetdesk-demo:[ \t]*(\S*)")
 # The platform's tool for changing the language it listens and speaks in, and the language
 # its agent is set up to start in (see `elevenlabs_agent`).
 LANGUAGE_TOOL, FIRST_LANGUAGE = "language_detection", "es"
@@ -122,8 +127,12 @@ class Switchboard:
 
     def __init__(self, start_call: Callable[[str | None], Call],
                  clock: Callable[[], float] = time.monotonic,
-                 stand_ins: dict[str, str] | None = None) -> None:
+                 stand_ins: dict[str, str] | None = None, demo: Demo | None = None,
+                 start_demo_call: Callable[[str | None], Call] | None = None) -> None:
         self._start_call, self._clock = start_call, clock
+        # The public demo's passes, and how one of its calls is started: with an
+        # appointment book of its own, so that it touches nothing a real call would.
+        self._demo, self._start_demo_call = demo, start_demo_call or start_call
         self._lines: dict[str, tuple[Line, float]] = {}
         # Real numbers that call as a number of the made-up clinic: see `stand_ins`.
         self._stand_ins = stand_ins or {}
@@ -141,6 +150,20 @@ class Switchboard:
             conversation = "opening-" + hashlib.sha256(opening.encode()).hexdigest()[:16]
         now = self._clock()
         self._lines = {k: v for k, v in self._lines.items() if now - v[1] < IDLE_SECONDS}
+        from_demo = _DEMO.search(system)
+        if conversation not in self._lines and from_demo:
+            # The number is the one of whoever the visitor chose to call as. With no pass,
+            # or one that is not good, the line exists only to be told so and closed.
+            given = self._demo.call(from_demo.group(1)) if self._demo else None
+            log.info("call %s from the demo, %s", conversation,
+                     f"as '{given.persona.key}'" if given else "with no pass")
+            line = Line(self._start_demo_call(given.persona.caller_number if given else None),
+                        patience=None)
+            line.listening_in, line.name = FIRST_LANGUAGE, conversation
+            line.demo = from_demo.group(1) if given else ""
+            self._lines[conversation] = (line, now)
+        elif from_demo and self._demo and self._lines[conversation][0].demo:
+            self._demo.call(self._lines[conversation][0].demo)  # heard of again
         if conversation not in self._lines:
             caller = _CALLER.search(system)
             numbers, _ = parse_phones((caller.group(1) if caller else "") or "")
@@ -175,9 +198,12 @@ class Desk:
     """
 
     def __init__(self, make: Callable[[KnowledgeBase], FrontDeskAgent], agenda,
-                 kb: KnowledgeBase, file: ClinicFile | None = None) -> None:
+                 kb: KnowledgeBase, file: ClinicFile | None = None,
+                 make_demo: Callable[[KnowledgeBase], FrontDeskAgent] | None = None) -> None:
         self._make, self._agenda, self.file = make, agenda, file
         self._agent = make(kb)
+        # For the public demo: an agent made for one call, with whatever it is made with.
+        self._make_demo, self._kb = make_demo or make, kb
 
     @property
     def agenda(self):
@@ -187,9 +213,13 @@ class Desk:
     def start_call(self, number: str | None, can_transfer: bool = False) -> Call:
         return self._agent.start_call(number, can_transfer)
 
+    def start_demo_call(self, number: str | None, can_transfer: bool = False) -> Call:
+        """A call from the demo's page: never put through to anybody."""
+        return self._make_demo(self._kb).start_call(number)
+
     def replace(self, text: str) -> None:
         kb = self.file.replace(text)  # raises, and changes nothing, if the text is wrong
-        self._agent = self._make(kb)
+        self._agent, self._kb = self._make(kb), kb
         self._agenda.follow(kb)
 
 
@@ -239,13 +269,16 @@ def _chunk(request_id: str, model: str, delta: dict, finish: str | None = None) 
 def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | None = None,
               admin_key: str = "",
               tell: Callable[[Notice], None] | None = None,
-              transfer_to: str = "", calls: CallLog | None = None) -> web.Application:
+              transfer_to: str = "", calls: CallLog | None = None,
+              demo: Demo | None = None, sign: Callable[[], str] | None = None,
+              demo_page: str = "") -> web.Application:
     """`model` is the agent's own model, named only to put a price on each answer. With a
     `desk` whose information is in a file and an `admin_key`, that information can be read
     and replaced through the server. `tell` is how reception is told what happens on a
     call: see `notices`. `transfer_to` is the number a person answers at, to put calls
     through to. `calls` is where every call is written down, to be read back with the
-    `admin_key`: see `call_log`."""
+    `admin_key`: see `call_log`. `demo` holds the public demo's passes, and `sign` asks
+    the voice platform for the address one browser call is made at: see `demo`."""
     agent_model = model
     put_through: set[int] = set()  # the lines the platform has been told to put through
     waiting: set[asyncio.Future] = set()  # answers being worked out for a request to come
@@ -274,7 +307,7 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                 log.info("for reception: %s", notice.kind)
                 if calls:
                     calls.happened(line.name, notice.kind)
-                if tell:
+                if tell and line.demo is None:  # a demo call is nobody reception serves
                     tell(notice)
         return after
 
@@ -311,6 +344,8 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
             calls.begin(line.name, line.call.session.caller_number, agent_model,
                         _opening(messages) or ("" if said else line.call.greeting))
             line.on_taken_back = lambda number: calls.taken_back(line.name, number)
+            if line.demo is not None:
+                calls.note(line.name, "demo")
         request_id = "chatcmpl-" + secrets.token_hex(8)
         model = str(body.get("model", "vetdesk"))
 
@@ -318,6 +353,22 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                                                "Cache-Control": "no-cache"})
         await response.prepare(request)
         started = time.perf_counter()
+        if line.demo is not None and (not line.demo or demo is None or demo.over(line.demo)):
+            # A demo call with no pass, or one that has run its time: told so, and closed.
+            # No model is asked anything, so it costs no more than the words.
+            text = TIME_IS_UP[line.call.session.language] if line.demo else NO_PASS
+            log.info("demo call %s: %s", line.name, "time is up" if line.demo else "no pass")
+            if calls:
+                calls.said(line.name, text, "demo_over" if line.demo else "demo_refused")
+            await response.write(_chunk(request_id, model, {"role": "assistant", "content": ""}))
+            if _offers(body, END_TOOL) and messages[-1].get("role") != "tool":
+                return await use(response, request_id, model, END_TOOL, say=text,
+                                 reason="the demo call is over")
+            await response.write(_chunk(request_id, model, {"content": text}))
+            await response.write(_chunk(request_id, model, {}, "stop"))
+            await response.write(b"data: [DONE]\n\n")
+            await response.write_eof()
+            return response
         try:
             await response.write(_chunk(request_id, model, {"role": "assistant", "content": ""}))
             if not said:  # asked to open the call: the agent's own greeting
@@ -483,7 +534,50 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
         log.info("appointment %s was cancelled by the clinic", name)
         return web.json_response({"status": "cancelled"})
 
+    def people() -> dict:
+        return {"people": [{"key": p.key, "name": p.name, "town": p.town, "pets": list(p.pets),
+                            "phone": spoken_phone(p.caller_number) if p.caller_number else None,
+                            "language": p.language} for p in demo.people.values()],
+                "minutes_left": int(demo.left().total_seconds() // 60),
+                "seconds_a_call": int(demo.limit.total_seconds())}
+
+    async def demo_people(request: web.Request) -> web.Response:
+        return web.json_response(people())
+
+    async def demo_call(request: web.Request) -> web.Response:
+        try:
+            wanted = str((await request.json())["as"])
+        except (ValueError, KeyError, TypeError):
+            return web.json_response({"error": "expected who to call as"}, status=400)
+        # Behind a proxy the visitor's address is the first it was forwarded for.
+        address = (request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                   or request.remote or "")
+        try:
+            token = demo.start(wanted, address)
+        except KeyError:
+            return web.json_response({"error": "nobody to call as by that name"}, status=404)
+        except Full as full:
+            log.info("demo: no call given (%s)", full.why)
+            return web.json_response({"error": "full", "why": full.why}, status=429)
+        try:
+            address_to_call = await asyncio.to_thread(sign)
+        except Exception as error:  # the platform would not: the minutes are given back
+            demo.forget(token)
+            log.warning("demo: the voice platform gave no address (%s)", type(error).__name__)
+            return web.json_response({"error": "the voice platform is not answering"},
+                                     status=503)
+        return web.json_response({"signed_url": address_to_call, "pass": token,
+                                  "seconds": int(demo.limit.total_seconds())})
+
+    async def demo_view(request: web.Request) -> web.Response:
+        return web.Response(text=demo_page, content_type="text/html")
+
     app = web.Application()
+    if demo is not None and sign is not None:
+        app.router.add_get("/demo/people", demo_people)
+        app.router.add_post("/demo/call", demo_call)
+        if demo_page:
+            app.router.add_get("/demo", demo_view)
     app.router.add_post("/v1/chat/completions", chat_completions)
     app.router.add_post("/chat/completions", chat_completions)
     app.router.add_get("/health", health)

@@ -278,7 +278,8 @@ const WHAT = {booked: "cita reservada", moved: "cita cambiada", cancelled: "cita
   put_through: "pasada a una persona"};
 const NOTE = {greeting: "saludo", silence: "silencio", hung_up: "el asistente cuelga",
   put_through: "se pasa la llamada", not_put_through: "nadie cogió el traspaso",
-  trouble: "fallo al contestar"};
+  trouble: "fallo al contestar", demo: "llamada de la demo",
+  demo_over: "fin del tiempo de la demo", demo_refused: "demo sin pase"};
 const note = what => what.startsWith("language:")
   ? "la plataforma pasa a escuchar en " + what.slice(9) : (NOTE[what] || what);
 

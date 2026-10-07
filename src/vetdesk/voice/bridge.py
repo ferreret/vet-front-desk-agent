@@ -137,6 +137,9 @@ class Line:
         # answer is taken back: both for whoever keeps a record of the call.
         self.name: str | None = None
         self.on_taken_back: Callable[[int], None] | None = None
+        # On a call from the public demo's page, its pass ("" when it has none that is
+        # good). None on every other call.
+        self.demo: str | None = None
         # The last thing said on this line, and how many silences in a row have followed.
         self._last: list[str] = []
         self._quiet = 0
