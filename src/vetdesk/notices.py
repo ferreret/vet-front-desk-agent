@@ -107,9 +107,12 @@ def put_through(summary: str, client_name: str | None, caller_number: str | None
 
 
 def emergency(now: datetime, caller_number: str | None, said: str) -> Notice:
-    return _notice("emergency", "🚨", f"URGENCIA a las {now:%H:%M}", [
+    """The emergency number was given. That is all the code knows: a caller who asked
+    whether the clinic has an emergency service was told the number too, and the notice
+    called it an emergency. It says what happened and leaves the caller's words to tell."""
+    return _notice("emergency", "🚨", f"TELÉFONO DE URGENCIAS DADO a las {now:%H:%M}", [
         ("📞", f"Llamaban desde: {_phone(caller_number)}", _phone(caller_number))],
-        said=said, after=("✅", "Se le ha dado el teléfono de urgencias."))
+        said=said, after=("👀", "Puede ser una urgencia o una pregunta por el servicio."))
 
 
 def record(on_file: str, spelled: str, caller_number: str | None) -> Notice:

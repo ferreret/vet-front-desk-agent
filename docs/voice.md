@@ -273,7 +273,10 @@ from what the model said it did, and sent to a Telegram chat when the turn is ov
 (`VETDESK_TELEGRAM_TOKEN`, `VETDESK_TELEGRAM_CHAT`):
 
 - a message taken, with who to call back and where;
-- an emergency, as soon as the emergency number has been given, with what the caller said;
+- the emergency number given, as soon as it is, with what the caller said. The notice
+  says that and no more: it was headed "URGENCIA" until a caller who only asked whether
+  the clinic has an emergency service set one off (2026-10-07). The code knows the
+  number was said, not why, and reception reads the caller's words;
 - an appointment booked, moved or cancelled; an unverified one says so and asks reception
   to check before the visit;
 - a record that looks misspelt: a caller spells a name one letter from the record their
@@ -327,8 +330,10 @@ On one phone call (2026-10-06) a voice near the caller was written down for fift
 seconds as the caller's own line, and the platform cut the agent's answer four times
 while our address had answered each time in under a second. The platform has a filter for
 voices in the background (`vad.background_voice_detection`), off by default. It is on
-since 2026-10-07. Not yet tried on a call with a radio or a video playing nearby, and not
-known what it does to a caller who speaks quietly or from a noisy street.
+since 2026-10-07. On one phone call that day, with a video stream playing on a computer
+next to the caller, the caller's three lines came through whole, with no words added
+and the agent never cut off. One call: not known what it does to a caller who speaks
+quietly or from a noisy street.
 
 ### Every call written down
 

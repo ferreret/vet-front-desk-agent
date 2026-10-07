@@ -131,11 +131,16 @@ def test_an_emergency_is_told_at_once_and_once(clinic, kb):
     call.say("¡Mi perro se ha comido una tableta de chocolate!")
     call.say("¿Me repite el número?")
     (notice,) = call.session.notices
-    assert notice.text == ("URGENCIA a las 03:20\nLlamaban desde: 600 111 222\n"
+    # It says what the code knows, that the number was given, and not that it was an
+    # emergency: a caller asking whether there is an emergency service gets the number too.
+    assert notice.text == ("TELÉFONO DE URGENCIAS DADO a las 03:20\n"
+                           "Llamaban desde: 600 111 222\n"
                            "«¡Mi perro se ha comido una tableta de chocolate!»\n"
-                           "Se le ha dado el teléfono de urgencias.")
-    assert notice.html.startswith("🚨 <b>URGENCIA a las 03:20</b>\n📞 Llamaban desde: <b>600")
-    assert notice.html.endswith("</blockquote>\n✅ Se le ha dado el teléfono de urgencias.")
+                           "Puede ser una urgencia o una pregunta por el servicio.")
+    assert notice.html.startswith(
+        "🚨 <b>TELÉFONO DE URGENCIAS DADO a las 03:20</b>\n📞 Llamaban desde: <b>600")
+    assert notice.html.endswith(
+        "</blockquote>\n👀 Puede ser una urgencia o una pregunta por el servicio.")
     quiet = agent.start_call(None)
     quiet.say("¿A qué hora abrís?")
     assert quiet.session.notices == []

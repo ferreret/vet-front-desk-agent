@@ -274,7 +274,7 @@ const length = seconds => Math.floor(seconds / 60) + ":" + String(seconds % 60).
 const when = iso => iso.slice(8, 10) + "/" + iso.slice(5, 7) + " " + iso.slice(11, 16);
 const WHO = {none: "sin identificar", probable: "probable", confirmed: "identificado"};
 const WHAT = {booked: "cita reservada", moved: "cita cambiada", cancelled: "cita anulada",
-  message: "recado", emergency: "urgencia", record: "ficha con errata",
+  message: "recado", emergency: "teléfono de urgencias dado", record: "ficha con errata",
   put_through: "pasada a una persona"};
 const NOTE = {greeting: "saludo", silence: "silencio", hung_up: "el asistente cuelga",
   put_through: "se pasa la llamada", not_put_through: "nadie cogió el traspaso",
