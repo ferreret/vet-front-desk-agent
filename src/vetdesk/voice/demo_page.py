@@ -77,7 +77,6 @@ PAGE = """<!doctype html>
 
 <footer class="soft">
 <p data-t="kept"></p>
-<p data-t="about"></p>
 </footer>
 </main>
 
@@ -111,7 +110,6 @@ const TEXT = {
   failed: "No se ha podido empezar la llamada. Inténtalo otra vez en un momento.",
   kept: "Lo que se dice en la llamada se guarda por escrito hasta noventa días para mejorar "
       + "el asistente. La voz no se graba.",
-  about: "Hecho con ayuda de IA.",
  },
  en: {
   lead: "An AI front desk for a made-up veterinary clinic. Call it from your browser: book "
@@ -140,7 +138,6 @@ const TEXT = {
   failed: "The call could not be started. Try again in a moment.",
   kept: "What is said on the call is kept in writing for up to ninety days, to improve the "
       + "assistant. The voice is not recorded.",
-  about: "Made with the help of AI.",
  },
 };
 const ROLE = {own: "own", hidden: "hidden_role", borrowed: "borrowed", stranger: "stranger"};
