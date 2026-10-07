@@ -48,7 +48,7 @@ def test_the_model_gets_the_clinic_facts_and_the_call_context(clinic, kb):
     assert call.greeting == ("Clínica veterinaria Planeta Animal, buenos días. "
                              "¿En qué puedo ayudarle?")
     transcript = model.transcript
-    assert "600 555 020" in transcript.system and kb.render() in transcript.system
+    assert "600 555 020" in transcript.system and kb.render(NOW.date()) in transcript.system
     assert "+34600111222" in transcript.context and "martes" in transcript.context
     assert "The clinic is open" in transcript.context and call.greeting in transcript.context
     assert len(transcript.tools) == 8
@@ -85,11 +85,15 @@ def test_the_emergency_sentence_is_written_in_code_in_every_language(clinic, kb)
     assert emergency_sentence(kb, night, "es") in model.transcript.context
 
 
-def test_the_system_prompt_is_the_same_for_every_call(clinic, kb):
-    first, second = ScriptedClient([]), ScriptedClient([])
+def test_the_system_prompt_is_the_same_for_every_call_of_a_season(clinic, kb):
+    first, second, summer = ScriptedClient([]), ScriptedClient([]), ScriptedClient([])
     _call(first, clinic, kb, "+34600111222")
     _call(second, clinic, kb, None, datetime(2026, 11, 8, 3, 20))
-    assert first.transcript.system == second.transcript.system == system_prompt(kb)
+    assert first.transcript.system == second.transcript.system \
+        == system_prompt(kb, NOW.date())
+    # Only the day the opening hours change does it change, to say which are in force.
+    _call(summer, clinic, kb, None, datetime(2026, 7, 8, 10, 0))
+    assert summer.transcript.system != first.transcript.system
     assert "hidden" in second.transcript.context and "closed" in second.transcript.context
     assert "buenas noches" in _call(ScriptedClient([]), clinic, kb, None,
                                     datetime(2026, 11, 8, 3, 20)).greeting

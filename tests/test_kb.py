@@ -111,6 +111,28 @@ def test_what_the_agent_reads_carries_the_critical_facts(kb):
     assert kb.facts() == {"kb.emergency_phone": "600555020", "kb.clinic_phone": "971555010"}
 
 
+def test_the_opening_hours_in_force_come_first_and_are_the_ones_to_give(kb):
+    """Heard on a call in October: asked for the opening hours, the agent read out the
+    winter's and then the summer's. It is told which are today's."""
+    from datetime import date
+
+    winter, summer = kb.render(date(2026, 10, 7)), kb.render(date(2026, 7, 7))
+    now = "Horario de ahora. Es el que se dice cuando preguntan por el horario, sin decir"
+    other = "Del {} al {} el horario es otro, el de {}. No se dice, salvo que pregunten"
+    assert now in winter and now in summer
+    assert other.format("1 de junio", "30 de septiembre", "verano") in winter
+    assert winter.index("Horario de ahora") < winter.index("el horario es otro")
+    # The hours in force are the ones that follow that line.
+    assert "- lunes: de las nueve de la mañana a las dos" in summer[summer.index(now):][:200]
+    assert "- lunes: de las nueve y media" in winter[winter.index(now):][:200]
+    assert other.format("1 de octubre", "31 de mayo", "invierno") in summer
+    # Both are still there, in words: a caller may ask about another time of year.
+    for text in (winter, summer):
+        assert "de las nueve y media de la mañana" in text
+        assert "de las nueve de la mañana a las dos de la tarde" in text
+    assert "Horario de ahora" not in kb.render()  # with no day, neither is put first
+
+
 def test_what_the_scenarios_treat_as_unknown_is_really_absent(kb):
     """The harness expects 'I do not know' for these; the knowledge base must not answer."""
     text = kb.render().lower()

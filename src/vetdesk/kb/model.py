@@ -208,8 +208,13 @@ class KnowledgeBase(_Model):
             "kb.clinic_phone": self.clinic.phone[3:],
         }
 
-    def render(self) -> str:
-        """The knowledge base as the text handed to the agent."""
+    def render(self, today: date | None = None) -> str:
+        """The knowledge base as the text handed to the agent.
+
+        With `today`, the opening hours in force come first and are marked as the ones to
+        give. Handed both seasons alike, a model asked for the opening hours in October
+        read out the winter's and the summer's, forty-eight words on a phone line.
+        """
         lines = [
             f"Clínica veterinaria {self.clinic.name}. Dirección: {self.clinic.address}.",
             f"Teléfono de la clínica: {spoken_phone(self.clinic.phone)}.",
@@ -218,9 +223,20 @@ class KnowledgeBase(_Model):
             "",
             "HORARIO",
         ]
-        for season in self.hours:
-            lines.append(f"Horario de {season.season} (del {_spoken(season.starts)} "
-                         f"al {_spoken(season.ends)}):")
+        now = self.season_for(today) if today else None
+        for season in sorted(self.hours, key=lambda season: season is not now):
+            if now is None:
+                lines.append(f"Horario de {season.season} (del {_spoken(season.starts)} "
+                             f"al {_spoken(season.ends)}):")
+            elif season is now:
+                # Nothing here for a model to read out: told the season and the day it
+                # ends, it opened three answers of eight with "que rige hasta el 31 de mayo".
+                lines.append("Horario de ahora. Es el que se dice cuando preguntan por el "
+                             "horario, sin decir de qué época es:")
+            else:
+                lines.append(f"Del {_spoken(season.starts)} al {_spoken(season.ends)} el "
+                             f"horario es otro, el de {season.season}. No se dice, salvo "
+                             "que pregunten por esas fechas:")
             for day, name in zip(WEEKDAYS, WEEKDAYS_ES, strict=True):
                 # In words: asked for the opening hours on a voice line, a model handed
                 # "16:30" began "a las cinco y media menos... perdone".

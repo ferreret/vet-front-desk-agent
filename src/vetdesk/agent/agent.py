@@ -292,7 +292,6 @@ class FrontDeskAgent:
         now: Callable[[], datetime] = datetime.now,
     ) -> None:
         self._llm, self._clinic, self._kb, self._agenda, self._now = llm, clinic, kb, agenda, now
-        self._system = system_prompt(kb)
 
     def start_call(self, caller_number: str | None, can_transfer: bool = False) -> Call:
         """Pick up the phone. `caller_number` is None when the caller ID is hidden.
@@ -308,6 +307,8 @@ class FrontDeskAgent:
                           can_transfer)
         context = call_context(self._kb, now, caller_number, hello, can_transfer)
         tools = [*SPECS, TRANSFER] if can_transfer else SPECS
-        return Call(self._llm.start(self._system, context, tools), toolbox, hello,
+        # Made for each call and not once: a server runs across the day the hours change.
+        system = system_prompt(self._kb, now.date())
+        return Call(self._llm.start(system, context, tools), toolbox, hello,
                     lambda language: in_an_emergency(self._kb, now, language),
                     tuple(self._kb.clinic.languages), spoken_phone(self._kb.emergency.phone))

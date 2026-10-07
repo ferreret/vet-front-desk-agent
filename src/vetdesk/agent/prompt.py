@@ -6,7 +6,7 @@ so the prompt can never drift from the single source (or keep a placeholder aliv
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from ..kb import KnowledgeBase
 from ..kb.model import WEEKDAYS_ES, spoken_phone
@@ -197,10 +197,11 @@ GREETINGS = {
 }
 
 
-def system_prompt(kb: KnowledgeBase) -> str:
-    """Identical for every call, so providers can cache it."""
+def system_prompt(kb: KnowledgeBase, today: date | None = None) -> str:
+    """Identical for every call of a season, so providers can cache it: `today` only
+    says which of the clinic's opening hours are the ones in force."""
     names = [LANGUAGE_NAMES[code] for code in kb.clinic.languages]
-    return INSTRUCTIONS.format(clinic=kb.clinic.name, knowledge_base=kb.render(),
+    return INSTRUCTIONS.format(clinic=kb.clinic.name, knowledge_base=kb.render(today),
                                languages=" or ".join(filter(None, [", ".join(names[:-1]),
                                                                    names[-1]])))
 
