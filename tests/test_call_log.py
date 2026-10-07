@@ -127,8 +127,13 @@ def _server(steps, clinic, calls, admin=ADMIN):
                      admin_key=admin, calls=calls)
 
 
-def _messages(*said):
+OPENING = "Clínica veterinaria Planeta Animal, dígame."  # the platform's own first message
+
+
+def _messages(*said, opening=OPENING):
     messages = [{"role": "system", "content": PROMPT}]
+    if opening:
+        messages.append({"role": "assistant", "content": opening})
     for index, text in enumerate(said):
         if index:
             messages.append({"role": "assistant", "content": "(heard)"})
@@ -181,7 +186,8 @@ def test_a_call_through_the_server_is_written_down_and_read_back_with_the_key(cl
     assert listed["totals"]["calls"] == 1 and listed["totals"]["dollars"] == call["dollars"]
 
     lines = json.loads(one[1])["lines"]
-    assert lines[0]["note"] == "greeting" and "Planeta Animal" in lines[0]["said"]
+    # The greeting kept is the one the caller heard, the platform's, and not the agent's own.
+    assert (lines[0]["note"], lines[0]["said"]) == ("greeting", OPENING)
     assert [(line["heard"], line["said"], line["note"]) for line in lines[1:]] == [
         ("¿Tenéis hora la semana que viene?", "Tengo el lunes a las diez.", None),
         ("Vale, gracias. Adiós.", "De nada. Que tenga un buen día.", None),
@@ -191,6 +197,21 @@ def test_a_call_through_the_server_is_written_down_and_read_back_with_the_key(cl
     # Reading a call back takes the clinic's own key: not none, and not the platform's.
     assert no_key[0] == 401 and wrong_key[0] == 401
     assert page[0] == 200 and "<title>Llamadas</title>" in page[1]
+
+
+def test_the_greeting_written_down_is_ours_only_when_we_said_it(clinic):
+    calls = CallLog(now=Clock())
+    app = _server([Reply("Abrimos a las diez.")], clinic, calls)
+    _talk(app, _messages("¿A qué hora abrís?", opening=""))  # how it was answered: not told
+    calls.wait()
+    assert [line["note"] for line in calls.call("conv_9")["lines"]] == [None]
+
+    calls = CallLog(now=Clock())
+    app = _server([Reply("Abrimos a las diez.")], clinic, calls)
+    _talk(app, _messages(opening=""), _messages("¿A qué hora abrís?", opening=""))
+    calls.wait()
+    first = calls.call("conv_9")["lines"][0]  # asked to open the call: the agent's greeting
+    assert first["note"] == "greeting" and first["said"].endswith("¿En qué puedo ayudarle?")
 
 
 def test_without_a_key_of_its_own_the_record_cannot_be_read_at_all(clinic):

@@ -103,6 +103,20 @@ def _text(content) -> str:
     return " ".join(part.get("text", "") for part in content or [] if isinstance(part, dict))
 
 
+def _opening(messages: list[dict]) -> str:
+    """What the caller heard when the phone was picked up, as far as the platform tells us.
+
+    The platform answers the phone with a first message of its own and passes it on as
+    what the assistant said before the caller spoke. Empty when it passes nothing.
+    """
+    for message in messages:
+        if message.get("role") == "user":
+            break
+        if message.get("role") == "assistant" and (text := _text(message.get("content")).strip()):
+            return text
+    return ""
+
+
 class Switchboard:
     """Which call each request belongs to. One `Line` per conversation."""
 
@@ -285,11 +299,13 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
             return web.json_response({"error": {"message": "expected chat messages"}},
                                      status=400)
         line = switchboard.line(messages, bool(transfer_to) and _offers(body, TRANSFER_TOOL))
-        if calls and line.on_taken_back is None:  # the first that is heard of this call
-            calls.begin(line.name, line.call.session.caller_number, agent_model,
-                        line.call.greeting)
-            line.on_taken_back = lambda number: calls.taken_back(line.name, number)
         said = [_text(m.get("content")) for m in messages if m.get("role") == "user"]
+        if calls and line.on_taken_back is None:  # the first that is heard of this call
+            # The greeting written down is the one the caller heard: the platform's own,
+            # or ours when it asks us to open the call. Neither known, none is written.
+            calls.begin(line.name, line.call.session.caller_number, agent_model,
+                        _opening(messages) or ("" if said else line.call.greeting))
+            line.on_taken_back = lambda number: calls.taken_back(line.name, number)
         request_id = "chatcmpl-" + secrets.token_hex(8)
         model = str(body.get("model", "vetdesk"))
 
