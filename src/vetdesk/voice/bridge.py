@@ -95,9 +95,21 @@ def may_end(heard: str) -> bool:
     return silence(heard) or bool(_CLOSING.search(heard))
 
 
+# The time of day wished, which opens a call and closes one as well: "De nada, buenos
+# días" ended a call that was then left open, because no word of it is a farewell. It is
+# one only in answer to a caller who has said they are done, and only as the last thing
+# said: "Buenos días. Abrimos a las nueve y media" is a greeting given back.
+_TIME_OF_DAY = re.compile(
+    r"\b(buenos d[ií]as|buenas tardes|buenas noches|bon dia|bona tarda|bona nit|"
+    r"good (morning|afternoon|evening|night)|guten (tag|morgen|abend)|"
+    r"bonne (journ[eé]e|soir[eé]e)|buona (giornata|serata)|buongiorno|buonasera|"
+    r"хорошего (дня|вечера))[\s.!…]*$", re.IGNORECASE)
+
+
 def is_goodbye(said: str) -> bool:
-    """Whether what the agent said closes the call: a farewell, and nothing asked."""
-    return bool(_FAREWELL.search(said)) and "?" not in said
+    """Whether what the agent said closes the call, said to a caller who has closed it
+    (see `may_end`): a farewell or the time of day wished, and nothing asked."""
+    return bool(_FAREWELL.search(said) or _TIME_OF_DAY.search(said)) and "?" not in said
 
 
 # What speech recognition may call each language: two-letter and three-letter codes.

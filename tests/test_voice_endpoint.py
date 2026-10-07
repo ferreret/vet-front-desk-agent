@@ -250,6 +250,18 @@ def test_when_the_goodbyes_are_said_the_platform_is_told_to_hang_up(clinic, kb):
     # without saying the farewell it had been handed with it.
     assert _tool_call(answers[1], after="De nada. Que tenga un buen día.") == {
         "name": "end_call", "reason": "the caller and the agent have said goodbye"}
+    # Heard on a call from the demo's page: "De nada, buenos días." and the line stayed
+    # open. The time of day wished to a caller who is done is a goodbye; given back at the
+    # start of an answer it is a greeting.
+    steps = [Reply("De nada, buenos días."), Reply("Buenos días. Abrimos a las nueve y media.")]
+    _, _, app = _front_desk(steps, clinic, kb)
+    done = _messages("No, eso es todo. Gracias.")
+    _, _, other = _front_desk(steps[1:], clinic, kb)
+    (_, _, stream), = _ask(app, done, tools=HANG_UP)
+    assert _tool_call(stream, after="De nada, buenos días.")["name"] == "end_call"
+    (_, _, stream), = _ask(other, _messages("Buenos días, nada más quería saber el horario."),
+                           tools=HANG_UP)
+    assert _tool_call(stream) is None
     # A goodbye that the agent does not take for one ends nothing: it is said, as ever.
     model, _, app = _front_desk([Reply("¿Para qué día la quiere?")], clinic, kb)
     (_, _, stream), = _ask(app, _messages("Adiós, digo, quería una cita."), tools=HANG_UP)
