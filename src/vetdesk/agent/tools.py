@@ -15,7 +15,7 @@ import json
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from .. import notices
 from ..identity import Evidence, IdentityResolver, Resolution
@@ -449,11 +449,20 @@ class Toolbox:
                 f"Those dates are in the past. Today is {WEEKDAYS_ES[today.weekday()]} "
                 f"{today.isoformat()}: ask again with the dates the caller means, this year.")
         slots = self.agenda.free_slots(first, last, part_of_day, limit=10_000)
+        # A day asked for on which the clinic is closed. Without this the model saw a day
+        # with no free time and no reason for it; offered a Monday that was a holiday, the
+        # day was simply missing, and a caller who asked for it was told nothing.
+        days = (first + timedelta(days=n) for n in range((last - first).days + 1))
+        closed = [f"{WEEKDAYS_ES[day.weekday()]} {day.isoformat()}: {found.name}"
+                  for day in days if (found := self.kb.closed_on(day)) and day >= today]
+        shut = ({"closed": closed, "closed_note": "The clinic is closed on these days. If the "
+                 "caller asked for one of them, tell them so before offering others."}
+                if closed else {})
         if not slots:
-            return {"slots": [], "note": "Nothing free in that range. Offer other days."}
+            return {"slots": [], "note": "Nothing free in that range. Offer other days.", **shut}
         if len(slots) <= MAX_OFFERED:
             return {"slots": [_when(slot, self.session.language) for slot in slots],
-                    "note": "These are all the free times in that range."}
+                    "note": "These are all the free times in that range.", **shut}
         # A sample spread over the first days. Handed the six earliest times, all on one
         # day, a model told callers that the rest of the week was full.
         by_day: dict[date, list[datetime]] = {}
@@ -469,6 +478,7 @@ class Toolbox:
             "note": "A sample: offer two or three of these. Every day in free_days has more "
                     "free times than are shown, so never say a day or the week is full "
                     "because it is not in the sample. To see one day, ask again for that day.",
+            **shut,
         }
 
     def _book_appointment(

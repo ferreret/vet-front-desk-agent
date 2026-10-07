@@ -122,3 +122,21 @@ def test_the_notice_is_the_clinics_to_set():
     assert slots[0] == datetime(2026, 11, 3, 10, 30)  # still never in the past
     assert "No se dan citas para antes de 60 minutos" in kb.render()
     assert "No se dan citas para antes de" not in none.render()
+
+
+def test_no_appointment_on_a_day_the_clinic_is_closed():
+    """Offered on a call: Monday 12 October, a public holiday. The clinic's file had no
+    holidays in it. A closed day has no opening hours, so the agenda has nothing on it."""
+    kb = load_kb()
+    before = datetime(2026, 10, 7, 18, 0)  # the Wednesday before
+    agenda = SqliteAgenda(kb, lambda: before)
+    holiday, after = date(2026, 10, 12), date(2026, 10, 13)
+    assert kb.closed_on(holiday).name == "Fiesta Nacional" and kb.closed_on(after) is None
+    assert kb.opening_intervals(holiday) == [] and not kb.is_open(datetime(2026, 10, 12, 10, 0))
+    assert agenda.free_slots(holiday, holiday) == []
+    assert agenda.free_slots(holiday, after, limit=1) == [datetime(2026, 10, 13, 9, 30)]
+    with pytest.raises(AgendaError):
+        agenda.book(datetime(2026, 10, 12, 10, 0), "vacuna", "Luna", client_code=1)
+    booked = agenda.book(datetime(2026, 10, 13, 10, 0), "vacuna", "Luna", client_code=1)
+    with pytest.raises(AgendaError):
+        agenda.reschedule(booked.appointment_id, datetime(2026, 10, 12, 10, 0))

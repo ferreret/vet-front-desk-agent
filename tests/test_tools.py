@@ -609,3 +609,21 @@ def test_a_reason_given_in_another_alphabet_is_still_the_callers(clinic, kb):
         toolbox = _toolbox(clinic, kb, reason=said)
         assert not _call(toolbox, "book_appointment", **booking, reason=written)[1], written
 
+
+
+def test_a_day_asked_for_that_is_a_holiday_is_said_to_be_one(clinic, kb):
+    """Asked for the Monday, the model was shown a day with nothing free and no reason."""
+    now = datetime(2026, 10, 7, 18, 0)
+    toolbox = Toolbox(clinic, kb, SqliteAgenda(kb, lambda: now), lambda: now, None)
+    result, failed = _call(toolbox, "get_availability", date_from="2026-10-12",
+                           date_to="2026-10-12", part_of_day="any")
+    assert not failed and result["slots"] == []
+    assert result["closed"] == ["lunes 2026-10-12: Fiesta Nacional"]
+    week, _ = _call(toolbox, "get_availability", date_from="2026-10-12",
+                    date_to="2026-10-16", part_of_day="morning")
+    assert week["closed"] == ["lunes 2026-10-12: Fiesta Nacional"]
+    assert not any(slot["start"].startswith("2026-10-12") for slot in week["slots"])
+    assert "lunes 2026-10-12" not in week["free_days"]
+    open_week, _ = _call(toolbox, "get_availability", date_from="2026-10-13",
+                         date_to="2026-10-16", part_of_day="morning")
+    assert "closed" not in open_week

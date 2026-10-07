@@ -140,6 +140,13 @@ class Season(_Model):
         return [_interval(text) for text in getattr(self, WEEKDAYS[day.weekday()])]
 
 
+class ClosedDay(_Model):
+    """A day the clinic is closed whatever the season: a public holiday, or one of its own."""
+
+    date: date
+    name: str  # as the clinic would say it: "Fiesta Nacional"
+
+
 class Service(_Model):
     name: str
     description: str
@@ -168,6 +175,8 @@ class KnowledgeBase(_Model):
     emergency: Emergency
     appointments: Appointments
     hours: list[Season]
+    # Not in every clinic's file: one written before there were any still loads.
+    closed_days: list[ClosedDay] = []
     services: list[Service]
     species: Species
     faq: list[Faq]
@@ -185,6 +194,9 @@ class KnowledgeBase(_Model):
                 covered = seasons or "no season"
                 raise ValueError(f"opening hours: {day:%m-%d} is covered by {covered}")
             day = date.fromordinal(day.toordinal() + 1)
+        days = [closed.date for closed in self.closed_days]
+        if len(days) != len(set(days)):
+            raise ValueError("closed_days: the same day is there twice")
         return self
 
     # --- questions the rest of the system asks -------------------------------------------------
@@ -192,8 +204,13 @@ class KnowledgeBase(_Model):
     def season_for(self, day: date) -> Season:
         return next(s for s in self.hours if s.covers(day))
 
+    def closed_on(self, day: date) -> ClosedDay | None:
+        return next((closed for closed in self.closed_days if closed.date == day), None)
+
     def opening_intervals(self, day: date) -> list[tuple[time, time]]:
-        return self.season_for(day).intervals(day)
+        """When the clinic is open that day. Never on a day it is closed: the agenda takes
+        its hours from here, so no appointment is offered, made or moved to such a day."""
+        return [] if self.closed_on(day) else self.season_for(day).intervals(day)
 
     def is_open(self, moment: datetime) -> bool:
         return any(
@@ -245,6 +262,16 @@ class KnowledgeBase(_Model):
                     for start, end in map(_interval, getattr(season, day))
                 ) or "cerrado"
                 lines.append(f"- {name}: {opening}")
+        # The days to come only, and not many: a caller asks about next Monday, not about a
+        # holiday eight months away, and every line here is paid for on every answer.
+        coming = sorted((closed for closed in self.closed_days
+                         if today is None or closed.date >= today),
+                        key=lambda closed: closed.date)[:6]
+        if coming:
+            lines.append("Días en que la clínica está cerrada por fiesta, sea cual sea el "
+                         "horario (las urgencias se atienden igual):")
+            lines += [f"- {WEEKDAYS_ES[closed.date.weekday()]} {closed.date.day} de "
+                      f"{_MONTHS_ES[closed.date.month - 1]}: {closed.name}" for closed in coming]
         lines += ["", "CITAS"]
         lines += [f"- {note}" for note in self.appointments.notes]
         if notice := self.appointments.min_notice_minutes:

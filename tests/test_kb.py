@@ -9,7 +9,7 @@ from importlib import resources
 import pytest
 from pydantic import ValidationError
 
-from vetdesk.kb import load_kb, parse_kb
+from vetdesk.kb import bundled_kb_text, load_kb, parse_kb, why_not
 
 
 @pytest.fixture(scope="module")
@@ -138,3 +138,22 @@ def test_what_the_scenarios_treat_as_unknown_is_really_absent(kb):
     text = kb.render().lower()
     for topic in ("ibuprofeno", "seguro", "ligamento", "dosis"):
         assert topic not in text
+
+
+def test_the_days_the_clinic_is_closed_are_told_and_checked(kb):
+    text = kb.render(date(2026, 10, 7))
+    assert "Días en que la clínica está cerrada por fiesta" in text
+    assert "- lunes 12 de octubre: Fiesta Nacional" in text
+    # Only the days still to come: every line is paid for on every answer.
+    later = kb.render(date(2026, 12, 9))
+    assert "12 de octubre" not in later and "- viernes 25 de diciembre: Navidad" in later
+    assert "cerrada por fiesta" not in kb.render(date(2027, 2, 1))
+    # A file written before there were any still loads, and one day cannot be there twice.
+    text = bundled_kb_text()
+    start = text.index("[[closed_days]]")
+    without = text[:start] + text[text.index("[[services]]"):]
+    assert parse_kb(without).closed_days == []
+    twice = text.replace("date = 2026-12-08", "date = 2026-10-12")
+    with pytest.raises(ValueError) as error:
+        parse_kb(twice)
+    assert "closed_days" in why_not(error.value)

@@ -54,6 +54,32 @@ friday = ["09:00-14:00", "17:00-20:30"]
 saturday = ["10:00-13:00"]
 sunday = []
 
+# Days the clinic is closed whatever the season: public holidays, and its own. No
+# appointment is given on them, and a caller who asks is told the clinic is closed.
+[[closed_days]]
+date = 2026-10-12
+name = "Fiesta Nacional"
+
+[[closed_days]]
+date = 2026-12-08
+name = "la Inmaculada"
+
+[[closed_days]]
+date = 2026-12-25
+name = "Navidad"
+
+[[closed_days]]
+date = 2026-12-26
+name = "San Esteban"
+
+[[closed_days]]
+date = 2027-01-01
+name = "Año Nuevo"
+
+[[closed_days]]
+date = 2027-01-06
+name = "Reyes"
+
 [[services]]
 name = "Consulta general"
 description = "Revisión, diagnóstico y tratamiento de perros, gatos y animales exóticos."
