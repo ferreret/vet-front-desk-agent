@@ -43,7 +43,7 @@ def _client_on_own_phone(clinic):
 def test_a_message_reaches_reception(clinic, kb):
     """The agent says "reception will call you back". Until now nobody was told."""
     toolbox = Toolbox(clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW, "+34600111222")
-    toolbox.heard("Quería hablar con alguien de una factura.")
+    toolbox.heard("Quería hablar con alguien de una factura. Me llaman a este mismo número.")
     _run(toolbox, "take_message", message="Quiere hablar de una factura.",
          contact_name="Marta Soler", contact_phone=None)
     (notice,) = toolbox.session.notices
@@ -178,6 +178,7 @@ def test_notices_are_sent_when_the_turn_is_over(clinic, kb):
 def test_what_a_caller_said_cannot_break_the_formatting(clinic, kb):
     """The caller's words go into a message that is marked up: they are escaped."""
     toolbox = Toolbox(clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW, "+34600111222")
+    toolbox.heard("Que me llamen a este mismo teléfono.")
     _run(toolbox, "take_message", message="Dice que pesa <5 kg & no come",
          contact_name="Marta <Soler>", contact_phone=None)
     (notice,) = toolbox.session.notices

@@ -516,9 +516,41 @@ def test_messages_for_reception(clinic, kb):
     assert not failed and "do not say you are transferring" in taken["instructions"]
     assert hidden.session.messages[0].contact_phone == "+34600112233"
 
+    # With a number on the line and none given, it is the one the call comes from. But
+    # the caller is not confirmed and has not said to use it: they are asked first.
     known = _toolbox(clinic, kb, "+34600999888")
-    _call(known, "take_message", message="Que la llamen", contact_name="Ana", contact_phone=None)
+    message = {"message": "Que la llamen", "contact_name": "Ana", "contact_phone": None}
+    refused, failed = _call(known, "take_message", **message)
+    assert failed and "has not said to use it" in refused["error"] and not known.session.messages
+    known.heard("Sí, a este.")
+    _call(known, "take_message", **message)
     assert known.session.messages[0].contact_phone == "+34600999888"
+
+
+def test_the_calling_number_is_not_taken_for_the_callers_until_they_are_asked(clinic, kb):
+    """Seen on the demo's page: an unverified appointment for a caller on another client's
+    phone, with that client's number as the one to check it on. Nobody had said it."""
+    number = "+34600999888"
+    booking = {"start": "2026-11-09T16:30", "reason": "revisión", "pet_name": "Toby",
+               "contact_name": "Marta Soler", "contact_phone": number}
+    toolbox = _toolbox(clinic, kb, number)
+    toolbox.heard("Quería una revisión para mi perro Toby el lunes por la tarde.")
+    for _ in range(2):  # asked again in the same breath, it is still not yet
+        refused, failed = _call(toolbox, "book_appointment", **booking)
+        assert failed and "Ask which phone number reception can reach them on" in refused["error"]
+    assert toolbox.agenda.all() == []
+    toolbox.heard("Sí, apúntelo.")
+    booked, failed = _call(toolbox, "book_appointment", **booking)
+    assert not failed and toolbox.agenda.all()[0].contact_phone == number
+
+    # Another number, in their own words, is taken at once; and so is this one when they
+    # have said that it is the same.
+    other = _toolbox(clinic, kb, number)
+    other.heard("Una revisión para Toby el lunes por la tarde. Mi teléfono es el 600 11 22 33.")
+    assert not _call(other, "book_appointment", **{**booking, "contact_phone": "600112233"})[1]
+    same = _toolbox(clinic, kb, number)
+    same.heard("Una revisión para Toby el lunes por la tarde, y me llaman a este mismo número.")
+    assert not _call(same, "book_appointment", **booking)[1]
 
 
 def test_the_clinics_own_number_is_not_where_to_reach_a_caller(clinic, kb):

@@ -75,6 +75,9 @@ class CallSession:
     # heard which it is and has spoken again.
     lines: int = 0
     told: dict[str, int] = field(default_factory=dict)
+    # At which of the caller's lines the calling number was first put forward as where to
+    # reach them: it is taken only once they have been asked and have spoken again.
+    asked_where_to_call: int | None = None
     # What reception has to hear about this call: see `notices`. Whoever carries the call
     # takes them from here and sends them on.
     notices: list[notices.Notice] = field(default_factory=list)
@@ -136,6 +139,13 @@ OWN_NUMBER = (
     "That is one of the clinic's own numbers, not the caller's. Ask the caller for a phone "
     "number where reception can reach them, repeat it back, and call again."
 )
+THIS_NUMBER = (
+    "That is the number this call comes from, and the caller has not said to use it: it "
+    "may not be theirs. Ask which phone number reception can reach them on, and nothing "
+    "else. If they say this one, call again with it."
+)
+# A caller saying that the number they call from is the one: "este mismo", "el mateix".
+SAME_NUMBER = {"mismo", "misma", "mateix", "mateixa", "same"}
 NOT_FROM_THEIR_PHONE = (
     "Appointments can only be cancelled or moved on a call from a phone on the caller's "
     "record, and this call is not. Tell them you cannot do it from this number, and offer "
@@ -509,7 +519,7 @@ class Toolbox:
                         "This caller is not confirmed: contact_name and contact_phone are "
                         "required. Ask for them, repeat the phone back, and call again."
                     )
-                phone = self._callback(contact_phone)
+                phone = self._where_to_call(self._callback(contact_phone))
                 if phone is None:
                     raise ToolError("contact_phone is not a valid phone number. Ask again.")
                 booked = self.agenda.book(
@@ -624,6 +634,27 @@ class Toolbox:
             raise ToolError(OWN_NUMBER)
         return phones[0] if phones else None
 
+    def _where_to_call(self, phone: str | None) -> str | None:
+        """Refuse the calling number as where to reach a caller who is not confirmed, until
+        they have been asked.
+
+        Seen on the demo's page, which shows the notice reception would get: an unverified
+        appointment for a caller on another client's phone, with that client's number as
+        the phone to check it on. The caller had not given it; the model had filled in the
+        number the call came from. Reception would have rung the wrong person. For a caller
+        who is confirmed the number is on their record, or they can be found by it.
+        """
+        session = self.session
+        if session.client is not None or phone is None or phone != session.caller_number:
+            return phone
+        if SAME_NUMBER & session.said:
+            return phone  # they have said it is this one
+        if session.asked_where_to_call is None:
+            session.asked_where_to_call = session.lines
+        if session.asked_where_to_call >= session.lines:
+            raise ToolError(THIS_NUMBER)
+        return phone
+
     def _transfer_to_reception(self, summary: str) -> dict:
         if not self.can_transfer:
             raise ToolError("There is no tool called transfer_to_reception on this call: "
@@ -643,6 +674,7 @@ class Toolbox:
         if phone is None:
             raise ToolError("There is no number to call back: the caller ID is hidden. "
                             "Ask for a phone number, repeat it back, and call again.")
+        phone = self._where_to_call(phone)
         client = self.session.client
         self.session.messages.append(
             Message(message, contact_name, phone, client.code if client else None)
