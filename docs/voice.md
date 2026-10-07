@@ -295,7 +295,8 @@ our address decides, in code, and calls the tool.
   call ended by itself, "end_call tool was called". On the first phone call the line
   closed and no goodbye was heard: the platform did not say the farewell it had been
   handed with the tool, as it had not said the message before a transfer. The goodbye is
-  now the agent's own words, said ahead of the tool call, which waits for them.
+  now the agent's own words, said ahead of the tool call, which waits for them. Heard on
+  a phone call the next day (2026-10-07): the goodbye in full, and then the line closed.
 - **Putting a call through to a person.** The 2025 pilot said "le paso con recepción" and
   could not; this agent has said, truthfully, that it cannot, and taken a message. Now it
   can, when there is a number to put calls through to (`VETDESK_TRANSFER_TO`) and the
@@ -319,6 +320,15 @@ Tried on real calls with two phones (2026-10-06):
   how long to let it ring. The line a clinic puts calls through to must have no
   voicemail. What happens when a line rings out, the path that takes a message instead,
   has not been heard yet.
+
+### Voices in the background
+
+On one phone call (2026-10-06) a voice near the caller was written down for fifteen
+seconds as the caller's own line, and the platform cut the agent's answer four times
+while our address had answered each time in under a second. The platform has a filter for
+voices in the background (`vad.background_voice_detection`), off by default. It is on
+since 2026-10-07. Not yet tried on a call with a radio or a video playing nearby, and not
+known what it does to a caller who speaks quietly or from a noisy street.
 
 ### Every call written down
 

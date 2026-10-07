@@ -334,6 +334,14 @@ def test_the_platform_is_asked_to_fill_long_waits_itself(monkeypatch):
     assert turn["silence_end_call_timeout"] == 30.0  # a line nobody is on is hung up
 
 
+def test_the_platform_is_asked_to_leave_out_voices_in_the_background(monkeypatch):
+    from vetdesk.voice.elevenlabs_agent import config
+
+    monkeypatch.setenv("VETDESK_TTS_VOICE", "voice")
+    settings = config("https://example.test", "secret")["conversation_config"]
+    assert settings["vad"] == {"background_voice_detection": True}
+
+
 def test_the_platform_agent_can_be_told_to_change_language(monkeypatch):
     """It starts in Spanish and holds the other languages, so that our address can tell it
     which one to listen in. Its own model decides nothing: no model of theirs is used."""

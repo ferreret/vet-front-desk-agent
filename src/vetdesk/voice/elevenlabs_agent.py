@@ -135,6 +135,10 @@ def config(url: str, secret_id: str) -> dict:
                     "use_llm_generated_message": False,
                 },
             },
+            # A voice near the caller (a radio, somebody talking in the room) was taken for
+            # the caller's own line for fifteen seconds on one call, and cut the agent's
+            # answer four times. The platform's filter for voices in the background.
+            "vad": {"background_voice_detection": True},
         },
     }
 
