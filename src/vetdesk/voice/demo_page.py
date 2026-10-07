@@ -56,6 +56,10 @@ PAGE = """<!doctype html>
  #said .agent{background:var(--said)}
  #said .you{background:var(--card);border:1px solid var(--line);justify-self:end}
  .warn{color:var(--warn)}
+ #decided{background:var(--card);border:1px solid var(--line);border-left:4px solid
+   var(--accent);border-radius:.6rem;padding:.8rem 1rem}
+ #decided pre{font:inherit;white-space:pre-wrap;margin:.5rem 0 0;padding:.6rem .8rem;
+   background:var(--paper);border-radius:.5rem}
  footer{margin-top:2.5rem;border-top:1px solid var(--line);padding-top:1rem}
 </style>
 </head>
@@ -75,6 +79,11 @@ PAGE = """<!doctype html>
 <h2 data-t="said_title"></h2>
 <ul id="said" aria-live="polite"></ul>
 
+<div id="after" hidden>
+<h2 data-t="decided_title"></h2>
+<div id="decided"></div>
+</div>
+
 <footer class="soft">
 <p data-t="kept"></p>
 </footer>
@@ -88,6 +97,21 @@ const TEXT = {
   made_up: "Todo es inventado: la clínica, los clientes y sus animales. Elige quién eres; "
       + "el asistente no lo sabe, solo ve desde qué teléfono llamas.",
   who: "Quién llama", said_title: "Lo que se dice",
+  decided_title: "Lo que decidió el asistente",
+  confirmed: name => `Te identificó como «${name}»`,
+  by_phone: ", por tu nombre y por llamar desde el teléfono de esa ficha.",
+  by_pet_town: ", por tu nombre, tu mascota y tu pueblo.",
+  mistyped: " La ficha tiene el nombre mal escrito, y aun así te reconoció.",
+  not_asked: "No preguntó quién eras: para lo que pediste no hacía falta.",
+  not_a_client: "No te identificó: nadie en la clínica se llama así. Te atendió como a "
+      + "alguien nuevo, sin abrir ninguna ficha.",
+  other_phone: "No te identificó: llamabas desde el teléfono de la ficha de otra persona, "
+      + "y desde ahí no confirma a nadie. Te atendió sin abrir ninguna ficha.",
+  not_enough: "No te identificó: no llegó a tener pruebas suficientes de quién eras. Te "
+      + "atendió sin abrir ninguna ficha.",
+  reception: "Lo que habría recibido recepción. En una llamada por teléfono lo recibe de "
+      + "verdad:",
+  no_notice: "Recepción no habría recibido nada: no había nada que avisar.",
   call: "Llamar", hang: "Colgar", lang: "English",
   name: "Te llamas", town: "Vives en", pets: "Tus animales", phone: "Llamas desde",
   hidden: "número oculto", none: "ninguno en la clínica",
@@ -119,6 +143,22 @@ const TEXT = {
   made_up: "Everything is made up: the clinic, its clients and their animals. Pick who you "
       + "are; the assistant does not know, it only sees which phone you call from.",
   who: "Who is calling", said_title: "What is said",
+  decided_title: "What the assistant decided",
+  confirmed: name => `It identified you as "${name}"`,
+  by_phone: ", by your name and by the call coming from the phone on that record.",
+  by_pet_town: ", by your name, your pet and your town.",
+  mistyped: " The name is misspelt on the record, and it knew you all the same.",
+  not_asked: "It did not ask who you were: what you asked for did not need it.",
+  not_a_client: "It did not identify you: nobody at the clinic has that name. It served "
+      + "you as somebody new, without opening any record.",
+  other_phone: "It did not identify you: you were calling from the phone on another "
+      + "person's record, and from there it confirms nobody. It served you without "
+      + "opening any record.",
+  not_enough: "It did not identify you: it never had enough proof of who you were. It "
+      + "served you without opening any record.",
+  reception: "What reception would have been told, in Spanish as the clinic reads it. On "
+      + "a phone call it is really sent:",
+  no_notice: "Reception would have been told nothing: there was nothing to tell.",
   call: "Call", hang: "Hang up", lang: "Español",
   name: "Your name", town: "You live in", pets: "Your animals", phone: "You call from",
   hidden: "a hidden number", none: "none at the clinic",
@@ -149,6 +189,7 @@ const $ = id => document.getElementById(id);
 const speaks = navigator.language || "es";
 let lang = speaks.startsWith("es") || speaks.startsWith("ca") ? "es" : "en";
 let people = [], chosen = null, conversation = null, timer = null, info = null;
+let pass = null, result = null;
 const t = key => TEXT[lang][key];
 
 function state(text, warn = false) {
@@ -189,6 +230,35 @@ function sheet() {
   }
 }
 
+function decided() {
+  $("after").hidden = !result;
+  if (!result) return;
+  const who = document.createElement("p"), told = document.createElement("p");
+  const identity = result.identity;
+  who.textContent = identity.level === "confirmed"
+      ? t("confirmed")(identity.name) + t(identity.by === "phone" ? "by_phone" : "by_pet_town")
+        + (identity.mistyped ? t("mistyped") : "")
+      : t(identity.why);
+  told.className = "soft";
+  told.textContent = t(result.reception.length ? "reception" : "no_notice");
+  const notices = result.reception.map(text => {
+    const notice = document.createElement("pre");
+    notice.textContent = text;  // as text, never as markup
+    return notice;
+  });
+  $("decided").replaceChildren(who, told, ...notices);
+}
+
+async function ask_what_happened() {
+  // The last answer's notices are written down as its turn ends, a moment after it is said.
+  await new Promise(done => setTimeout(done, 800));
+  try {
+    const answer = await fetch("demo/result?pass=" + encodeURIComponent(pass));
+    result = answer.ok ? await answer.json() : null;
+  } catch { result = null; }
+  decided();
+}
+
 function draw() {
   document.documentElement.lang = lang;
   for (const node of document.querySelectorAll("[data-t]")) {
@@ -210,6 +280,7 @@ function draw() {
   sheet();
   if (info) $("left").textContent = t("left")(info.minutes_left, info.seconds_a_call);
   $("call").disabled = !chosen;
+  decided();
 }
 
 async function load() {
@@ -225,12 +296,15 @@ function ended() {
   state(t("over"));
   draw();
   load();
+  if (pass) ask_what_happened();
 }
 
 async function call() {
   if (conversation) { await conversation.endSession(); return; }
   $("call").disabled = true;
   $("said").replaceChildren();
+  pass = result = null;
+  decided();
   try {
     state(t("mic"));
     try {
@@ -246,6 +320,7 @@ async function call() {
     }
     if (!answer.ok) { state(t("failed"), true); return; }
     const given = await answer.json();
+    pass = given.pass;
     state(t("ringing"));
     const {Conversation} = await import("__SDK__");
     conversation = await Conversation.startSession({

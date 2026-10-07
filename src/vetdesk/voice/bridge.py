@@ -169,6 +169,9 @@ class Line:
         # On a call from the public demo's page, its pass ("" when it has none that is
         # good). None on every other call.
         self.demo: str | None = None
+        # On such a call, what reception would have been told: nothing is sent, and the
+        # page shows it to the visitor instead.
+        self.told: list = []
         # The last thing said on this line, and how many silences in a row have followed.
         self._last: list[str] = []
         self._quiet = 0

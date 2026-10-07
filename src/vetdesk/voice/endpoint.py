@@ -53,6 +53,7 @@ from ..agent import FrontDeskAgent
 from ..agent.agent import Call, Turn
 from ..agent.prompt import THROUGH
 from ..evals.cost import cost
+from ..identity.resolver import MISTYPED_ON_FILE
 from ..kb import KnowledgeBase, load_kb, why_not
 from ..kb.model import spoken_phone
 from ..language import SPOKEN
@@ -155,9 +156,14 @@ class Switchboard:
         self._demo = demo
         self._start_demo_call = start_demo_call or (
             lambda persona: start_call(persona.caller_number if persona else None))
+        self._demo_lines: dict[str, Line] = {}  # by pass, for the page to ask what happened
         self._lines: dict[str, tuple[Line, float]] = {}
         # Real numbers that call as a number of the made-up clinic: see `stand_ins`.
         self._stand_ins = stand_ins or {}
+
+    def demo_line(self, token: str) -> Line | None:
+        """The call a pass of the public demo was used for, while it is remembered."""
+        return self._demo_lines.get(token)
 
     def line(self, messages: list[dict], can_transfer: bool = False) -> Line:
         system = " \n".join(_text(m.get("content")) for m in messages if m.get("role") == "system")
@@ -183,6 +189,11 @@ class Switchboard:
             line.listening_in, line.name = FIRST_LANGUAGE, conversation
             line.demo = from_demo.group(1) if given else ""
             self._lines[conversation] = (line, now)
+            if given:
+                going = {id(kept) for kept, _ in self._lines.values()}
+                self._demo_lines = {token: kept for token, kept in self._demo_lines.items()
+                                    if id(kept) in going}
+                self._demo_lines[line.demo] = line
         elif from_demo and self._demo and self._lines[conversation][0].demo:
             self._demo.call(self._lines[conversation][0].demo)  # heard of again
         if conversation not in self._lines:
@@ -209,6 +220,31 @@ class Switchboard:
         line, _ = self._lines[conversation]
         self._lines[conversation] = (line, now)
         return line
+
+
+def what_happened(line: Line) -> dict:
+    """What the agent decided on a demo call, for the page to show when it is over.
+
+    From the page a caller who was not confirmed and one who was look alike: both ask for
+    an appointment and get one. The difference is in what the agent took them for and in
+    what reception is told, and neither is heard on the call.
+    """
+    session = line.call.session
+    found = session.resolution
+    if session.client is not None:
+        winner = found.candidates[0] if found and found.candidates else None
+        identity = {"level": "confirmed", "name": session.client.raw_name,
+                    "by": "phone" if winner is not None and winner.phone_on_file else "pet_town",
+                    "mistyped": bool(found and found.why.startswith(MISTYPED_ON_FILE))}
+    elif found is None:
+        identity = {"level": "none", "why": "not_asked"}
+    elif found.decision == "not_found":
+        identity = {"level": "none", "why": "not_a_client"}
+    elif "another client's record" in found.why:
+        identity = {"level": "none", "why": "other_phone"}
+    else:
+        identity = {"level": "none", "why": "not_enough"}
+    return {"identity": identity, "reception": [notice.text for notice in line.told]}
 
 
 class Desk:
@@ -330,7 +366,9 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                 log.info("for reception: %s", notice.kind)
                 if calls:
                     calls.happened(line.name, notice.kind)
-                if tell and line.demo is None:  # a demo call is nobody reception serves
+                if line.demo is not None:  # a demo call is nobody reception serves:
+                    line.told.append(notice)  # its page shows what would have been told
+                elif tell:
                     tell(notice)
         return after
 
@@ -603,6 +641,12 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
         return web.json_response({"signed_url": address_to_call, "pass": token,
                                   "seconds": int(demo.limit.total_seconds())})
 
+    async def demo_result(request: web.Request) -> web.Response:
+        line = switchboard.demo_line(request.query.get("pass", ""))
+        if line is None:
+            return web.json_response({"error": "no such call"}, status=404)
+        return web.json_response(what_happened(line))
+
     async def demo_view(request: web.Request) -> web.Response:
         return web.Response(text=demo_page, content_type="text/html")
 
@@ -610,6 +654,7 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
     if demo is not None and sign is not None:
         app.router.add_get("/demo/people", demo_people)
         app.router.add_post("/demo/call", demo_call)
+        app.router.add_get("/demo/result", demo_result)
         if demo_page:
             app.router.add_get("/demo", demo_view)
     app.router.add_post("/v1/chat/completions", chat_completions)

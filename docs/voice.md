@@ -390,6 +390,11 @@ and `ELEVEN_API_KEY`); without them its addresses do not exist.
   pilot could not do, and nobody books an appointment first, in a call of three minutes,
   to see it changed. Whoever calls from the phone on their record has one already, two
   days on in the morning, and the page says when.
+- **What the agent decided, shown when the call is over.** From the page a caller who was
+  not confirmed and one who was look alike: both ask for an appointment and get one. So
+  the page says what the agent took the visitor for, and why, and shows the notices
+  reception would have been sent (the unverified appointment, the record to mend), which
+  on a demo call are kept with the call instead of sent.
 - **The page** (`/demo`, `voice/demo_page.py`) is one file with no build step, in Spanish
   and English, and uses the platform's browser library at a fixed version. What is said
   is written on it as text, never as markup.

@@ -123,6 +123,11 @@ def _post(app, *requests):
                 if callable(request):
                     request()
                     continue
+                if isinstance(request, str):  # something to read, not to send
+                    await asyncio.sleep(0.05)
+                    response = await client.get(request)
+                    answers.append((response.status, await response.text()))
+                    continue
                 path, body, key = request
                 response = await client.post(
                     path, json=body, headers={"Authorization": f"Bearer {key}"} if key else {})
@@ -212,10 +217,19 @@ def test_a_demo_call_is_taken_as_from_that_callers_phone_and_touches_nothing_rea
     app, real, numbers = _front_desk(
         clinic, [Reply("", (book,), "tool_calls"), Reply("Reservado.")], demo, told=told)
     token = demo.start("own", "a")
-    (answer,), _ = _post(app, _chat(token, "Una revisión para mi perro Toby, el lunes."))
+    (answer, after, nothing), _ = _post(
+        app, _chat(token, "Una revisión para mi perro Toby, el lunes."),
+        f"/demo/result?pass={token}", "/demo/result?pass=made-up")
     assert answer[0] == 200 and _spoken(answer[1]) == ("Reservado.", [])
     assert numbers == ["+34600111222"]
     assert real.all() == [] and told == []
+    # What the visitor could not hear on the call, the page is told when it is over: what
+    # the agent took them for, and what reception would have been sent.
+    shown = json.loads(after[1])
+    assert after[0] == 200 and shown["identity"] == {"level": "none", "why": "not_asked"}
+    (notice,) = shown["reception"]
+    assert notice.startswith("CITA NUEVA") and "SIN VERIFICAR: dice ser Marta Soler" in notice
+    assert nothing[0] == 404
 
 
 def test_a_call_with_no_pass_is_told_so_and_closed_without_asking_any_model(clinic):
@@ -327,3 +341,38 @@ def test_the_page_is_told_when_that_appointment_is(clinic):
         "pet": "Toby", "es": "jueves 5 de noviembre a las nueve y media de la mañana",
         "en": "Thursday 5 November at nine thirty in the morning"}
     assert shown[1]["appointment"] is None
+
+
+def test_what_the_agent_took_a_demo_caller_for_is_put_in_words_the_page_can_show(
+        scenarios, clinic):
+    """Each caller the page offers, taken through the resolver as the call would."""
+    from vetdesk.agent import Toolbox
+    from vetdesk.voice.bridge import Line
+    from vetdesk.voice.endpoint import what_happened
+
+    kb = load_kb()
+    people = {persona.key: persona for persona in personas(scenarios, clinic)}
+
+    def after_saying(persona, everything=True):
+        toolbox = Toolbox(clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW,
+                          persona.caller_number)
+        said = {"name": persona.name}
+        if everything:
+            said |= {"pet_name": persona.pets[0], "town": persona.town}
+        toolbox.heard(" ".join(said.values()))
+        toolbox.run(ToolCall("i", "identify_client", {
+            "name": None, "pet_name": None, "town": None, "name_spelled": False, **said}))
+        call = type("Call", (), {"session": toolbox.session})()
+        line = Line.__new__(Line)
+        line.call, line.told = call, []
+        return what_happened(line)["identity"]
+
+    own = after_saying(people["own"], everything=False)
+    assert (own["level"], own["by"]) == ("confirmed", "phone")
+    assert own["mistyped"] == ("Deigo" in own["name"])  # said only when it is so
+    hidden = after_saying(people["hidden"])
+    assert (hidden["level"], hidden["by"], hidden["mistyped"]) == ("confirmed", "pet_town", False)
+    assert after_saying(people["borrowed"]) == {"level": "none", "why": "other_phone"}
+    assert after_saying(people["stranger"]) == {"level": "none", "why": "not_a_client"}
+    assert after_saying(people["hidden"], everything=False) == {"level": "none",
+                                                               "why": "not_enough"}
