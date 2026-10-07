@@ -8,7 +8,11 @@ language, and where to ask what to say. No instructions, no tools, no knowledge 
 at ElevenLabs. Its prompt is two lines that tell our address which call a request belongs
 to and who is calling; everything else is `FrontDeskAgent`.
 
-It only ever touches the agent whose id it wrote to .env itself.
+With `--demo` it sets up a second agent, the public demo's, for calls from a browser:
+the same voice and the same address, nobody to put a call through to, and limits of its
+own (see `demo_settings`). The phone's agent is left as it is.
+
+It only ever touches the agents whose ids it wrote to .env itself.
 """
 
 from __future__ import annotations
@@ -27,6 +31,11 @@ API = "https://api.elevenlabs.io/v1/convai"
 AGENT_ID, SECRET_ID = "VETDESK_ELEVENLABS_AGENT_ID", "VETDESK_ELEVENLABS_SECRET_ID"
 PROMPT = ("vetdesk-conversation: {{system__conversation_id}}\n"
           "vetdesk-caller: {{system__caller_id}}")
+# The demo's agent says which pass the call was started with, not who is calling: a
+# browser has no number, and our address knows whose number the pass stands for.
+DEMO_AGENT_ID = "VETDESK_ELEVENLABS_DEMO_AGENT_ID"
+DEMO_PROMPT = ("vetdesk-conversation: {{system__conversation_id}}\n"
+               "vetdesk-demo: {{demo_pass}}")
 
 
 def _call(method: str, path: str, body: dict | None = None) -> dict:
@@ -68,6 +77,41 @@ def _transfer() -> dict:
                        "condition": "Only when asked for by the custom model.",
                        "transfer_type": "conference"}]},
     }}
+
+
+def demo_settings(settings: dict) -> dict:
+    """The phone agent's settings, turned into the public demo's.
+
+    Anybody can open the demo's page, so the limits are set in three places: our address
+    counts the minutes and closes a call that has run its time, and the platform is told
+    the same, in case ours ever fails to.
+    """
+    kb = load_kb()
+    conversation = settings["conversation_config"]
+    agent = conversation["agent"]
+    agent["prompt"]["prompt"] = DEMO_PROMPT
+    agent["prompt"]["built_in_tools"].pop("transfer_to_number", None)  # nobody to pass it to
+    # With no pass the line still reaches our address, which says so and closes it.
+    agent["dynamic_variables"] = {"dynamic_variable_placeholders": {"demo_pass": ""}}
+    # A little over our own three minutes: ours says goodbye first, this cuts if it did not.
+    conversation["conversation"] = {
+        "max_duration_seconds": int(os.environ.get("VETDESK_DEMO_MAX_SECONDS", "200"))}
+    return {
+        "name": f"{kb.clinic.name} demo (vetdesk)",
+        "conversation_config": conversation,
+        "platform_settings": {
+            # A call can only be started with an address our server asked for.
+            "auth": {"enable_auth": True},
+            # Two visitors at once and so many calls a day, and never at the higher price
+            # the platform charges for calls beyond its limit.
+            "call_limits": {
+                "agent_concurrency_limit": 2,
+                "daily_limit": int(os.environ.get("VETDESK_DEMO_CALLS_A_DAY", "60")),
+                "bursting_enabled": False},
+            # A visitor's voice is not kept, and what they said not for long.
+            "privacy": {"record_voice": False, "retention_days": 30},
+        },
+    }
 
 
 def config(url: str, secret_id: str) -> dict:
@@ -147,6 +191,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="vetdesk.voice.elevenlabs_agent", description=__doc__)
     parser.add_argument("--url", required=True,
                         help="public address of `vetdesk.voice.endpoint`, e.g. a tunnel's")
+    parser.add_argument("--demo", action="store_true",
+                        help="set up the public demo's agent instead of the phone's")
     args = parser.parse_args()
     _load_env()
     for needed in ("ELEVEN_API_KEY", "VETDESK_TTS_VOICE", KEY_NAME):
@@ -160,14 +206,18 @@ def main() -> None:
                                             "value": os.environ[KEY_NAME]})
         _remember(SECRET_ID, secret["secret_id"])
     settings = config(args.url, os.environ[SECRET_ID])
+    name = AGENT_ID
+    if args.demo:
+        settings, name = demo_settings(settings), DEMO_AGENT_ID
 
-    if os.environ.get(AGENT_ID):
-        agent = _call("PATCH", f"/agents/{os.environ[AGENT_ID]}", settings)
-        print(f"updated agent {agent['agent_id']}: it now asks {args.url}")
+    # Never the address in what is printed: it is not for a log.
+    if os.environ.get(name):
+        agent = _call("PATCH", f"/agents/{os.environ[name]}", settings)
+        print(f"updated agent {agent['agent_id']}")
     else:
         agent = _call("POST", "/agents/create", settings)
-        _remember(AGENT_ID, agent["agent_id"])
-        print(f"created agent {agent['agent_id']}: it asks {args.url}")
+        _remember(name, agent["agent_id"])
+        print(f"created agent {agent['agent_id']}, kept in .env as {name}")
 
 
 if __name__ == "__main__":

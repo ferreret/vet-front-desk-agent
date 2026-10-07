@@ -219,3 +219,30 @@ def test_a_demo_call_that_has_run_its_time_is_said_goodbye_to_and_closed(clinic)
                              _chat(token, "Hola, buenos días.", "Quería una cita."))
     assert _spoken(first[1]) == ("Dígame.", [])
     assert _spoken(late[1]) == (TIME_IS_UP["es"], ["end_call"])
+
+
+# --- the demo's own agent on the voice platform ---------------------------------------------
+
+def test_the_demos_agent_needs_a_pass_has_limits_and_nobody_to_put_a_call_through_to(monkeypatch):
+    from vetdesk.voice.elevenlabs_agent import config, demo_settings
+
+    monkeypatch.setenv("VETDESK_TTS_VOICE", "voice")
+    monkeypatch.setenv("VETDESK_TRANSFER_TO", "+34600000000")
+    phone = config("https://example.test", "secret")
+    assert "transfer_to_number" in phone["conversation_config"]["agent"]["prompt"]["built_in_tools"]
+    demo = demo_settings(config("https://example.test", "secret"))
+    assert demo["name"] == "Planeta Animal demo (vetdesk)" != phone["name"]
+    agent = demo["conversation_config"]["agent"]
+    assert "vetdesk-demo: {{demo_pass}}" in agent["prompt"]["prompt"]
+    assert "vetdesk-caller" not in agent["prompt"]["prompt"]
+    assert list(agent["prompt"]["built_in_tools"]) == ["language_detection", "end_call"]
+    assert agent["dynamic_variables"] == {"dynamic_variable_placeholders": {"demo_pass": ""}}
+    # The same voice, ears and manners as on the phone.
+    for part in ("tts", "turn", "vad", "language_presets"):
+        assert demo["conversation_config"][part] == phone["conversation_config"][part]
+    assert demo["conversation_config"]["conversation"] == {"max_duration_seconds": 200}
+    platform = demo["platform_settings"]
+    assert platform["auth"] == {"enable_auth": True}
+    assert platform["call_limits"] == {"agent_concurrency_limit": 2, "daily_limit": 60,
+                                       "bursting_enabled": False}
+    assert platform["privacy"] == {"record_voice": False, "retention_days": 30}
