@@ -51,6 +51,30 @@ class VoiceCall:
 
 
 @dataclass(frozen=True)
+class Plan:
+    """One plan of the voice platform's published price list, as its page gives it."""
+
+    name: str
+    per_month: float  # dollars, whatever the calls
+    minutes: float  # of calls it covers
+    extra_per_minute: float  # dollars for each minute past them
+
+    def bill(self, minutes: float) -> float:
+        return self.per_month + max(0.0, minutes - self.minutes) * self.extra_per_minute
+
+
+def plans(text: str) -> tuple[Plan, ...]:
+    """Plans as they are typed: `Creator:18.33:250:0.12,Pro:82.50:1100:0.08`."""
+    found = []
+    for item in filter(None, (part.strip() for part in text.split(","))):
+        name, *figures = item.split(":")
+        if len(figures) != 3:
+            raise ValueError(f"a plan is name:a month:minutes:extra minute, not {item!r}")
+        found.append(Plan(name, *(float(figure) for figure in figures)))
+    return tuple(found)
+
+
+@dataclass(frozen=True)
 class ModelCall:
     """What the server wrote down of one call: the model's side of the bill."""
 
@@ -136,7 +160,8 @@ def _table(head: Iterable[str], rows: Iterable[Iterable[str]]) -> list[str]:
 def report(voice: list[VoiceCall], model: list[ModelCall], today: datetime, *,
            model_name: str = "", calls_per_month: tuple[int, ...] = (300, 1000, 3000),
            minutes: float | None = None, phone_per_minute: float | None = None,
-           fixed_per_month: float | None = None, fixed_is: str = "") -> str:
+           fixed_per_month: float | None = None, fixed_is: str = "",
+           tariff: tuple[Plan, ...] = ()) -> str:
     """The report, in Markdown and in Spanish: it is for whoever decides on the money."""
     out = [f"# Lo que cuesta la centralita — {today:%d/%m/%Y}", ""]
     spoken = [call for call in voice if call.seconds > 0]
@@ -256,6 +281,34 @@ def report(voice: list[VoiceCall], model: list[ModelCall], today: datetime, *,
                        for count in calls_per_month])
         if fixed_is:  # a figure nobody can check says what it is made of
             out += ["", f"El fijo es: {fixed_is}"]
+
+    if tariff:
+        # The platform's published prices tell another story than what it charged for the
+        # calls made. Which of the two rules the bill is not known, so both are written.
+        credits_a_minute = sum(call.credits for call in spoken) / voice_minutes
+        rest = (model_per_minute or 0.0) + (phone_per_minute or 0.0)
+        rows = []
+        for count in calls_per_month:
+            plan = min(tariff, key=lambda plan: plan.bill(count * mean))
+            voice_bill = plan.bill(count * mean)
+            total = voice_bill + count * mean * rest + (fixed_per_month or 0.0)
+            rows.append((_n(count, 0), _n(count * mean, 0), plan.name, _usd(voice_bill),
+                         f"**{_usd(total)}**",
+                         f"**{_usd(count * one_call + (fixed_per_month or 0.0))}**"))
+        out += ["", "## La misma cuenta, a la tarifa publicada", "",
+                "La plataforma de voz publica sus planes por minutos de llamada: una cuota "
+                "al mes que cubre unos minutos, y un precio por cada minuto de más. Las "
+                "llamadas hechas hasta hoy se han cobrado de otra manera, "
+                f"{_n(credits_a_minute, 0)} créditos por minuto, que la propia plataforma "
+                f"valora en {_usd(per_minute, 4)} por minuto. **No se sabe cuál de las dos "
+                "cuentas manda en la factura: la real estará entre las dos.**", ""]
+        out += _table(("Plan", "Cuota al mes", "Minutos que cubre", "Minuto de más"),
+                      [(plan.name, _usd(plan.per_month), _n(plan.minutes, 0),
+                        _usd(plan.extra_per_minute)) for plan in tariff])
+        out += ["", "Con el plan que sale más barato para cada volumen, y lo demás igual "
+                    "(modelo, línea y fijo):", ""]
+        out += _table(("Llamadas al mes", "Minutos", "Plan", "Voz a tarifa",
+                       "Total a tarifa", "Total según lo cobrado"), rows)
 
     out += ["", "## Lo que no entra en estas cifras", ""]
     missing = []

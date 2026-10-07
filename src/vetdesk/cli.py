@@ -220,7 +220,7 @@ def _explain_llm_error(error: Exception, provider: str | None, model: str | None
 
 
 def _costs(args: argparse.Namespace) -> int:
-    from .costs import model_calls, report, voice_calls
+    from .costs import model_calls, plans, report, voice_calls
 
     _load_env()
     key, agent = os.environ.get("ELEVEN_API_KEY"), os.environ.get("VETDESK_ELEVENLABS_AGENT_ID")
@@ -246,7 +246,8 @@ def _costs(args: argparse.Namespace) -> int:
                   model_name=os.environ.get("VETDESK_LLM_MODEL", "gemini-3.5-flash-lite"),
                   calls_per_month=tuple(int(n) for n in args.calls_per_month.split(",")),
                   minutes=args.minutes, phone_per_minute=args.phone_per_minute,
-                  fixed_per_month=args.fixed_per_month, fixed_is=args.fixed_is)
+                  fixed_per_month=args.fixed_per_month, fixed_is=args.fixed_is,
+                  tariff=plans(args.voice_tariff))
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(text, encoding="utf-8")
@@ -571,6 +572,10 @@ def main(argv: list[str] | None = None) -> int:
                        help="what the phone line charges per minute, in dollars")
     costs.add_argument("--fixed-per-month", type=float, default=None,
                        help="what is paid every month whatever the calls, in dollars")
+    costs.add_argument("--voice-tariff", default="",
+                       help="the voice platform's published plans, to work the month out "
+                            "at them too: name:dollars a month:minutes covered:dollars per "
+                            "extra minute, separated by commas")
     costs.add_argument("--fixed-is", default="",
                        help="what that monthly figure is made of, written into the report")
     costs.add_argument("--out", type=Path, default=None, help="write the report to this file")

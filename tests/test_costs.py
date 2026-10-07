@@ -3,7 +3,7 @@
 import json
 from datetime import datetime
 
-from vetdesk.costs import ModelCall, VoiceCall, model_calls, report, voice_calls
+from vetdesk.costs import ModelCall, VoiceCall, model_calls, plans, report, voice_calls
 
 TODAY = datetime(2026, 10, 6, 18, 0)
 
@@ -108,3 +108,24 @@ def test_with_nothing_but_typed_calls_the_models_price_a_minute_is_said_to_run_h
     text = report(voice, [ModelCall("t", 3, 3, 10000, 60, 0.003, 18)], TODAY)
     assert "solo tiene apuntadas pruebas escritas" in text
     assert "| **Modelo** (el del agente) | 1 | 0,3 | 0,0030 $ | 0,0030 $ | 0,0090 $ |" in text
+
+
+def test_the_month_is_worked_out_at_the_published_prices_too():
+    """What the platform charged for the calls and what its price list says are two
+    different bills. Which one rules is not known, so the report gives both."""
+    tariff = plans("Creator:20:250:0.12, Pro:80:1100:0.08")
+    assert [plan.name for plan in tariff] == ["Creator", "Pro"]
+    voice = [_voice("a", 60, 0.03), _voice("b", 60, 0.03)]  # a minute each, 0,03 $ a minute
+    model = [ModelCall("a", 4, 6, 12000, 80, 0.01, 55), ModelCall("b", 4, 6, 12000, 80, 0.01, 55)]
+    text = report(voice, model, TODAY, calls_per_month=(100, 1000, 3000), phone_per_minute=0,
+                  fixed_per_month=10, tariff=tariff)
+    assert "138 créditos por minuto" in text and "0,0300 $ por minuto" in text
+    assert "No se sabe cuál de las dos cuentas manda en la factura" in text
+    assert "| Creator | 20,00 $ | 250 | 0,12 $ |" in text
+    # 100 minutes fit in the small plan: its fee, the model (0,01 $ a minute) and the fixed.
+    assert "| 100 | 100 | Creator | 20,00 $ | **31,00 $** | **14,00 $** |" in text
+    # 1.000 minutes: 110 $ on the small plan, 80 $ on the one that covers them.
+    assert "| 1.000 | 1.000 | Pro | 80,00 $ | **100,00 $** | **50,00 $** |" in text
+    # 3.000: the bigger plan and 1.900 minutes more at 0,08 $.
+    assert "| 3.000 | 3.000 | Pro | 232,00 $ | **272,00 $** | **130,00 $** |" in text
+    assert "a la tarifa publicada" not in report(voice, model, TODAY)
