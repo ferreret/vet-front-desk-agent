@@ -97,31 +97,41 @@ the animal, and if it sounds serious treat it as an emergency.
 # given only the phrases of the language the call is in.
 LANGUAGE_NAMES = {"es": "Spanish", "ca": "Catalan", "en": "English", "de": "German",
                   "fr": "French", "it": "Italian", "ru": "Russian"}
+# In each language: what they want, who is calling, no person to put them through to, and
+# whether they want anything else. The last was missing, and to "Okey, gracias" in the
+# middle of a call the model reached for the first: "¿En qué puedo ayudarle?".
 PHRASES = {
     "es": ("¿En qué puedo ayudarle?",
            "¿Me dice su nombre y sus dos apellidos, por favor?",
-           "No puedo pasarle la llamada, pero le tomo nota y recepción le llamará."),
+           "No puedo pasarle la llamada, pero le tomo nota y recepción le llamará.",
+           "¿Necesita algo más?"),
     "ca": ("En què el puc ajudar?",
            "Em diu el seu nom i els dos cognoms, si us plau?",
-           "No li puc passar la trucada, però en prenc nota i recepció li trucarà."),
+           "No li puc passar la trucada, però en prenc nota i recepció li trucarà.",
+           "Necessita alguna cosa més?"),
     "en": ("How can I help you?",
            "May I have your full name, please?",
-           "I can't put you through, but I'll take a note and reception will call you back."),
+           "I can't put you through, but I'll take a note and reception will call you back.",
+           "Is there anything else I can help you with?"),
     "de": ("Wie kann ich Ihnen helfen?",
            "Wie ist Ihr vollständiger Name, bitte?",
            "Ich kann Sie nicht weiterverbinden, aber ich notiere Ihr Anliegen und die "
-           "Rezeption ruft Sie zurück."),
+           "Rezeption ruft Sie zurück.",
+           "Kann ich sonst noch etwas für Sie tun?"),
     "fr": ("Comment puis-je vous aider ?",
            "Puis-je avoir votre nom complet, s'il vous plaît ?",
            "Je ne peux pas vous transférer, mais je prends note et la réception vous "
-           "rappellera."),
+           "rappellera.",
+           "Puis-je vous aider pour autre chose ?"),
     "it": ("Come posso aiutarla?",
            "Mi dice il suo nome e cognome, per favore?",
-           "Non posso passarle la chiamata, ma prendo nota e la reception la richiamerà."),
+           "Non posso passarle la chiamata, ma prendo nota e la reception la richiamerà.",
+           "Posso aiutarla in altro?"),
     "ru": ("Чем могу помочь?",
            "Назовите, пожалуйста, ваше полное имя.",
            "Я не могу вас соединить, но я запишу ваше сообщение, и вам перезвонят из "
-           "регистратуры."),
+           "регистратуры.",
+           "Могу ещё чем-нибудь помочь?"),
 }
 
 
@@ -185,8 +195,10 @@ def emergency_sentence(kb: KnowledgeBase, now: datetime, language: str) -> str:
 
 def set_phrases(language: str) -> str:
     """The set phrases of one language, as the model is told them."""
-    wants, who, person = PHRASES[language]
-    return (f'Set phrases in {LANGUAGE_NAMES[language]}. To ask what they want: "{wants}" '
+    wants, who, person, more = PHRASES[language]
+    return (f'Set phrases in {LANGUAGE_NAMES[language]}. To ask what they want, when the '
+            f'call starts: "{wants}" To ask whether they want anything else, once they '
+            f'have been answered or served: "{more}" '
             f'To ask who is calling: "{who}" When they want a person: "{person}"')
 
 

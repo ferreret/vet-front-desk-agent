@@ -360,3 +360,40 @@ def test_fallback_lines_are_spoken_too(clinic, kb):
     heard = []
     _call(ScriptedClient([Reply("", stop="refusal")]), clinic, kb).say("x", heard.append)
     assert heard == [CANNOT_HELP["es"]]
+
+
+def test_once_a_call_has_got_going_the_question_that_opens_it_is_not_asked_again(clinic, kb):
+    """Heard on a call: asked the opening hours and thanked ("Okey, gracias"), the agent
+    answered "¿En qué puedo ayudarle?", as if picking up the phone. With a set phrase for
+    "anything else" the model still wrote the other one in 4 answers of 48, so the one is
+    put in place of the other as it is said."""
+    model = ScriptedClient([
+        Reply("Buenas tardes. ¿En qué puedo ayudarle?"),  # to a hello: asked as it should be
+        Reply("¿En qué puedo ayudarle?"),  # and again, to a second hello: nothing done yet
+        Reply("Los sábados abrimos de diez a una."),
+        Reply("De nada. ¿En qué puedo ayudarle?"), Reply("De nada, ¿en qué puedo ayudarle?"),
+        Reply("De res. En què el puc ajudar?")])
+    call, heard = _call(model, clinic, kb), []
+    answers = [call.say(line, heard.append).text for line in (
+        "Hola, buenas tardes.", "Hola, ¿me oye?", "¿Abrís los sábados?", "Okey, gracias.",
+        "De acuerdo.", "Molt bé, gràcies, però una cosa més.")]
+    assert answers == [
+        "Buenas tardes. ¿En qué puedo ayudarle?", "¿En qué puedo ayudarle?",
+        "Los sábados abrimos de diez a una.", "De nada. ¿Necesita algo más?",
+        "De nada, ¿necesita algo más?", "De res. Necessita alguna cosa més?"]
+    assert "".join(heard) == "".join(answers)  # what was said is what is kept
+
+
+def test_the_phrase_is_changed_as_the_words_go_by_however_they_are_cut():
+    from vetdesk.agent.agent import Later
+
+    text = "De nada. ¿En qué puedo ayudarle? Y ¿en qué quedamos?"
+    wanted = "De nada. ¿Necesita algo más? Y ¿en qué quedamos?"
+    for size in (1, 2, 3, 5, 8, 13, 60):
+        later = Later("¿En qué puedo ayudarle?", "¿Necesita algo más?")
+        pieces = [text[i:i + size] for i in range(0, len(text), size)]
+        assert "".join(later.said(piece) for piece in pieces) + later.rest() == wanted, size
+    # A piece that ends like the phrase begins is held, and let go when it was not it.
+    later = Later("¿En qué puedo ayudarle?", "¿Necesita algo más?")
+    assert later.said("Abrimos a las diez. ¿En qué") == "Abrimos a las diez. "
+    assert later.said(" día viene?") == "¿En qué día viene?" and later.rest() == ""

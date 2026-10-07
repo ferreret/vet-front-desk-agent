@@ -17,6 +17,7 @@ from ..llm import Conversation, LLMClient, LLMError, OnText, ToolResult, Usage
 from ..scheduling import Agenda
 from .prompt import (
     LANGUAGE_NAMES,
+    PHRASES,
     call_context,
     greeting,
     in_an_emergency,
@@ -111,6 +112,44 @@ class Turn:
         return sum(self.latencies)
 
 
+class Later:
+    """Says "anything else?" where a model wrote the phrase that opens a call.
+
+    To "De acuerdo" in the middle of a call a model answered "¿En qué puedo ayudarle?",
+    the set phrase for asking what the caller wants. Given a set phrase for asking whether
+    they want anything else, it still reached for the first in 4 answers of 48. Once a
+    call has got going, the one is put in place of the other as the words go by.
+
+    The answer comes in pieces, and the phrase may come cut in two: the end of a piece
+    that could be its beginning is held until the next piece, or `rest`, settles it.
+    """
+
+    def __init__(self, opening: str, later: str) -> None:
+        self._opening, self._later, self._held = opening.lower(), later, ""
+
+    def _as_written(self, found: str) -> str:
+        """The phrase with a small letter where the model wrote it with one, mid-sentence."""
+        first = next((char for char in found if char.isalpha()), "")
+        if not first.islower():
+            return self._later
+        at = next(i for i, char in enumerate(self._later) if char.isalpha())
+        return self._later[:at] + self._later[at].lower() + self._later[at + 1:]
+
+    def said(self, piece: str) -> str:
+        text, out = self._held + piece, []
+        while (at := text.lower().find(self._opening)) >= 0:
+            out += [text[:at], self._as_written(text[at:at + len(self._opening)])]
+            text = text[at + len(self._opening):]
+        held = next((n for n in range(min(len(text), len(self._opening) - 1), 0, -1)
+                     if self._opening.startswith(text[-n:].lower())), 0)
+        self._held = text[len(text) - held:]
+        return "".join(out) + text[:len(text) - held]
+
+    def rest(self) -> str:
+        held, self._held = self._held, ""
+        return held
+
+
 class Call:
     def __init__(
         self, conversation: Conversation, toolbox: Toolbox, greeting: str,
@@ -133,8 +172,11 @@ class Call:
         self.language = "es"
         # How things stood before the caller's last line, while that line can still be
         # taken back: see `take_back`.
-        self._before_last: tuple[int, str, int] | None = None
+        self._before_last: tuple[int, str, int, bool] | None = None
         self._lines = 0  # how many lines the caller has said
+        # Whether the call has got going: an answer has been given that did more than ask
+        # what the caller wants. From then on that question is not asked again: see `Later`.
+        self._going = False
 
     @property
     def session(self) -> CallSession:
@@ -162,7 +204,7 @@ class Call:
         is calling and tells nothing of their language.
         """
         self._before_last = None
-        before = (self._conversation.mark(), self.language, self._lines)
+        before = (self._conversation.mark(), self.language, self._lines, self._going)
         asked = text
         if not note:
             self._toolbox.heard(text)
@@ -186,8 +228,16 @@ class Call:
         first_words: float | None = None
         said_something = new_request = False
         room = MAX_SPOKEN  # characters this turn may still say
+        opening, anything_else = PHRASES[self.language][0], PHRASES[self.language][3]
+        later = Later(opening, anything_else) if self._going else None
 
         def heard(piece: str) -> None:
+            if later is not None:
+                piece = later.said(piece)
+            if piece:
+                say(piece)
+
+        def say(piece: str) -> None:
             nonlocal first_words, said_something, new_request, room
             room -= len(piece)
             if room < 0:
@@ -204,6 +254,8 @@ class Call:
             started = time.perf_counter()
             answer = send(payload, heard)
             latencies.append(time.perf_counter() - started)
+            if later is not None and (held := later.rest()):
+                say(held)
             return answer
 
         reply = timed(self._conversation.send_user, asked)
@@ -250,6 +302,11 @@ class Call:
             use_tools()
 
         answer = " ".join(kept(part) for part in spoken if part)
+        if later is not None:  # as it was said, not as the model wrote it
+            whole = Later(opening, anything_else)
+            answer = whole.said(answer) + whole.rest()
+        elif answer and opening.lower() not in answer.lower():
+            self._going = True
         fallback = (CANNOT_HELP[self.language] if reply.stop == "refusal"
                     else "" if answer else DID_NOT_FOLLOW[self.language])
         if fallback:  # refused, cut off or empty: never go silent
@@ -276,7 +333,7 @@ class Call:
         """
         if self._before_last is None:
             return False
-        mark, self.language, self._lines = self._before_last
+        mark, self.language, self._lines, self._going = self._before_last
         self._conversation.rewind(mark)
         self._before_last = None
         return True
