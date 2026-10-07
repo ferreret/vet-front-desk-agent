@@ -159,6 +159,11 @@ soon as they give their name.
   the calling number alone confirming whoever's record it is on: 2,574 false
   identifications in the 10,800 calls, 1,014 of them clients on another client's phone
   and 1,557 people who are not clients and hold a number that used to be one's.
+  The sweep puts every client on another client's phone once, so those figures say
+  whether it ever goes wrong, not how often it would. Measured too, as a middle way, what
+  a receptionist does: the number on a single record and the given name alone. 48 false
+  identifications in 5,424 calls with a number: people who share a given name with whoever
+  the number belongs to. Not done either: the count this project stands on is none.
 
   Forgiving them was measured on 2026-10-06, for a caller who spells their name and calls
   from a phone on the record. Five of the 400 clients have a misspelled given name on file
