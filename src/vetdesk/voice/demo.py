@@ -21,6 +21,8 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from ..identity.resolver import Evidence, IdentityResolver
+from ..legacy.models import Clinic
 from ..scenario import Scenario
 
 # Who a visitor can call as: the key the page uses, and the kind of test caller it is.
@@ -63,19 +65,40 @@ class Persona:
     language: str
 
 
-def personas(scenarios: Iterable[Scenario]) -> tuple[Persona, ...]:
-    """The first test caller of each kind the demo offers, in the order of `ROLES`."""
-    first: dict[str, Scenario] = {}
+def _as_the_page_says(key: str, scenario: Scenario, resolver: IdentityResolver) -> bool:
+    """Whether this test caller is taken the way the page tells a visitor they will be.
+
+    The clinic's records have their planted defects, and the first caller of a kind may be
+    one of them: the first to call from their own phone has their name misspelt on file,
+    and is identified by nobody. A visitor told "your name should be enough" was asked to
+    spell it, twice. So what the page promises of a caller is asked of the resolver first.
+    """
+    caller, number = scenario.caller, scenario.call.caller_number
+    pet = caller.pets[0].name if caller.pets else None
+    name = resolver.resolve(Evidence(number, caller.says_name)).level
+    everything = resolver.resolve(Evidence(number, caller.says_name, pet_name=pet,
+                                           town=caller.town)).level
+    if key == "own":  # the name is enough
+        return name == "confirmed"
+    if key == "hidden":  # the name is not, and the pet and the town make it so
+        return name != "confirmed" and everything == "confirmed"
+    return everything != "confirmed"  # never, whatever they know
+
+
+def personas(scenarios: Iterable[Scenario], clinic: Clinic) -> tuple[Persona, ...]:
+    """A test caller of each kind the demo offers, in the order of `ROLES`: the first of
+    its kind that is taken as the page says."""
+    resolver = IdentityResolver(clinic)
+    found: dict[str, Persona] = {}
+    kinds = {category: key for key, category in ROLES.items()}
     for scenario in scenarios:
-        first.setdefault(scenario.category, scenario)
-    found = []
-    for key, category in ROLES.items():
-        if scenario := first.get(category):
+        key = kinds.get(scenario.category)
+        if key and key not in found and _as_the_page_says(key, scenario, resolver):
             caller = scenario.caller
-            found.append(Persona(key, caller.says_name, caller.town,
+            found[key] = Persona(key, caller.says_name, caller.town,
                                  tuple(pet.name for pet in caller.pets),
-                                 scenario.call.caller_number, scenario.language))
-    return tuple(found)
+                                 scenario.call.caller_number, scenario.language)
+    return tuple(found[key] for key in ROLES if key in found)
 
 
 class Full(Exception):

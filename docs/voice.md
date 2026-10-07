@@ -390,8 +390,13 @@ and `ELEVEN_API_KEY`); without them its addresses do not exist.
   and English, and uses the platform's browser library at a fixed version. What is said
   is written on it as text, never as markup.
 
-Seen so far: the page, loaded from a server on this computer, with its four callers. **No
-call has been made from it yet.**
+The first call from the page (2026-10-07) was heard, understood and written out as it
+went, and marked as the demo's in the call log. It also showed a fault of the demo's own:
+the caller offered as "from the phone on their record, your name should be enough" was the
+first test caller of that kind, who is the client with a misspelt record ("Deigo"), and
+the agent asked them to spell their name, twice. Each caller the page offers is now asked
+of the identity resolver first, and only one who is taken the way the page says is
+offered.
 
 ## Two ways to carry the voice
 

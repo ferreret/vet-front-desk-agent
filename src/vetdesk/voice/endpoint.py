@@ -626,7 +626,7 @@ def _key(host: str, path: Path = Path(".env")) -> str:
     return os.environ[KEY_NAME]
 
 
-def _demo(data: Path) -> tuple[Demo | None, Callable[[], str] | None]:
+def _demo(data: Path, clinic) -> tuple[Demo | None, Callable[[], str] | None]:
     """The public demo, when it is set up: its agent on the voice platform, a key to ask
     that platform for the address of each call, and the clinic's test callers to call as."""
     agent, key = os.environ.get(DEMO_AGENT), os.environ.get(VOICE_KEY)
@@ -635,7 +635,7 @@ def _demo(data: Path) -> tuple[Demo | None, Callable[[], str] | None]:
         log.info("the public demo is off: it needs %s, %s and the test callers",
                  DEMO_AGENT, VOICE_KEY)
         return None, None
-    demo = Demo(personas(load_jsonl(scenarios.read_text(encoding="utf-8"))),
+    demo = Demo(personas(load_jsonl(scenarios.read_text(encoding="utf-8")), clinic),
                 minutes_a_day=float(os.environ.get(DEMO_MINUTES_A_DAY, "60")),
                 minutes_a_call=float(os.environ.get(DEMO_MINUTES_A_CALL, "3")))
     url = ("https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?"
@@ -700,7 +700,7 @@ def main() -> None:
     # A call from the public demo's page gets an appointment book of its own, in memory.
     desk = Desk(lambda kb: FrontDeskAgent(llm, clinic, kb, agenda), agenda, kb, file,
                 lambda kb: FrontDeskAgent(llm, clinic, kb, SqliteAgenda(kb, datetime.now)))
-    demo, sign = _demo(args.data)
+    demo, sign = _demo(args.data, clinic)
     switchboard = Switchboard(desk.start_call,
                               stand_ins=stand_ins(os.environ.get(STAND_INS, "")),
                               demo=demo, start_demo_call=desk.start_demo_call)

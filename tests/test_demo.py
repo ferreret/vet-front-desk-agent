@@ -36,18 +36,36 @@ class Clock:
 
 # --- who a visitor can call as --------------------------------------------------------------
 
-def test_a_visitor_calls_as_one_of_the_clinics_own_test_callers(scenarios):
-    people = {persona.key: persona for persona in personas(scenarios)}
+def test_a_visitor_calls_as_one_of_the_clinics_own_test_callers(scenarios, clinic):
+    people = {persona.key: persona for persona in personas(scenarios, clinic)}
     assert list(people) == ["own", "hidden", "borrowed", "stranger"]
-    by_kind = {}
-    for scenario in scenarios:
-        by_kind.setdefault(scenario.category, scenario)
-    own = by_kind["identity.phone_and_name"]
-    assert people["own"].caller_number == own.call.caller_number is not None
-    assert people["own"].name == own.caller.says_name and people["own"].pets
+    assert people["own"].caller_number is not None and people["own"].pets
     assert people["hidden"].caller_number is None and people["stranger"].caller_number is None
     # From somebody else's phone: a number that is on file, and not for them.
     assert people["borrowed"].caller_number not in (None, people["own"].caller_number)
+    on_file = [c.raw_name for c in clinic.clients_by_phone(people["borrowed"].caller_number)]
+    assert on_file and people["borrowed"].name.split()[0] not in " ".join(on_file)
+
+
+def test_each_caller_is_taken_the_way_the_page_tells_the_visitor(scenarios, clinic):
+    """The first caller of the usual kind has their name misspelt on file ("Deigo") and is
+    identified by nobody: offered to a visitor as "your name should be enough", they were
+    asked to spell it twice. Whoever the page offers is asked of the resolver first."""
+    from vetdesk.identity.resolver import Evidence, IdentityResolver
+
+    resolver = IdentityResolver(clinic)
+    people = {persona.key: persona for persona in personas(scenarios, clinic)}
+
+    def level(persona, everything):
+        more = {"pet_name": persona.pets[0], "town": persona.town} if everything else {}
+        return resolver.resolve(Evidence(persona.caller_number, persona.name, **more)).level
+
+    assert people["own"].name != "Diego Esteve Planas"  # the misspelt one is passed over
+    assert level(people["own"], False) == "confirmed"
+    assert level(people["hidden"], False) != "confirmed"
+    assert level(people["hidden"], True) == "confirmed"
+    assert level(people["borrowed"], True) != "confirmed"
+    assert level(people["stranger"], True) != "confirmed"
 
 
 # --- the day's minutes ----------------------------------------------------------------------
