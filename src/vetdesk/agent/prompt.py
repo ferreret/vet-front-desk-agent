@@ -97,41 +97,52 @@ the animal, and if it sounds serious treat it as an emergency.
 # given only the phrases of the language the call is in.
 LANGUAGE_NAMES = {"es": "Spanish", "ca": "Catalan", "en": "English", "de": "German",
                   "fr": "French", "it": "Italian", "ru": "Russian"}
-# In each language: what they want, who is calling, no person to put them through to, and
-# whether they want anything else. The last was missing, and to "Okey, gracias" in the
-# middle of a call the model reached for the first: "¿En qué puedo ayudarle?".
+# In each language: what they want, who is calling, no person to put them through to,
+# whether they want anything else, and what cannot be done on this call. The last two were
+# missing, and the model reached for the nearest: to "Okey, gracias" in the middle of a
+# call, "¿En qué puedo ayudarle?"; and to a caller it could not confirm who asked for
+# their appointments, "No puedo pasarle la llamada", when nobody had asked for a person.
 PHRASES = {
     "es": ("¿En qué puedo ayudarle?",
            "¿Me dice su nombre y sus dos apellidos, por favor?",
            "No puedo pasarle la llamada, pero le tomo nota y recepción le llamará.",
-           "¿Necesita algo más?"),
+           "¿Necesita algo más?",
+           "Eso no puedo hacerlo desde aquí, pero le tomo nota y recepción le llamará."),
     "ca": ("En què el puc ajudar?",
            "Em diu el seu nom i els dos cognoms, si us plau?",
            "No li puc passar la trucada, però en prenc nota i recepció li trucarà.",
-           "Necessita alguna cosa més?"),
+           "Necessita alguna cosa més?",
+           "Això no ho puc fer des d'aquí, però en prenc nota i recepció li trucarà."),
     "en": ("How can I help you?",
            "May I have your full name, please?",
            "I can't put you through, but I'll take a note and reception will call you back.",
-           "Is there anything else I can help you with?"),
+           "Is there anything else I can help you with?",
+           "I can't do that from here, but I'll take a note and reception will call you back."),
     "de": ("Wie kann ich Ihnen helfen?",
            "Wie ist Ihr vollständiger Name, bitte?",
            "Ich kann Sie nicht weiterverbinden, aber ich notiere Ihr Anliegen und die "
            "Rezeption ruft Sie zurück.",
-           "Kann ich sonst noch etwas für Sie tun?"),
+           "Kann ich sonst noch etwas für Sie tun?",
+           "Das kann ich von hier aus nicht erledigen, aber ich notiere es und die "
+           "Rezeption ruft Sie zurück."),
     "fr": ("Comment puis-je vous aider ?",
            "Puis-je avoir votre nom complet, s'il vous plaît ?",
            "Je ne peux pas vous transférer, mais je prends note et la réception vous "
            "rappellera.",
-           "Puis-je vous aider pour autre chose ?"),
+           "Puis-je vous aider pour autre chose ?",
+           "Je ne peux pas le faire d'ici, mais je prends note et la réception vous "
+           "rappellera."),
     "it": ("Come posso aiutarla?",
            "Mi dice il suo nome e cognome, per favore?",
            "Non posso passarle la chiamata, ma prendo nota e la reception la richiamerà.",
-           "Posso aiutarla in altro?"),
+           "Posso aiutarla in altro?",
+           "Da qui non posso farlo, ma prendo nota e la reception la richiamerà."),
     "ru": ("Чем могу помочь?",
            "Назовите, пожалуйста, ваше полное имя.",
            "Я не могу вас соединить, но я запишу ваше сообщение, и вам перезвонят из "
            "регистратуры.",
-           "Могу ещё чем-нибудь помочь?"),
+           "Могу ещё чем-нибудь помочь?",
+           "Отсюда я не могу это сделать, но я запишу, и вам перезвонят из регистратуры."),
 }
 
 
@@ -195,11 +206,15 @@ def emergency_sentence(kb: KnowledgeBase, now: datetime, language: str) -> str:
 
 def set_phrases(language: str) -> str:
     """The set phrases of one language, as the model is told them."""
-    wants, who, person, more = PHRASES[language]
+    wants, who, person, more, cannot = PHRASES[language]
     return (f'Set phrases in {LANGUAGE_NAMES[language]}. To ask what they want, when the '
             f'call starts: "{wants}" To ask whether they want anything else, once they '
             f'have been answered or served: "{more}" '
-            f'To ask who is calling: "{who}" When they want a person: "{person}"')
+            f'To ask who is calling: "{who}" Only when they ask to speak to a person: '
+            f'"{person}" Only when they ask to see, cancel or move an appointment, or about '
+            f'what the clinic holds on their animals, and you cannot because they are not '
+            f'confirmed or not calling from their own phone: "{cannot}" Booking a new '
+            f'appointment is never that: anybody can book one, confirmed or not.')
 
 
 GREETINGS = {
