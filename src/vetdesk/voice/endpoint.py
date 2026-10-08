@@ -697,8 +697,13 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
         except ValueError:
             body = None
         its_key = platform_key(key, "vapi") if key else ""
+        sent = request.headers.get("Authorization", "")
         seen.append({"authorized": bool(key) and hmac.compare_digest(given.encode(),
                                                                      its_key.encode()),
+                     # What came as a key, without the key: how it is put, how long it
+                     # is, and a mark to tell it from another by.
+                     "authorization": {"scheme": sent.partition(" ")[0][:12], "length": len(given),
+                                       "mark": hashlib.sha256(given.encode()).hexdigest()[:8]},
                      "headers": sorted(name.lower() for name in request.headers),
                      "body": shape(body)})
         if not seen[-1]["authorized"]:

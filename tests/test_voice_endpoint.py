@@ -1,6 +1,7 @@
 """The agent behind a chat-completions address, as a voice platform would call it."""
 
 import asyncio
+import hashlib
 import json
 from datetime import datetime
 
@@ -475,6 +476,11 @@ def test_a_second_platform_is_looked_at_before_it_is_answered_for_real(clinic, k
     assert ours == 401 and theirs == 401
     assert _spoken(answered) == NO_PASS and model.transcript.user_messages == []
     assert [look["authorized"] for look in kept] == [False, False, True]
+    assert kept[0]["authorization"]["length"] == 0  # none was sent
+    assert kept[2]["authorization"] == {
+        "scheme": "Bearer", "length": 64,
+        "mark": hashlib.sha256(platform_key(KEY, "vapi").encode()).hexdigest()[:8]}
+    assert platform_key(KEY, "vapi") not in json.dumps(kept) and KEY not in json.dumps(kept)
     text = json.dumps(kept, ensure_ascii=False)
     assert "Marta" not in text and "600111222" not in text and "recepción" not in text
     body = kept[2]["body"]
