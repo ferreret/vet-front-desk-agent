@@ -20,13 +20,16 @@ that the identity resolver has confirmed the caller. Until then:
 - Even for a confirmed caller, `get_pets` leaves out animals filed under a name they share
   with another client: the file cannot say whose they are. The caller can still book for
   one by naming it.
-- The model cannot vouch for what it did not hear. `identify_client` takes one flag that
-  stops the resolver doubting a name, `name_spelled`, and it is checked against the letters
-  the caller actually spelled; a claim they do not back is refused. Whether a pet's name
-  was repeated or spelled is not asked of the model at all: the tool reads it off the
-  caller's words. (It used to be a second flag, and one model set it on first hearing in
-  half its calls.) In text, a name counts as spelled when written as letters joined by
-  hyphens: `M-A-R-T-A P-O-N-S`.
+- The model cannot vouch for what it did not hear. Whether a name was spelled, and
+  whether a pet's name was repeated or spelled, is read off the caller's words by the
+  tool. `identify_client` still takes a flag, `name_spelled`, but what the model puts in
+  it changes nothing: a name it calls spelled and the caller only said is taken as a name
+  heard, and the model is told so. (The flag used to be believed, then checked and the
+  whole call refused when false. Heard on a call: a name misheard, asked to be spelled,
+  said again and heard right; the model passed it as spelled, was refused, and asked for
+  it "letra por letra" once more, when the name as heard was enough to confirm the
+  caller three turns sooner.) In text, a name counts as spelled when written as letters
+  joined by hyphens: `M-A-R-T-A P-O-N-S`.
 - The evidence itself has to be in the caller's words too. A name, a pet's name or a town
   the caller never said is refused: two models were measured filling in the town with the
   clinic's own, read off its address, and one turning a misheard "Yoaquín" into "Joaquín".
