@@ -282,6 +282,36 @@ def test_when_the_goodbyes_are_said_the_platform_is_told_to_hang_up(clinic, kb):
     assert _tool_call(stream) is None and _spoken(stream) == "¿Para qué día la quiere?"
 
 
+def test_to_a_caller_who_has_only_said_goodbye_anything_that_asks_nothing_is_one(clinic, kb):
+    """Heard on a call: "No, eso es todo. Gracias.", "De nada. ¡Que vaya muy bien!", and
+    the line stayed open: the third farewell in two days that was on no list of words."""
+    for bye in ("De nada. ¡Que vaya muy bien!", "A usted. ¡Cuídese!", "Un placer."):
+        _, _, app = _front_desk([Reply(bye)], clinic, kb)
+        for said in ("No, eso es todo. Gracias.", "Nada más, muchas gracias. Adiós."):
+            _, _, app = _front_desk([Reply(bye)], clinic, kb)
+            (_, _, stream), = _ask(app, _messages(said), tools=HANG_UP)
+            assert _tool_call(stream, after=bye)["name"] == "end_call", (said, bye)
+    # A line that closes and asks for something has not only said goodbye: the answer to
+    # it ends nothing, unless it is a farewell in so many words.
+    answer = "Abrimos a las nueve y media."
+    for said in ("Buenos días, nada más quería saber el horario.",
+                 "Eso es todo, ¿y a qué hora abrís mañana?",
+                 "Nada más, bueno, dígame el horario de mañana."):
+        _, _, app = _front_desk([Reply(answer)], clinic, kb)
+        (_, _, stream), = _ask(app, _messages(said), tools=HANG_UP)
+        assert _tool_call(stream) is None and _spoken(stream) == answer, said
+    # Nor when the agent did something in answer to it, or asks something.
+    look = ToolCall("a", "get_availability", {
+        "date_from": "2026-11-09", "date_to": "2026-11-09", "part_of_day": "morning"})
+    _, _, app = _front_desk([Reply("", (look,), "tool_calls"), Reply("Tengo el lunes.")],
+                            clinic, kb)
+    (_, _, stream), = _ask(app, _messages("Nada más, gracias."), tools=HANG_UP)
+    assert _tool_call(stream) is None and _spoken(stream) == "Tengo el lunes."
+    _, _, app = _front_desk([Reply("¿Seguro que no necesita nada más?")], clinic, kb)
+    (_, _, stream), = _ask(app, _messages("Nada más, gracias."), tools=HANG_UP)
+    assert _tool_call(stream) is None
+
+
 def test_silence_after_the_goodbyes_hangs_up_and_a_first_silence_does_not(clinic, kb):
     model, _, app = _front_desk([Reply("Abrimos a las nueve y media.")], clinic, kb)
     asked = _messages("¿A qué hora abrís?")

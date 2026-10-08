@@ -123,10 +123,38 @@ _TIME_OF_DAY = re.compile(
     r"хорошего (дня|вечера))[\s.!…]*$", re.IGNORECASE)
 
 
-def is_goodbye(said: str) -> bool:
+# What a caller says around "that is all" that is no request: thanks, yes and no, fine.
+_COURTESY = frozenset("""
+    no nada más mas sí si vale bueno pues ya ok okey okay gracias muchas muchísimas de
+    acuerdo perfecto genial estupendo entendido muy amable igualmente necesito quiero por
+    hoy ahora es eso todo res gràcies moltes d val doncs perfecte merci necessito vull
+    thanks thank you very much so great perfect fine alright right good that s all i need
+    don t danke vielen dank nein gut super schön alles das ist merci beaucoup non accord
+    parfait bien très c est tout grazie mille va bene perfetto tutto спасибо большое нет
+    хорошо ладно всё все""".split())
+
+
+def only_closes(heard: str) -> bool:
+    """Whether a line says the caller is done and asks for nothing: what is left of it
+    without the words that close a call is thanks, yes and no. "Buenos días, nada más
+    quería saber el horario" closes nothing."""
+    words = re.findall(r"\w+", _CLOSING.sub(" ", heard).lower())
+    return "?" not in heard and all(word in _COURTESY for word in words)
+
+
+def is_goodbye(said: str, done: bool = False) -> bool:
     """Whether what the agent said closes the call, said to a caller who has closed it
-    (see `may_end`): a farewell or the time of day wished, and nothing asked."""
-    return bool(_FAREWELL.search(said) or _TIME_OF_DAY.search(said)) and "?" not in said
+    (see `may_end`): nothing asked, and a farewell or the time of day wished.
+
+    With `done`, anything that asks nothing is one: the caller's line was only their
+    goodbye (see `only_closes`) and the agent did nothing in answer to it. The farewells
+    were a list of words, and three got past it in two days: "De nada, buenos días", a
+    bare no to "anything else?", and "De nada. ¡Que vaya muy bien!", each leaving a line
+    open after the goodbyes.
+    """
+    if "?" in said or not said.strip():
+        return False
+    return done or bool(_FAREWELL.search(said) or _TIME_OF_DAY.search(said))
 
 
 # What speech recognition may call each language: two-letter and three-letter codes.

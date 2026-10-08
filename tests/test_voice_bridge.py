@@ -316,3 +316,23 @@ def test_the_language_to_speak_follows_what_was_heard(code, language):
 
 def test_every_language_has_both_stock_phrases():
     assert set(WAITING) == set(TROUBLE) == {"es", "ca", "en", "fr", "de", "nl", "it", "ru"}
+
+
+def test_a_line_that_only_closes_the_call():
+    from vetdesk.voice.bridge import is_goodbye, only_closes
+
+    for line in ("No, eso es todo. Gracias.", "Nada más, muchas gracias.", "Adiós.",
+                 "Vale, perfecto, eso es todo.", "No, res més, gràcies. Adéu.",
+                 "No, that's all, thank you. Bye.", "Nein danke, das ist alles.",
+                 "Non merci, c'est tout. Au revoir.", "No grazie, è tutto.",
+                 "Нет, спасибо, это всё."):
+        assert only_closes(line), line
+    for line in ("Buenos días, nada más quería saber el horario.", "Adiós, digo, quería una cita.",
+                 "Eso es todo, ¿y a qué hora abrís?", "Nada más, pero anule la cita del martes.",
+                 "That's all, but what about Saturday?"):
+        assert not only_closes(line), line
+    # To such a caller anything that asks nothing is a goodbye; to another, a farewell is.
+    assert is_goodbye("De nada. ¡Que vaya muy bien!", done=True)
+    assert not is_goodbye("De nada. ¡Que vaya muy bien!")
+    assert is_goodbye("De nada, que tenga buena tarde.")
+    assert not is_goodbye("¿Necesita algo más?", done=True) and not is_goodbye("", done=True)

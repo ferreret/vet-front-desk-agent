@@ -66,7 +66,7 @@ from ..scheduling import AgendaError, Appointment, SqliteAgenda
 from ..scheduling.google_calendar import CALENDAR, GoogleCalendar, MirroredAgenda, session_from
 from ..scheduling.google_calendar import KEY as CALENDAR_KEY
 from ..spoken import say_en, say_es
-from .bridge import TROUBLE, Line, is_goodbye, may_end, says_no_more, silence
+from .bridge import TROUBLE, Line, is_goodbye, may_end, only_closes, says_no_more, silence
 from .call_log import FILE as CALLS_FILE
 from .call_log import KEEP_DAYS as CALLS_KEEP_DAYS
 from .call_log import PAGE as CALLS_PAGE
@@ -472,6 +472,7 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                 closing = _offers(body, END_TOOL) and not after_a_tool and (
                     may_end(said[-1]) or says_no_more(asked, said[-1]))
                 session = line.call.session
+                done_before = len(session.events)  # to tell whether this turn did anything
                 answer, first = [], None
                 on_turn = finished(line, "" if note else heard, turn,
                                    "not_put_through" if note else None)
@@ -505,7 +506,11 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                                      transfer_number=transfer_to,
                                      client_message=THROUGH[session.language],
                                      agent_message=session.transfer)
-                if closing and is_goodbye(text):
+                # The caller's line was only their goodbye, and nothing was done in
+                # answer to it: whatever the agent then says, short of a question, is its
+                # own goodbye.
+                done = only_closes(said[-1]) and len(session.events) == done_before
+                if closing and is_goodbye(text, done):
                     log.info("the goodbyes are said: the platform is told to hang up")
                     if calls:
                         calls.note(line.name, "hung_up")
