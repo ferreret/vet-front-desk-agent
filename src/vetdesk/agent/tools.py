@@ -116,10 +116,14 @@ IF_THEY_ASK = (
     "appointment is never that: anybody can book one, confirmed or not."
 )
 NOT_SPELLED = (
-    "name_spelled is true, but that is not the name the caller spelled letter by letter. "
-    "{spelled} Pass the name exactly as it was spelled, every word of it. If they spelled "
-    "only part of it, or nothing, ask them to spell their full name."
+    "That is not the name the caller said or spelled ({missing} was never said). They "
+    "spelled: {spelled}. Pass the name exactly as it was said or spelled, every word of "
+    "it. If they spelled only part of it, ask them to spell their full name."
 )
+# What an answer of identify_client carries when the model said a name had been spelled
+# and it had not. The name is taken as heard, which is what it was.
+NOT_TAKEN = ("Not taken: the caller did not spell this name letter by letter, so it counts "
+             "as a name heard, no more.")
 NOT_SAID = {
     "name": "The caller has not said that name ({missing} was never said). Pass the name "
     "exactly as you heard it, even if it looks misheard: do not correct it. If it may be "
@@ -379,30 +383,27 @@ class Toolbox:
         session = self.session
         session.heard = {key: at for key, at in session.heard.items() if at < session.lines}
 
-    def _vouched_for(self, name: str | None, spelled: bool, pet: str | None,
-                     town: str | None) -> None:
-        """Refuse a claim the caller's own words do not back.
+    def _vouched_for(self, name: str | None, pet: str | None, town: str | None) -> None:
+        """Refuse evidence the caller's own words do not back.
 
-        `name_spelled` tells the resolver to stop doubting a name. The model sets it, and
-        measured over 82 calls it vouched for names it had put back together wrong
-        ("Rossellón" for R-O-S-S-E-L-L-Ó). So the claim is checked here, against what the
-        caller actually said.
+        A name, a pet's name or a town counts only in the caller's own words. Two models
+        have been measured filling the town in with the clinic's own, taken from its
+        address, one turning a misheard "Yoaquín" into "Joaquín", which the resolver then
+        took for a name heard clearly, and one passing "Rossellón" for a caller who had
+        spelled R-O-S-S-E-L-L-Ó.
 
-        The evidence itself is checked too: a name, a pet's name or a town counts only in
-        the caller's own words. Two models have been measured filling the town in with the
-        clinic's own, taken from its address, and one turning a misheard "Yoaquín" into
-        "Joaquín", which the resolver then took for a name heard clearly.
+        Whether the name was spelled is not asked of the model at all: see
+        `_identify_client`.
         """
-        if spelled and name and not was_spelled(name, self.session.spelled):
-            said = ", ".join(self.session.spelled)
-            raise ToolError(NOT_SPELLED.format(
-                spelled=f"They spelled: {said}." if said else "They have spelled nothing."))
         spelt = {fold(word) for word in self.session.spelled}
         for which, value in (("name", name), ("pet_name", pet), ("town", town)):
             if not value or was_spelled(value, self.session.spelled):
                 continue
             missing = [w for w in fold(value).split()
                        if not self.session.lines_with[w] and w not in spelt]
+            if missing and which == "name" and self.session.spelled:
+                raise ToolError(NOT_SPELLED.format(missing=", ".join(missing),
+                                                   spelled=", ".join(self.session.spelled)))
             if missing:
                 raise ToolError(NOT_SAID[which].format(missing=", ".join(missing)))
 
@@ -430,7 +431,7 @@ class Toolbox:
         pet_name: str | None = None,
         town: str | None = None,
     ) -> dict:
-        session = self.session
+        session, not_taken = self.session, False
         if session.client is None:
             name, pet_name, town = given(name), given(pet_name), given(town)
             if name and pet_name and set(fold(pet_name).split()) <= set(fold(name).split()) \
@@ -442,8 +443,15 @@ class Toolbox:
             if name:
                 # A model may hand the spelling over as it came: "X-I-S-C-A R-U-I-Z".
                 name = SPELLED_WORD.sub(lambda letters: letters.group().replace("-", ""), name)
-                name_spelled = name_spelled or was_spelled(name, session.spelled)
-            self._vouched_for(name, name_spelled, pet_name, town)
+                # Whether the name was spelled is read off the caller's words, like the
+                # pet's below. The model's word for it used to be checked and, when false,
+                # the whole call refused. Heard on a call: a name misheard, asked to be
+                # spelled, said again and this time heard right; the model passed it as
+                # spelled, was refused, and asked for it "letra por letra" once more. The
+                # name as heard was enough to confirm that caller, three turns earlier.
+                claimed, name_spelled = name_spelled, was_spelled(name, session.spelled)
+                not_taken = claimed and not name_spelled
+            self._vouched_for(name, pet_name, town)
             # Whether a pet's name was repeated or spelled is read off the caller's words,
             # not asked of the model: one model said yes on first hearing in half its calls.
             pet_confirmed = bool(pet_name) and (
@@ -470,6 +478,9 @@ class Toolbox:
                         session.notices.append(notice)
             elif session.resolution.decision == "not_found" and evidence.name_verified:
                 self._misspelt_on_file(evidence.client_name)
+        def taken(result: dict) -> dict:
+            return {**result, "name_spelled": NOT_TAKEN} if not_taken else result
+
         if session.client is not None:
             instructions = ("The caller is confirmed. Their data and appointments are now "
                             "available through the other tools.")
@@ -478,16 +489,16 @@ class Toolbox:
                                  "appointments cannot be cancelled or moved on it: if they "
                                  f'ask for that, say: "{NOT_FROM_HERE[session.language]}" '
                                  "Then take the message with take_message.")
-            return {"status": "confirmed", "client_name": _display(session.client),
-                    "instructions": instructions}
+            return taken({"status": "confirmed", "client_name": _display(session.client),
+                          "instructions": instructions})
         resolution = session.resolution
         if_they_ask = IF_THEY_ASK.format(say=NOT_FROM_HERE[session.language])
         if resolution.decision == "not_found":
-            return {"status": "not_a_client", "instructions": NOT_A_CLIENT + if_they_ask}
+            return taken({"status": "not_a_client", "instructions": NOT_A_CLIENT + if_they_ask})
         if resolution.ask_for:
-            return {"status": "need_more", "ask_for": resolution.ask_for,
-                    "instructions": ASK[resolution.ask_for]}
-        return {"status": "unconfirmed", "instructions": UNCONFIRMED + if_they_ask}
+            return taken({"status": "need_more", "ask_for": resolution.ask_for,
+                          "instructions": ASK[resolution.ask_for]})
+        return taken({"status": "unconfirmed", "instructions": UNCONFIRMED + if_they_ask})
 
     def _misspelt_on_file(self, spelled: str) -> None:
         """Tell reception when a record on the calling number is one letter from a name.

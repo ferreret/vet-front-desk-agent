@@ -196,7 +196,7 @@ def test_once_confirmed_the_caller_stays_who_they_are(confirmed):
 def test_the_model_cannot_vouch_for_a_name_the_caller_did_not_spell(clinic, kb, scenarios):
     """Found by the evaluation harness: the caller spelled R-O-S-S-E-L-L-Ó and the model
     passed "Rossellón" as spelled. The flag switches off the resolver's doubt about a
-    misheard name, so the tool checks it against the caller's own words."""
+    misheard name, so whether a name was spelled is read off the caller's own words."""
     scenario = next(
         s for s in scenarios
         if s.category == "identity.phone_and_name" and s.speech.noise == "none"
@@ -206,11 +206,27 @@ def test_the_model_cannot_vouch_for_a_name_the_caller_did_not_spell(clinic, kb, 
     name = scenario.caller.says_name
     toolbox = _toolbox(clinic, kb, scenario.call.caller_number)
 
-    refused, failed = _call(toolbox, "identify_client", **{**NOTHING, "name": name,
-                                                           "name_spelled": True})
-    assert failed and "They have spelled nothing" in refused["error"]
-    assert toolbox.session.evidence.client_name is None  # nothing reached the resolver
+    # Said and not spelled, and passed as spelled: it is taken as heard, and the model is
+    # told so. Heard on a call: such a call used to be refused whole, and a caller whose
+    # name had just been heard right was asked to spell it "letra por letra" again.
+    toolbox.heard(f"Me llamo {name}.")
+    heard, failed = _call(toolbox, "identify_client", **{**NOTHING, "name": name,
+                                                         "name_spelled": True})
+    assert not failed and heard["name_spelled"].startswith("Not taken")
+    assert heard["status"] == "confirmed"  # this name, heard clearly, was enough
+    assert not toolbox.session.evidence.name_verified
 
+    # A name that only sounds like one on file gets nothing from the claim: the resolver
+    # still wants it spelled.
+    noisy = next(s for s in scenarios if s.category == "identity.heavy_asr_noise")
+    unsure = _toolbox(clinic, kb, noisy.call.caller_number)
+    unsure.heard(f"Soy {noisy.caller.says_name}.")
+    doubted, failed = _call(unsure, "identify_client",
+                            **{**NOTHING, "name": noisy.caller.says_name, "name_spelled": True})
+    assert not failed and doubted["status"] != "confirmed" and "name_spelled" in doubted
+    assert unsure.session.client is None
+
+    toolbox = _toolbox(clinic, kb, scenario.call.caller_number)
     _spell(toolbox, name)
     wrong = name + "n"  # the letters put back together wrong
     refused, failed = _call(toolbox, "identify_client", **{**NOTHING, "name": wrong,
@@ -219,7 +235,14 @@ def test_the_model_cannot_vouch_for_a_name_the_caller_did_not_spell(clinic, kb, 
         in refused["error"]
     assert toolbox.session.client is None
 
-    assert _identify(toolbox, name=name, name_spelled=True)["status"] == "confirmed"
+    spelled = _identify(toolbox, name=name, name_spelled=True)
+    assert spelled["status"] == "confirmed" and "name_spelled" not in spelled
+    assert toolbox.session.evidence.name_verified
+    # And spelled is spelled, whatever the model says of it.
+    unsaid = _toolbox(clinic, kb, scenario.call.caller_number)
+    _spell(unsaid, name)
+    _identify(unsaid, name=name, name_spelled=False)
+    assert unsaid.session.evidence.name_verified
     # Accents and case are not what spelling is about.
     other = _toolbox(clinic, kb)
     other.heard("Sí: m-u-ñ-o-z, G-O-N-Z-A-L-E-Z.")

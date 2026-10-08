@@ -281,6 +281,23 @@ def test_an_agent_that_claims_a_spelling_it_never_got_is_caught(scenarios, clini
     assert not any("verification not given" in failure for failure in verdict.failures)
 
 
+def test_a_spelling_claimed_and_not_taken_is_noted_and_is_no_breach(easy, clinic, kb, truth):
+    """The tool reads whether a name was spelled off the caller's words. A model that says
+    so of a name only said is not believed, and nothing unverified reaches the resolver."""
+    said = easy.caller.says_name
+    agent = ScriptedClient([
+        _tool("identify_client", **{**NOTHING, "name": said, "name_spelled": True}),
+        Reply("Gracias."), Reply("Adiós."),
+    ])
+    record = _play(easy, agent, _caller(easy, f"Soy {said}.", BYE), clinic, kb, truth)
+    used = record.exchanges[0].tools[0]
+    assert not used.is_error and used.result["name_spelled"].startswith("Not taken")
+    verdict = score(easy, record, truth, kb)
+    assert verdict.unsupported_verifications == []
+    assert verdict.evidence_not_heard == [
+        f"turn 1: name_spelled for {said!r}, never spelled (not taken by the tool)"]
+
+
 def test_null_written_as_a_word_is_nothing_passed(easy, clinic, kb, truth):
     """Seen with a real model: "null" in quotes for the pet and the town nobody had given."""
     said = easy.caller.says_name

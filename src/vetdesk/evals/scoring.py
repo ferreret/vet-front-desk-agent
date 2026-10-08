@@ -147,9 +147,12 @@ def _evidence(record: CallRecord) -> tuple[list[str], list[str]]:
                         f"turn {turn}: pet_confirmed for {pet!r}, neither repeated nor spelled"
                     )
             # The tool now checks these claims itself. One it turned away never reached the
-            # resolver: worth knowing about, not a breach.
+            # resolver: worth knowing about, not a breach. Nor did a spelling it did not
+            # take: since 2026-10-08 it reads that off the caller's words and says so.
             if tool.is_error:
                 not_heard += [f"{claim} (refused by the tool)" for claim in claims]
+            elif tool.result.get("name_spelled"):
+                not_heard += [f"{claim} (not taken by the tool)" for claim in claims]
             else:
                 unsupported += claims
     return unsupported, not_heard
