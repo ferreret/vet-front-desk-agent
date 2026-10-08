@@ -35,6 +35,34 @@ that the identity resolver has confirmed the caller. Until then:
   said an appointment was a friend's, the model passed the friend's details as the
   caller's own, and the friend's appointment was cancelled. Without the phone the agent
   takes a message for reception.
+- An appointment booked on the call itself is the one exception: whoever booked it can
+  have it moved or cancelled before hanging up, confirmed or not. Nothing of any record is
+  read or undone. Heard on a call from the demo: booked for the 13th, "el 13 no puedo,
+  una semana más tarde", and a second appointment was booked for the 20th with the first
+  left standing, because nobody who is not confirmed could have one moved. Played again
+  by text, the first was still there after 12 calls of 12; now it is one appointment, on
+  the 20th, in 42 of 42. A second booking for the same animal on the same call is refused,
+  with the way to move the first.
+
+What goes into the agenda is the caller's, by the same kind of check:
+
+- **The reason for the visit** has to have a word of the caller's in it.
+- **The day and the time** have to have been handed to the model before the caller's last
+  line: offered, and answered. Heard on a call: "tengo que cambiar la cita", and it was
+  moved to the next morning in the same breath. In the calls played before, 4 moves of 45
+  and 2 bookings of 448 went to a time the caller had not said a word about. Taking a
+  time for the caller's because a word of theirs was in it was tried first, and let the
+  same thing through ("esta mañana" named every morning), so even a time the caller names
+  outright is said back and booked on their yes.
+- **An appointment the caller has just said they want changed is not cancelled.** After
+  the rule above, the model began to cancel and book again; a cancellation is not undone
+  by booking, the time may be gone. The words for moving, in each language, are the one
+  list of keywords in the barrier.
+- **What cannot be done on this call** ("eso no puedo hacerlo desde aquí…") is not a set
+  phrase the model holds. It was for a day, and a client calling from the phone on their
+  record who asked to move an appointment was turned down with it in 10 calls of 24. Like
+  the words for putting a call through, it reaches the model only in the answer of a tool
+  that has found the caller cannot have what they ask.
 
 The same rule holds for what the caller will act on. Days and times reach the model
 already in words, in Spanish and Catalan, built by code; phone numbers come as they are
@@ -53,7 +81,7 @@ appears in any answer before confirmation.
 | `book_appointment` | No: an unconfirmed caller books under the name and phone they give, flagged for reception |
 | `take_message` | No |
 | `get_pets`, `list_appointments` | Yes |
-| `cancel_appointment`, `reschedule_appointment` | Yes, only the caller's own, and only on a call from a phone on their record |
+| `cancel_appointment`, `reschedule_appointment` | Yes, only the caller's own, and only on a call from a phone on their record. Or anybody, for an appointment they booked on this same call |
 
 There is deliberately **no tool to transfer a call**. The 2025 pilot promised "I'll put
 you through to reception" without being able to. This agent cannot promise what it cannot
