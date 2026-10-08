@@ -397,3 +397,25 @@ def test_the_phrase_is_changed_as_the_words_go_by_however_they_are_cut():
     later = Later("¿En qué puedo ayudarle?", "¿Necesita algo más?")
     assert later.said("Abrimos a las diez. ¿En qué") == "Abrimos a las diez. "
     assert later.said(" día viene?") == "¿En qué día viene?" and later.rest() == ""
+
+
+def test_an_appointment_is_heard_when_the_agent_has_said_its_day_and_time(clinic, kb):
+    """Heard on a call: "¿qué días le van bien para cambiar la cita de Kiko?", and the
+    appointment was moved without the caller hearing which one it was. Being handed to
+    the model is not being said."""
+    said = "martes 10 de noviembre a las cinco de la tarde"
+    model = ScriptedClient([Reply("¿Qué días le van bien para cambiar la cita de Kiko?"),
+                            Reply(f"Tiene una cita para Kiko el {said}. ¿Es esa?"),
+                            Reply(f"Tiene una cita para Kiko el {said}. ¿Es esa?")])
+    call = _call(model, clinic, kb)
+    toolbox = call._toolbox
+    own = toolbox.agenda.book(datetime(2026, 11, 10, 17, 0), "revisión", "Kiko", client_code=10)
+    toolbox.session.told[own.appointment_id] = 0
+    call.say("Quiero cambiar la cita.")
+    assert toolbox.session.heard == {}
+    call.say("¿Cuál tengo?")
+    assert toolbox.session.heard == {own.appointment_id: 2}
+    # An answer taken back was not heard: the line it answered came again.
+    assert call.take_back() and toolbox.session.heard == {}
+    call.say("¿Cuál tengo, por favor?")
+    assert toolbox.session.heard == {own.appointment_id: 3}

@@ -23,6 +23,7 @@ from vetdesk.identity import Evidence, IdentityResolver
 from vetdesk.kb import load_kb
 from vetdesk.llm import LLMError, Reply, ToolCall, Usage
 from vetdesk.llm.scripted import ScriptedClient
+from vetdesk.spoken import say_es
 
 NOTHING = {"name": None, "name_spelled": False, "pet_name": None, "town": None}
 BYE = Reply("Gracias, adiós.", (ToolCall("h", HANG_UP.name, {"outcome": "done"}),), "tool_calls")
@@ -330,7 +331,7 @@ def test_appointments_made_before_the_call_are_in_the_agenda(scenarios, clinic, 
     agent = ScriptedClient([
         _tool("identify_client", **{**NOTHING, "name": scenario.caller.says_name}),
         _tool("list_appointments"),
-        Reply("Tiene una cita el martes. ¿Es la que quiere anular?"),
+        Reply(f"Tiene una cita el {say_es(booked.start)}. ¿Es la que quiere anular?"),
         _tool("cancel_appointment", appointment_id=booked.appointment_id),
         Reply("Cancelada."), Reply("Adiós."),
     ])

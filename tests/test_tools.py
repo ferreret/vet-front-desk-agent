@@ -16,6 +16,7 @@ from vetdesk.kb import load_kb
 from vetdesk.legacy.normalize import fold
 from vetdesk.llm import ToolCall
 from vetdesk.scheduling import Appointment, SqliteAgenda
+from vetdesk.spoken import say
 
 NOW = datetime(2026, 11, 3, 10, 15)
 SLOT = "2026-11-09T09:30"
@@ -35,6 +36,12 @@ def _toolbox(clinic, kb, number=None, reason="Le toca la vacuna y una revisión:
     if reason:
         toolbox.heard(reason)
     return _accepted(toolbox, *accepted)
+
+
+def _told(toolbox, appointment_id):
+    """The agent tells the caller which appointment it is, in the words the tools give."""
+    start = toolbox.agenda.get(appointment_id).start
+    toolbox.said(f"Tiene una cita el {say(start, toolbox.session.language)}. ¿Es esa?")
 
 
 def _accepted(toolbox, *starts):
@@ -372,8 +379,15 @@ def test_cancelling_and_moving_own_appointments(confirmed):
         assert failed and "First tell the caller which appointment" in refused["error"]
     listed, _ = _call(toolbox, "list_appointments")
     assert [a["appointment_id"] for a in listed["appointments"]] == [own.appointment_id]
+    # Handed to the model is not said to the caller: heard on a call, "¿qué días le van
+    # bien para cambiar la cita de Kiko?", and it was moved without a word of which it was.
+    toolbox.said("¿Qué días y qué parte del día le van bien para cambiar la cita?")
+    toolbox.heard("El miércoles.")
     refused, failed = _call(toolbox, "cancel_appointment", appointment_id=own.appointment_id)
-    assert failed and "once they have said yes" in refused["error"]  # told, not yet answered
+    assert failed and "martes 10 de noviembre a las cinco de la tarde" in refused["error"]
+    _told(toolbox, own.appointment_id)
+    refused, failed = _call(toolbox, "cancel_appointment", appointment_id=own.appointment_id)
+    assert failed and "once they have said yes" in refused["error"]  # said, not yet answered
     assert toolbox.agenda.get(own.appointment_id).status == "booked"
     _accepted(toolbox, "2026-11-11T11:00").heard("Sí, esa. El miércoles a las once me va bien.")
     moved, failed = _call(toolbox, "reschedule_appointment",
@@ -620,6 +634,7 @@ def test_an_appointment_is_not_moved_to_a_time_of_the_models_own(confirmed):
                               scenario.caller.pets[0].name,
                               client_code=toolbox.session.client.code)
     _call(toolbox, "list_appointments")
+    _told(toolbox, own.appointment_id)
     toolbox.heard("Sí, esa. Me he dado cuenta esta mañana: tengo que cambiarla.")
     week, _ = _call(toolbox, "get_availability", date_from="2026-11-11", date_to="2026-11-13",
                     part_of_day="any")
@@ -647,11 +662,32 @@ def test_an_appointment_the_caller_wants_moved_is_not_cancelled(confirmed, said)
                               scenario.caller.pets[0].name,
                               client_code=toolbox.session.client.code)
     _call(toolbox, "list_appointments")
+    _told(toolbox, own.appointment_id)
     toolbox.heard(said)
     refused, failed = _call(toolbox, "cancel_appointment", appointment_id=own.appointment_id)
     assert failed and "they want it changed, not cancelled" in refused["error"]
     assert toolbox.agenda.get(own.appointment_id).status == "booked"
+    # It stands until they say otherwise: a yes to "is that the one?" changes nothing.
+    toolbox.said("¿Es esa la que quiere cambiar?")
+    toolbox.heard("Sí, esa.")
+    assert _call(toolbox, "cancel_appointment", appointment_id=own.appointment_id)[1]
     toolbox.heard("No, mejor anúlela. Adelante, y me llaman al móvil si hace falta.")
+    assert not _call(toolbox, "cancel_appointment", appointment_id=own.appointment_id)[1]
+
+
+def test_a_yes_to_being_asked_about_cancelling_is_enough(confirmed):
+    """A caller who wanted it moved and is asked whether to cancel it instead need not
+    say the word: their answer to that question is their last word on it."""
+    toolbox, scenario = confirmed
+    own = toolbox.agenda.book(datetime(2026, 11, 10, 17, 0), "revisión",
+                              scenario.caller.pets[0].name,
+                              client_code=toolbox.session.client.code)
+    _call(toolbox, "list_appointments")
+    _told(toolbox, own.appointment_id)
+    toolbox.heard("Sí, quería cambiarla, pero no me va bien ningún día.")
+    assert _call(toolbox, "cancel_appointment", appointment_id=own.appointment_id)[1]
+    toolbox.said("¿Quiere que la anule, entonces?")
+    toolbox.heard("Sí, mejor.")
     assert not _call(toolbox, "cancel_appointment", appointment_id=own.appointment_id)[1]
 
 
@@ -671,6 +707,7 @@ def test_whoever_booked_on_this_call_can_have_it_moved_or_cancelled(clinic, kb):
     ours = booked["appointment_id"]
     # Not in the same breath: the caller has not heard yet what was booked.
     assert _call(toolbox, "cancel_appointment", appointment_id=ours)[1]
+    toolbox.said(f"Le he reservado la cita para el {booked['say']}. ¿Necesita algo más?")
     toolbox.heard("Ay, el 9 no puedo. Tendría que ser una semana más tarde.")
     # Booking it again is refused, with the way to do it; and the new time is said first.
     again, failed = _call(toolbox, "book_appointment", start=later, **booking)

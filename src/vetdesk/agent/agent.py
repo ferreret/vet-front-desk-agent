@@ -314,6 +314,7 @@ class Call:
             heard(fallback)
             answer = fallback
         events = tuple(self.session.events[events_before:])
+        self._toolbox.said(answer)  # what the caller has now heard: see `Toolbox.said`
         if self._emergency_phone and self._emergency_phone in answer \
                 and not self._emergency_told:
             self._emergency_told = True
@@ -335,6 +336,7 @@ class Call:
             return False
         mark, self.language, self._lines, self._going = self._before_last
         self._conversation.rewind(mark)
+        self._toolbox.unsaid()
         self._before_last = None
         return True
 

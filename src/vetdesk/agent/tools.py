@@ -71,11 +71,15 @@ class CallSession:
     # checked against. The names above are compared in Latin letters, as they are on file.
     said: set[str] = field(default_factory=set)
     # How many lines the caller has said, and at which of them each of their appointments
-    # was read out to the model: one is only cancelled or moved after the caller has
-    # heard which it is and has spoken again.
+    # was read out to the model, and then said to the caller: one is only cancelled or
+    # moved after the caller has heard which it is and has spoken again.
     lines: int = 0
     told: dict[str, int] = field(default_factory=dict)
-    last: frozenset[str] = frozenset()  # the words of the caller's last line
+    heard: dict[str, int] = field(default_factory=dict)
+    # Whether the last the caller said of an appointment was that they want it moved, and
+    # whether the agent has just asked them about cancelling one: see `Toolbox.heard`.
+    wants_it_moved: bool = False
+    asked_to_cancel: bool = False
     # At which of the caller's lines each free time was first handed to the model: a time
     # is booked, or moved to, once the caller has named it or has been offered it and has
     # spoken again.
@@ -204,21 +208,23 @@ NOT_A_CLIENT = (
     "identify_client again with name_spelled=true."
 )
 WANTS_IT_MOVED = (
-    "Do not cancel it: the caller has just said they want it changed, not cancelled. Ask "
-    "which days and what time of day suit them, and move it with reschedule_appointment. "
-    "If they do want it cancelled, ask them whether to cancel it and call this tool again "
-    "once they have said so."
+    "Do not cancel it: the caller has said they want it changed, not cancelled. An "
+    "appointment is never cancelled in order to move it. Ask which days and what time of "
+    "day suit them, and move it with reschedule_appointment. If they do want it cancelled, "
+    "ask them whether to cancel it and call this tool again once they have said so."
 )
-# How a caller says an appointment is to be moved, as the first letters of the word, in
-# the languages the agent speaks. Heard in the calls played after `made` came in: "no voy
-# a poder ir", the model asked whether that was the one to cancel, "sí, esa misma, y
-# quería cambiarla", and it was cancelled. A cancellation is not undone by booking again:
-# the time may be gone.
+# How a caller says an appointment is to be moved, and to be cancelled, as the first
+# letters of the word, in the languages the agent speaks. Seen in the calls played on
+# 2026-10-08: "voldria canviar-la", "is this the one to change?", "sí, és aquesta", and
+# the model cancelled it to book another; the booking was refused and the caller hung up
+# with no appointment at all. A cancellation is not undone by booking again.
 # Not "adelant" nor "mov": "adelante" is a go-ahead, and "móvil" a phone.
 _MOVING = ("cambi", "mover", "muev", "aplaz", "pospon", "retras", "adelanta", "canvi", "mour",
            "ajorn", "endarrer", "avanc", "chang", "move", "movin", "reschedul", "postpon",
            "verschieb", "verleg", "ander", "deplac", "report", "decal", "spost", "rimand",
            "posticip", "перенес", "перенос", "поменя", "измен")
+_CANCELLING = ("anul", "cancel", "borr", "quit", "elimin", "esborr", "absag", "abzusag",
+               "stornier", "streich", "annul", "disd", "отмен", "аннулир")
 CHANGE_IT = (
     "If the caller wants another time for this visit, move this appointment with "
     "reschedule_appointment, and if they do not want it after all, cancel it with "
@@ -337,9 +343,41 @@ class Toolbox:
         """Take note of what the caller has just said, before the model answers it."""
         self.session.spelled += spelled_words(text)
         self.session.lines_with.update(set(fold(text).split()))
-        self.session.last = frozenset(fold_any(text).split())
-        self.session.said |= self.session.last
+        words = frozenset(fold_any(text).split())
+        self.session.said |= words
         self.session.lines += 1
+        # To move an appointment or to cancel it: the caller's last word on it stands. A
+        # line that says neither, in answer to the agent asking about cancelling, is
+        # taken for an answer to that.
+        session = self.session
+        if any(word.startswith(_MOVING) for word in words):
+            session.wants_it_moved = True
+        elif session.asked_to_cancel or any(word.startswith(_CANCELLING) for word in words):
+            session.wants_it_moved = False
+        session.asked_to_cancel = False
+
+    def said(self, answer: str) -> None:
+        """Take note of what the agent has just told the caller.
+
+        An appointment counts as heard once an answer has carried its day and time, in
+        the words the tools hand over. Until 2026-10-08 it counted from the moment it was
+        handed to the model, and on a call the caller was asked which days suited them
+        "para cambiar la cita de Kiko" and had it moved without ever hearing which it was:
+        in the calls played that day, 33 of 102.
+        """
+        session, spoken = self.session, fold_any(answer)
+        session.asked_to_cancel = "?" in answer and any(
+            word.startswith(_CANCELLING) for word in spoken.split())
+        for appointment_id in session.told:
+            appointment = self.agenda.get(appointment_id)
+            if appointment_id not in session.heard and appointment is not None \
+                    and fold_any(say(appointment.start, session.language)) in spoken:
+                session.heard[appointment_id] = session.lines
+
+    def unsaid(self) -> None:
+        """The agent's last answer was taken back: nothing in it was heard."""
+        session = self.session
+        session.heard = {key: at for key, at in session.heard.items() if at < session.lines}
 
     def _vouched_for(self, name: str | None, spelled: bool, pet: str | None,
                      town: str | None) -> None:
@@ -636,7 +674,7 @@ class Toolbox:
         # It has been said to the caller once this answer is: from their next line on it
         # can be moved or cancelled, on this call, by whoever is calling.
         self.session.made.append(booked.appointment_id)
-        self.session.told[booked.appointment_id] = self.session.lines
+        self.session.told[booked.appointment_id] = self.session.lines  # heard, once said
         result = {"status": "booked", **self._summary(booked), "note": CHANGE_IT}
         if not booked.verified:
             result["note"] = ("Booked under the caller's word. Tell them reception will "
@@ -677,7 +715,14 @@ class Toolbox:
         upcoming = self.agenda.for_client(client.code)
         for appointment in upcoming:
             self.session.told.setdefault(appointment.appointment_id, self.session.lines)
-        return {"appointments": [self._summary(a) for a in upcoming]}
+        result: dict = {"appointments": [self._summary(a) for a in upcoming]}
+        if upcoming:
+            result["note"] = ("Before you cancel or move one, tell the caller which it is: the "
+                              "animal, and the day and time exactly as `say` gives them. Ask "
+                              "whether that is the one, and wait for their answer. To move "
+                              "one, use reschedule_appointment once they have accepted a new "
+                              "time: never cancel it in order to book it again.")
+        return result
 
     def _on_their_phone(self) -> bool:
         """Whether the call comes from a phone on the confirmed caller's record."""
@@ -711,16 +756,18 @@ class Toolbox:
         right one; with two on the record, or a caller who meant to move it, it would not
         have been. The caller hears which appointment it is, and says so, first.
         """
-        if self.session.told.get(appointment_id, self.session.lines) >= self.session.lines:
+        session = self.session
+        if session.heard.get(appointment_id, session.lines) >= session.lines:
+            which = self.agenda.get(appointment_id)
             raise ToolError(
-                f"Not yet. First tell the caller which appointment this is, with its day and "
-                f"time and the animal, and ask whether that is the one to {doing}. Call this "
-                f"tool again once they have said yes.")
+                f"Not yet. First tell the caller which appointment this is, in these words: "
+                f"{which.pet_name}, {say(which.start, session.language)}. Ask whether that "
+                f"is the one to {doing}. Call this tool again once they have said yes.")
 
     def _cancel_appointment(self, appointment_id: str) -> dict:
         self._may_change(appointment_id)
         self._heard_which(appointment_id, "cancel")
-        if any(word.startswith(_MOVING) for word in self.session.last):
+        if self.session.wants_it_moved:
             raise ToolError(WANTS_IT_MOVED)
         gone = self.agenda.cancel(appointment_id)
         self.session.notices.append(notices.cancelled(gone, self._client_name()))

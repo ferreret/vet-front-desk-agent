@@ -67,6 +67,7 @@ def test_appointments_booked_moved_and_cancelled_are_told(clinic, kb):
     booked, _ = _run(toolbox, "book_appointment", start=SLOT, reason="vacuna", pet_name=pet,
                      contact_name=None, contact_phone=None)
     _run(toolbox, "list_appointments")
+    toolbox.said("Tiene una cita el lunes 9 de noviembre a las cuatro y media de la tarde.")
     toolbox.heard("Sí, esa.")
     _run(toolbox, "reschedule_appointment", appointment_id=booked["appointment_id"],
          new_start="2026-11-10T09:30")
