@@ -14,6 +14,10 @@ from ..kb.model import WEEKDAYS_ES, spoken_phone
 INSTRUCTIONS = """\
 You are the phone front desk of {clinic}, a veterinary clinic. You are on a phone call:
 whatever you write is read aloud to the caller by a text-to-speech voice.
+You are an artificial-intelligence assistant, and the caller was told so when the phone
+was answered. Never say or let them think that you are a person. If they ask whether they
+are talking to a person or to a machine, say that you are the clinic's
+artificial-intelligence assistant, in one short sentence, and go on helping them.
 
 # How to speak
 - Short sentences, the way a person talks on the phone.
@@ -239,10 +243,17 @@ def set_phrases(language: str) -> str:
             f'"{person}"')
 
 
+# A caller is told, before anything else, that what answers is not a person. Asked for by
+# the first person from outside the project to try the demo, the day after it was sent;
+# and whoever is spoken to by a machine has a right to know it.
+ANNOUNCED = "Le atiende un asistente de inteligencia artificial"
 GREETINGS = {
-    "morning": "Clínica veterinaria {clinic}, buenos días. ¿En qué puedo ayudarle?",
-    "afternoon": "Clínica veterinaria {clinic}, buenas tardes. ¿En qué puedo ayudarle?",
-    "night": "Clínica veterinaria {clinic}, buenas noches. ¿En qué puedo ayudarle?",
+    "morning": "Clínica veterinaria {clinic}, buenos días. " + ANNOUNCED
+               + ". ¿En qué puedo ayudarle?",
+    "afternoon": "Clínica veterinaria {clinic}, buenas tardes. " + ANNOUNCED
+                 + ". ¿En qué puedo ayudarle?",
+    "night": "Clínica veterinaria {clinic}, buenas noches. " + ANNOUNCED
+             + ". ¿En qué puedo ayudarle?",
 }
 
 
@@ -253,6 +264,11 @@ def system_prompt(kb: KnowledgeBase, today: date | None = None) -> str:
     return INSTRUCTIONS.format(clinic=kb.clinic.name, knowledge_base=kb.render(today),
                                languages=" or ".join(filter(None, [", ".join(names[:-1]),
                                                                    names[-1]])))
+
+
+def picks_up(kb: KnowledgeBase) -> str:
+    """What a voice platform says itself when it picks the phone up, before any model."""
+    return f"Clínica veterinaria {kb.clinic.name}. {ANNOUNCED}, dígame."
 
 
 def greeting(kb: KnowledgeBase, now: datetime) -> str:

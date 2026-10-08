@@ -45,8 +45,8 @@ def test_a_turn_without_tools(clinic, kb):
 def test_the_model_gets_the_clinic_facts_and_the_call_context(clinic, kb):
     model = ScriptedClient([Reply("Hola.")])
     call = _call(model, clinic, kb, "+34600111222")
-    assert call.greeting == ("Clínica veterinaria Planeta Animal, buenos días. "
-                             "¿En qué puedo ayudarle?")
+    assert call.greeting == ("Clínica veterinaria Planeta Animal, buenos días. Le atiende un "
+                             "asistente de inteligencia artificial. ¿En qué puedo ayudarle?")
     transcript = model.transcript
     assert "600 555 020" in transcript.system and kb.render(NOW.date()) in transcript.system
     assert "+34600111222" in transcript.context and "martes" in transcript.context

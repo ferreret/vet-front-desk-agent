@@ -354,10 +354,33 @@ def test_the_platform_is_asked_to_fill_long_waits_itself(monkeypatch):
 
     monkeypatch.setenv("VETDESK_TTS_VOICE", "voice")
     turn = config("https://example.test", "secret")["conversation_config"]["turn"]
-    assert turn["soft_timeout_config"] == {"timeout_seconds": 2.0, "message": "Mmm...",
+    assert turn["soft_timeout_config"] == {"timeout_seconds": 3.0, "message": "Mmm...",
                                            "use_llm_generated_message": False}
     assert turn["speculative_turn"] is False
     assert turn["silence_end_call_timeout"] == 30.0  # a line nobody is on is hung up
+
+
+def test_whoever_picks_the_phone_up_says_it_is_not_a_person(monkeypatch, clinic):
+    """Asked for by the first person from outside to try it: a caller is told at once."""
+    from vetdesk.agent import FrontDeskAgent
+    from vetdesk.agent.prompt import ANNOUNCED, system_prompt
+    from vetdesk.kb import load_kb
+    from vetdesk.llm.scripted import ScriptedClient
+    from vetdesk.scheduling import SqliteAgenda
+    from vetdesk.voice.elevenlabs_agent import config, demo_settings
+
+    monkeypatch.setenv("VETDESK_TTS_VOICE", "voice")
+    assert "inteligencia artificial" in ANNOUNCED
+    phone = config("https://example.test", "secret")
+    said = phone["conversation_config"]["agent"]["first_message"]
+    assert said == f"Clínica veterinaria Planeta Animal. {ANNOUNCED}, dígame."
+    demo = demo_settings(config("https://example.test", "secret"))
+    assert demo["conversation_config"]["agent"]["first_message"] == said
+    # And the same when it is our own agent that opens the call, by text.
+    kb, now = load_kb(), datetime(2026, 11, 3, 10, 15)
+    call = FrontDeskAgent(ScriptedClient([]), clinic, kb, SqliteAgenda(kb, lambda: now),
+                          lambda: now).start_call(None)
+    assert ANNOUNCED in call.greeting and "Never say or let them think" in system_prompt(kb)
 
 
 def test_the_platform_is_asked_to_leave_out_voices_in_the_background(monkeypatch):
