@@ -306,6 +306,14 @@ our address decides, in code, and calls the tool.
   handed with the tool, as it had not said the message before a transfer. The goodbye is
   now the agent's own words, said ahead of the tool call, which waits for them. Heard on
   a phone call the next day (2026-10-07): the goodbye in full, and then the line closed.
+  What counts as the agent's goodbye was a list of words, and three got past it in two
+  days ("De nada, buenos días", a bare no to "anything else?", "De nada. ¡Que vaya muy
+  bien!"), each leaving a line open. Since 2026-10-08, when the caller's line is only
+  their goodbye (thanks, yes and no around "that is all", and no question) and the agent
+  does nothing in answer to it, whatever the agent says that asks nothing is its goodbye.
+  "Buenos días, nada más quería saber el horario" is not such a line, and its answer
+  ends nothing. Over the 34 calls on record it adds the two that had stayed open and no
+  other.
 - **Putting a call through to a person.** The 2025 pilot said "le paso con recepción" and
   could not; this agent has said, truthfully, that it cannot, and taken a message. Now it
   can, when there is a number to put calls through to (`VETDESK_TRANSFER_TO`) and the
