@@ -525,8 +525,9 @@ line cannot behave differently from what was measured in text.
   by the clock, it still did not cover the wait: ElevenLabs holds back whatever it is sent
   until more text follows, so the phrase left our address at 2.0 s and was spoken at 2.8 s,
   with the answer. On that route the platform's own filler is used instead (its "soft
-  timeout": after 2 s without an answer it says "Mmm...", no word of any language, since
-  the agent is set up in Spanish only). The phrase by the clock, in the caller's language,
+  timeout": after 3 s without an answer it says "Mmm...", no word of any language, since
+  the agent is set up in Spanish only; it was 2 s until the first person to try the demo
+  heard it in one turn of three). The phrase by the clock, in the caller's language,
   remains for the LiveKit route, where nothing else fills a silence.
 - **One turn at a time.** A caller can talk over the agent. The answer stops being heard at
   once, but the turn it belonged to runs on, so that a tool that was called still gets its

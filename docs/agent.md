@@ -54,10 +54,18 @@ What goes into the agenda is the caller's, by the same kind of check:
   time for the caller's because a word of theirs was in it was tried first, and let the
   same thing through ("esta mañana" named every morning), so even a time the caller names
   outright is said back and booked on their yes.
-- **An appointment the caller has just said they want changed is not cancelled.** After
-  the rule above, the model began to cancel and book again; a cancellation is not undone
-  by booking, the time may be gone. The words for moving, in each language, are the one
-  list of keywords in the barrier.
+- **An appointment the caller wants changed is not cancelled.** After the rule above, the
+  model began to cancel and book again. Once the booking was then refused, and the caller
+  hung up with no appointment at all. The caller's last word on it stands: if it was to
+  move it, cancelling is refused until they say otherwise, or answer the agent asking
+  whether to cancel. The words for moving and for cancelling, in each language, are the
+  one list of keywords in the barrier.
+- **An appointment is cancelled or moved only once the caller has heard which it is**, and
+  heard means said: an answer of the agent's carried its day and time, in the words the
+  tools give, and the caller has spoken since. It used to count from the moment it was
+  handed to the model. Heard on a call: "¿qué días le van bien para cambiar la cita de
+  Kiko?", and it was moved without a word of which appointment that was; in the calls
+  played that day, 33 of 102. Played again by text: said first in 18 of 18.
 - **What cannot be done on this call** ("eso no puedo hacerlo desde aquí…") is not a set
   phrase the model holds. It was for a day, and a client calling from the phone on their
   record who asked to move an appointment was turned down with it in 10 calls of 24. Like
