@@ -13,6 +13,7 @@ PRICES = {
     "claude-sonnet-5-5": (2.0, 10.0),
     "claude-opus-5-5": (4.0, 20.0),
     "claude-haiku-4-5": (1.0, 5.0),
+    "claude-haiku-5-5": (0.10, 0.50),  # for prompts up to 100K tokens, as these all are
     "gemini-3.8-flash": (0.75, 3.75),
     "gemini-flash-latest": (0.75, 3.75),
     "gemini-3.5-flash-lite": (0.30, 2.50),

@@ -21,8 +21,9 @@ DEFAULT_EFFORT = "low"  # short spoken turns: favour latency over deliberation
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 _SUPPORTS_FALLBACK = ("claude-opus-5", "claude-sonnet-5-5", "claude-fable-5-1")
 _NO_EFFORT = ("claude-haiku-4-5",)  # rejects output_config.effort
-# The only model whose thinking can be switched off, with its own setting for it.
-_THINKING_OFF = {"claude-sonnet-5-5": {"type": "between_tools"}}
+# The models whose thinking can be switched off, each with its own setting for it.
+_THINKING_OFF = {"claude-sonnet-5-5": {"type": "between_tools"},
+                 "claude-haiku-5-5": {"type": "disabled"}}
 
 _STOP = {"end_turn": "end", "tool_use": "tool_calls", "max_tokens": "max_tokens",
          "refusal": "refusal"}
