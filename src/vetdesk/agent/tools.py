@@ -29,7 +29,7 @@ from ..legacy.normalize import fold, fold_any, osa_distance, parse_phones
 from ..llm import ToolCall, ToolResult, ToolSpec
 from ..scheduling import Agenda, AgendaError, Appointment
 from ..spoken import say
-from .prompt import THROUGH
+from .prompt import NOT_FROM_HERE, THROUGH
 
 
 class ToolError(Exception):
@@ -75,6 +75,14 @@ class CallSession:
     # heard which it is and has spoken again.
     lines: int = 0
     told: dict[str, int] = field(default_factory=dict)
+    last: frozenset[str] = frozenset()  # the words of the caller's last line
+    # At which of the caller's lines each free time was first handed to the model: a time
+    # is booked, or moved to, once the caller has named it or has been offered it and has
+    # spoken again.
+    offered: dict[str, int] = field(default_factory=dict)
+    # The appointments booked on this call. Whoever booked one can still have it moved or
+    # cancelled before hanging up, confirmed or not: it is theirs because they made it.
+    made: list[str] = field(default_factory=list)
     # At which of the caller's lines the calling number was first put forward as where to
     # reach them: it is taken only once they have been asked and have spoken again.
     asked_where_to_call: int | None = None
@@ -88,10 +96,20 @@ class CallSession:
     messages: list[Message] = field(default_factory=list)
 
 
+NOT_ASKED = (
+    "The caller is not confirmed, so no client data is available. Ask who is calling, "
+    "with the set phrase for it, and use identify_client with what they say."
+)
 NOT_CONFIRMED = (
-    "The caller is not confirmed, so no client data is available. Use identify_client "
-    "first. If it cannot confirm them, do not use this tool: offer an unverified booking "
-    "or a message instead."
+    "The caller is not confirmed, so no client data is available, and this cannot be done "
+    'for them on this call. Say: "{say}" Then take the message with take_message. Booking '
+    "a new appointment is something else: anybody can book one, confirmed or not."
+)
+# What an answer of identify_client adds for a caller who cannot have what the clinic holds.
+IF_THEY_ASK = (
+    " If they ask to see, cancel or move an appointment, or about what the clinic holds on "
+    'their animals, say: "{say}" Then take the message with take_message. Booking a new '
+    "appointment is never that: anybody can book one, confirmed or not."
 )
 NOT_SPELLED = (
     "name_spelled is true, but that is not the name the caller spelled letter by letter. "
@@ -107,6 +125,19 @@ NOT_SAID = {
     "town": "The caller has not said that town. Pass a town only as the caller said it, "
     "and null until they have. If the town is needed, ask which town they live in.",
 }
+NO_TIME = (
+    "Not yet: the caller has not been offered this time, {say}. A time is booked, or an "
+    "appointment moved to it, only once the caller has heard it from you and accepted it. "
+    "If they have just named this very day and time, say it back and ask whether it is "
+    "right. Otherwise ask which days and what time of day suit them, or offer them two or "
+    "three times. Call this tool again once they have answered."
+)
+ALREADY_BOOKED = (
+    "On this call you have already booked {pet} for {say} (appointment_id {id}). If the "
+    "caller wants another time for that visit, move it with reschedule_appointment: do not "
+    "book it again. A second visit for the same animal is not booked on the same call: if "
+    "they want both, take a message for reception with take_message."
+)
 NO_REASON = (
     "The caller has not said what the visit is for: nothing in '{reason}' is in their own "
     "words. Do not make a reason up. If they did tell you, call again with what they said, "
@@ -148,8 +179,8 @@ THIS_NUMBER = (
 SAME_NUMBER = {"mismo", "misma", "mateix", "mateixa", "same"}
 NOT_FROM_THEIR_PHONE = (
     "Appointments can only be cancelled or moved on a call from a phone on the caller's "
-    "record, and this call is not. Tell them you cannot do it from this number, and offer "
-    "to take a message so that reception calls them back (take_message)."
+    'record, and this call is not. Say: "{say}" Then take the message so that reception '
+    "calls them back (take_message)."
 )
 ASK = {
     "client_name": "Ask for their first name and both surnames.",
@@ -171,6 +202,27 @@ NOT_A_CLIENT = (
     "can still answer general questions, book an appointment under the name and phone "
     "they give you, or take a message. If they later spell their name, call "
     "identify_client again with name_spelled=true."
+)
+WANTS_IT_MOVED = (
+    "Do not cancel it: the caller has just said they want it changed, not cancelled. Ask "
+    "which days and what time of day suit them, and move it with reschedule_appointment. "
+    "If they do want it cancelled, ask them whether to cancel it and call this tool again "
+    "once they have said so."
+)
+# How a caller says an appointment is to be moved, as the first letters of the word, in
+# the languages the agent speaks. Heard in the calls played after `made` came in: "no voy
+# a poder ir", the model asked whether that was the one to cancel, "sí, esa misma, y
+# quería cambiarla", and it was cancelled. A cancellation is not undone by booking again:
+# the time may be gone.
+# Not "adelant" nor "mov": "adelante" is a go-ahead, and "móvil" a phone.
+_MOVING = ("cambi", "mover", "muev", "aplaz", "pospon", "retras", "adelanta", "canvi", "mour",
+           "ajorn", "endarrer", "avanc", "chang", "move", "movin", "reschedul", "postpon",
+           "verschieb", "verleg", "ander", "deplac", "report", "decal", "spost", "rimand",
+           "posticip", "перенес", "перенос", "поменя", "измен")
+CHANGE_IT = (
+    "If the caller wants another time for this visit, move this appointment with "
+    "reschedule_appointment, and if they do not want it after all, cancel it with "
+    "cancel_appointment. Never book it a second time."
 )
 
 MAX_OFFERED = 6  # free times handed to the model at once
@@ -285,7 +337,8 @@ class Toolbox:
         """Take note of what the caller has just said, before the model answers it."""
         self.session.spelled += spelled_words(text)
         self.session.lines_with.update(set(fold(text).split()))
-        self.session.said.update(fold_any(text).split())
+        self.session.last = frozenset(fold_any(text).split())
+        self.session.said |= self.session.last
         self.session.lines += 1
 
     def _vouched_for(self, name: str | None, spelled: bool, pet: str | None,
@@ -385,16 +438,18 @@ class Toolbox:
             if not self._on_their_phone():
                 instructions += (" This call is not from a phone on their record, so their "
                                  "appointments cannot be cancelled or moved on it: if they "
-                                 "ask for that, take a message for reception instead.")
+                                 f'ask for that, say: "{NOT_FROM_HERE[session.language]}" '
+                                 "Then take the message with take_message.")
             return {"status": "confirmed", "client_name": _display(session.client),
                     "instructions": instructions}
         resolution = session.resolution
+        if_they_ask = IF_THEY_ASK.format(say=NOT_FROM_HERE[session.language])
         if resolution.decision == "not_found":
-            return {"status": "not_a_client", "instructions": NOT_A_CLIENT}
+            return {"status": "not_a_client", "instructions": NOT_A_CLIENT + if_they_ask}
         if resolution.ask_for:
             return {"status": "need_more", "ask_for": resolution.ask_for,
                     "instructions": ASK[resolution.ask_for]}
-        return {"status": "unconfirmed", "instructions": UNCONFIRMED}
+        return {"status": "unconfirmed", "instructions": UNCONFIRMED + if_they_ask}
 
     def _misspelt_on_file(self, spelled: str) -> None:
         """Tell reception when a record on the calling number is one letter from a name.
@@ -420,9 +475,15 @@ class Toolbox:
         return self.session.client.raw_name if self.session.client else None
 
     def _confirmed(self) -> Client:
-        if self.session.client is None:
-            raise ToolError(NOT_CONFIRMED)
-        return self.session.client
+        session = self.session
+        if session.client is None:
+            # Asked for before the caller has been asked who they are, the answer is to
+            # ask. Only once that has led nowhere is it something that cannot be done.
+            asking = session.resolution is None or (
+                session.resolution.decision != "not_found" and session.resolution.ask_for)
+            raise ToolError(NOT_ASKED if asking else
+                            NOT_CONFIRMED.format(say=NOT_FROM_HERE[session.language]))
+        return session.client
 
     def _get_pets(self) -> dict:
         client = self._confirmed()
@@ -471,7 +532,7 @@ class Toolbox:
         if not slots:
             return {"slots": [], "note": "Nothing free in that range. Offer other days.", **shut}
         if len(slots) <= MAX_OFFERED:
-            return {"slots": [_when(slot, self.session.language) for slot in slots],
+            return {"slots": self._offer(slots),
                     "note": "These are all the free times in that range.", **shut}
         # A sample spread over the first days. Handed the six earliest times, all on one
         # day, a model told callers that the rest of the week was full.
@@ -483,13 +544,55 @@ class Toolbox:
         sample = [slot for day in days
                   for slot in by_day[day][::max(1, len(by_day[day]) // per_day)][:per_day]]
         return {
-            "slots": [_when(slot, self.session.language) for slot in sample],
+            "slots": self._offer(sample),
             "free_days": [f"{WEEKDAYS_ES[day.weekday()]} {day.isoformat()}" for day in by_day],
             "note": "A sample: offer two or three of these. Every day in free_days has more "
                     "free times than are shown, so never say a day or the week is full "
                     "because it is not in the sample. To see one day, ask again for that day.",
             **shut,
         }
+
+    def _offer(self, slots: list[datetime]) -> list[dict]:
+        """Free times as they are handed to the model, noted as offered from this line on."""
+        offered = [_when(slot, self.session.language) for slot in slots]
+        for slot in offered:
+            self.session.offered.setdefault(slot["start"], self.session.lines)
+        return offered
+
+    def _time_chosen(self, when: datetime) -> None:
+        """Refuse a day and a time the caller has not heard and accepted.
+
+        Heard on a call: "tengo que cambiar la cita", and the appointment was moved to the
+        next morning in the same breath; the caller had to say that was not the day and
+        have it moved again. In the calls played before that, 4 moves of 45 and 2 bookings
+        of 448 went to a time the caller had not said a word about. So a time is taken only
+        when it was handed to the model before the caller's last line: offered, and
+        answered. A time refused here counts as offered from then on, since the model is
+        told to say it.
+
+        Taking a time the caller named in their own words, without saying it back, was
+        tried first and let the same thing through: "esta mañana" named every morning, and
+        "buenas tardes" every afternoon. A caller who names the day and the hour outright
+        hears them back and says yes: one line more, in 12 of the 493 times measured.
+        """
+        session, key = self.session, when.strftime("%Y-%m-%dT%H:%M")
+        if session.offered.setdefault(key, session.lines) >= session.lines:
+            raise ToolError(NO_TIME.format(say=say(when, session.language)))
+
+    def _not_again(self, pet_name: str) -> None:
+        """Refuse a second appointment for an animal that got one on this call.
+
+        Heard on a call: an appointment booked for Tuesday the 13th, "el 13 no puedo, una
+        semana más tarde", and a second one booked for the 20th with the first left
+        standing. Played again by text, the first one was still there at the end of 12
+        calls of 12.
+        """
+        for appointment_id in self.session.made:
+            earlier = self.agenda.get(appointment_id)
+            if earlier.status == "booked" and fold_any(earlier.pet_name) == fold_any(pet_name):
+                raise ToolError(ALREADY_BOOKED.format(
+                    pet=earlier.pet_name, id=appointment_id,
+                    say=say(earlier.start, self.session.language)))
 
     def _book_appointment(
         self,
@@ -500,7 +603,9 @@ class Toolbox:
         contact_phone: str | None,
     ) -> dict:
         when, client = _moment(start), self.session.client
+        self._not_again(pet_name)
         self._reason_given(reason, pet_name)
+        self._time_chosen(when)
         try:
             if client is not None:
                 names = [a.name for a in self.clinic.animals_of(client.code)]
@@ -528,10 +633,14 @@ class Toolbox:
         except AgendaError as error:
             raise ToolError(f"{error}. Check get_availability and offer another time.") from error
         self.session.notices.append(notices.booked(booked, self._client_name()))
-        result = {"status": "booked", **self._summary(booked)}
+        # It has been said to the caller once this answer is: from their next line on it
+        # can be moved or cancelled, on this call, by whoever is calling.
+        self.session.made.append(booked.appointment_id)
+        self.session.told[booked.appointment_id] = self.session.lines
+        result = {"status": "booked", **self._summary(booked), "note": CHANGE_IT}
         if not booked.verified:
             result["note"] = ("Booked under the caller's word. Tell them reception will "
-                              "confirm the details when they arrive or by phone.")
+                              f"confirm the details when they arrive or by phone. {CHANGE_IT}")
         return result
 
     def _summary(self, appointment: Appointment) -> dict:
@@ -584,9 +693,14 @@ class Toolbox:
         the resolver confirmed the friend and the appointment was cancelled. What cannot be
         undone therefore asks for something the caller has, not only something they know.
         """
+        made = self.agenda.get(appointment_id) if appointment_id in self.session.made else None
+        if made is not None and made.status == "booked":
+            # Booked a moment ago on this call: nothing of any record is read or undone,
+            # and without this a caller who is not confirmed could only book another.
+            return
         self._confirmed()
         if not self._on_their_phone():
-            raise ToolError(NOT_FROM_THEIR_PHONE)
+            raise ToolError(NOT_FROM_THEIR_PHONE.format(say=NOT_FROM_HERE[self.session.language]))
         self._own(appointment_id)
 
     def _heard_which(self, appointment_id: str, doing: str) -> None:
@@ -606,6 +720,8 @@ class Toolbox:
     def _cancel_appointment(self, appointment_id: str) -> dict:
         self._may_change(appointment_id)
         self._heard_which(appointment_id, "cancel")
+        if any(word.startswith(_MOVING) for word in self.session.last):
+            raise ToolError(WANTS_IT_MOVED)
         gone = self.agenda.cancel(appointment_id)
         self.session.notices.append(notices.cancelled(gone, self._client_name()))
         return {"status": "cancelled", **self._summary(gone)}
@@ -613,9 +729,10 @@ class Toolbox:
     def _reschedule_appointment(self, appointment_id: str, new_start: str) -> dict:
         self._may_change(appointment_id)
         self._heard_which(appointment_id, "move")
-        before = self.agenda.get(appointment_id).start
+        before, when = self.agenda.get(appointment_id).start, _moment(new_start)
+        self._time_chosen(when)
         try:
-            moved = self.agenda.reschedule(appointment_id, _moment(new_start))
+            moved = self.agenda.reschedule(appointment_id, when)
         except AgendaError as error:
             raise ToolError(f"{error}. Check get_availability and offer another time.") from error
         self.session.notices.append(notices.moved(moved, before, self._client_name()))

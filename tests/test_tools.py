@@ -27,11 +27,19 @@ def kb():
     return load_kb()
 
 
-def _toolbox(clinic, kb, number=None, reason="Le toca la vacuna y una revisión: es la primera."):
-    """A toolbox on a call where the caller has already said what the visit is for."""
+def _toolbox(clinic, kb, number=None, reason="Le toca la vacuna y una revisión: es la primera.",
+             accepted=(SLOT,)):
+    """A toolbox on a call where the caller has already said what the visit is for, and
+    has been offered SLOT and taken it."""
     toolbox = Toolbox(clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW, number)
     if reason:
         toolbox.heard(reason)
+    return _accepted(toolbox, *accepted)
+
+
+def _accepted(toolbox, *starts):
+    """The caller has heard these times offered, and has spoken since."""
+    toolbox.session.offered.update(dict.fromkeys(starts, -1))
     return toolbox
 
 
@@ -340,7 +348,7 @@ def test_booking_for_a_confirmed_caller_goes_on_their_record(confirmed):
     booked = toolbox.agenda.get(result["appointment_id"])
     assert booked.verified and booked.client_code == toolbox.session.client.code
     assert booked.pet_name == pet and booked.animal_code is not None
-    assert "note" not in result
+    assert "reception will confirm" not in result["note"]
 
 
 def test_a_new_pet_of_a_confirmed_caller(confirmed):
@@ -367,14 +375,14 @@ def test_cancelling_and_moving_own_appointments(confirmed):
     refused, failed = _call(toolbox, "cancel_appointment", appointment_id=own.appointment_id)
     assert failed and "once they have said yes" in refused["error"]  # told, not yet answered
     assert toolbox.agenda.get(own.appointment_id).status == "booked"
-    toolbox.heard("Sí, esa.")
+    _accepted(toolbox, "2026-11-11T11:00").heard("Sí, esa. El miércoles a las once me va bien.")
     moved, failed = _call(toolbox, "reschedule_appointment",
                           appointment_id=own.appointment_id, new_start="2026-11-11T11:00")
     assert not failed and moved["start"] == "2026-11-11T11:00"
     cancelled, failed = _call(toolbox, "cancel_appointment", appointment_id=own.appointment_id)
     assert not failed and cancelled["status"] == "cancelled"
     assert _call(toolbox, "list_appointments")[0] == {"appointments": []}
-    assert "take a message" not in _identify(toolbox)["instructions"]  # their own phone
+    assert "cannot be cancelled or moved" not in _identify(toolbox)["instructions"]  # own phone
 
 
 def test_cancelling_and_moving_need_a_call_from_a_phone_on_the_record(clinic, kb, scenarios):
@@ -385,7 +393,8 @@ def test_cancelling_and_moving_need_a_call_from_a_phone_on_the_record(clinic, kb
     _identify(toolbox, name=scenario.caller.says_name)
     _identify(toolbox, pet_name=scenario.caller.pets[0].name)
     confirmed = _identify(toolbox, town=scenario.caller.town)
-    assert confirmed["status"] == "confirmed" and "take a message" in confirmed["instructions"]
+    assert confirmed["status"] == "confirmed"
+    assert "cannot be cancelled or moved" in confirmed["instructions"]
     own = toolbox.agenda.book(datetime(2026, 11, 10, 17, 0), "revisión",
                               scenario.caller.pets[0].name,
                               client_code=toolbox.session.client.code)
@@ -502,7 +511,7 @@ def test_a_taken_time_is_refused_with_a_way_forward(clinic, kb):
     booking = {"start": SLOT, "reason": "vacuna", "pet_name": "Luna",
                "contact_name": "Lucía Romero", "contact_phone": "600112233"}
     assert not _call(toolbox, "book_appointment", **booking)[1]
-    refused, failed = _call(toolbox, "book_appointment", **booking)
+    refused, failed = _call(toolbox, "book_appointment", **{**booking, "pet_name": "Bruno"})
     assert failed and "get_availability" in refused["error"]
 
 
@@ -533,7 +542,7 @@ def test_the_calling_number_is_not_taken_for_the_callers_until_they_are_asked(cl
     number = "+34600999888"
     booking = {"start": "2026-11-09T16:30", "reason": "revisión", "pet_name": "Toby",
                "contact_name": "Marta Soler", "contact_phone": number}
-    toolbox = _toolbox(clinic, kb, number)
+    toolbox = _toolbox(clinic, kb, number, accepted=("2026-11-09T16:30",))
     toolbox.heard("Quería una revisión para mi perro Toby el lunes por la tarde.")
     for _ in range(2):  # asked again in the same breath, it is still not yet
         refused, failed = _call(toolbox, "book_appointment", **booking)
@@ -545,10 +554,10 @@ def test_the_calling_number_is_not_taken_for_the_callers_until_they_are_asked(cl
 
     # Another number, in their own words, is taken at once; and so is this one when they
     # have said that it is the same.
-    other = _toolbox(clinic, kb, number)
+    other = _toolbox(clinic, kb, number, accepted=("2026-11-09T16:30",))
     other.heard("Una revisión para Toby el lunes por la tarde. Mi teléfono es el 600 11 22 33.")
     assert not _call(other, "book_appointment", **{**booking, "contact_phone": "600112233"})[1]
-    same = _toolbox(clinic, kb, number)
+    same = _toolbox(clinic, kb, number, accepted=("2026-11-09T16:30",))
     same.heard("Una revisión para Toby el lunes por la tarde, y me llaman a este mismo número.")
     assert not _call(same, "book_appointment", **booking)[1]
 
@@ -565,6 +574,185 @@ def test_the_clinics_own_number_is_not_where_to_reach_a_caller(clinic, kb):
         assert failed and "clinic's own numbers" in refused["error"], own
     assert toolbox.session.messages == []
     assert all(event.is_error for event in toolbox.session.events)
+
+
+
+# --- the day and the time are the caller's -------------------------------------------------------
+
+
+def test_a_time_the_caller_has_not_heard_and_accepted_is_not_booked(clinic, kb):
+    """Heard on a call and counted in the calls played before it: an appointment put at a
+    time the caller had not said a word about."""
+    toolbox = _toolbox(clinic, kb, accepted=())
+    booking = {"reason": "vacuna", "pet_name": "Luna", "contact_name": "Lucía Romero",
+               "contact_phone": "600112233"}
+    week, _ = _call(toolbox, "get_availability", date_from="2026-11-09", date_to="2026-11-13",
+                    part_of_day="any")
+    offered = week["slots"][0]
+    for _ in range(2):  # looked up and booked in the same breath: the caller heard nothing
+        refused, failed = _call(toolbox, "book_appointment", start=offered["start"], **booking)
+        assert failed and "has not been offered this time" in refused["error"]
+        assert offered["say"] in refused["error"]
+    assert toolbox.agenda.all() == []
+    toolbox.heard("Sí, esa me va bien.")
+    assert not _call(toolbox, "book_appointment", start=offered["start"], **booking)[1]
+
+
+def test_a_time_the_caller_named_is_said_back_before_it_is_booked(clinic, kb):
+    """Taking a time for the caller's because a word of theirs was in it let through what
+    it was meant to stop: "esta mañana" named every morning, "buenas tardes" every
+    afternoon. So even a time named outright is said back, and booked on their yes."""
+    toolbox = _toolbox(clinic, kb, accepted=())
+    booking = {"start": "2026-11-10T18:00", "reason": "vacuna", "pet_name": "Luna",
+               "contact_name": "Lucía Romero", "contact_phone": "600112233"}
+    toolbox.heard("Buenas tardes. El martes a las seis de la tarde, si puede ser.")
+    refused, failed = _call(toolbox, "book_appointment", **booking)
+    assert failed and "say it back and ask whether it is right" in refused["error"]
+    assert "martes 10 de noviembre a las seis de la tarde" in refused["error"]
+    toolbox.heard("Sí, eso es.")
+    assert not _call(toolbox, "book_appointment", **booking)[1]
+
+
+def test_an_appointment_is_not_moved_to_a_time_of_the_models_own(confirmed):
+    """ "Tengo que cambiar la cita", and it was moved to the next morning without a word."""
+    toolbox, scenario = confirmed
+    own = toolbox.agenda.book(datetime(2026, 11, 10, 17, 0), "revisión",
+                              scenario.caller.pets[0].name,
+                              client_code=toolbox.session.client.code)
+    _call(toolbox, "list_appointments")
+    toolbox.heard("Sí, esa. Me he dado cuenta esta mañana: tengo que cambiarla.")
+    week, _ = _call(toolbox, "get_availability", date_from="2026-11-11", date_to="2026-11-13",
+                    part_of_day="any")
+    for new in (week["slots"][0]["start"], "2026-11-12T17:00"):
+        refused, failed = _call(toolbox, "reschedule_appointment",
+                                appointment_id=own.appointment_id, new_start=new)
+        assert failed and "has not been offered this time" in refused["error"], new
+    assert toolbox.agenda.get(own.appointment_id).start == datetime(2026, 11, 10, 17, 0)
+    toolbox.heard("El jueves a las cinco.")
+    moved, failed = _call(toolbox, "reschedule_appointment",
+                          appointment_id=own.appointment_id, new_start="2026-11-12T17:00")
+    assert not failed and moved["start"] == "2026-11-12T17:00"
+
+
+@pytest.mark.parametrize("said", [
+    "Sí, esa misma, y quería cambiarla.", "Sí, aquesta, però la voldria canviar de dia.",
+    "Yes, that one. I'd like to move it.", "Ja, genau, ich möchte ihn verschieben.",
+    "Oui, celui-là, je voudrais le déplacer.", "Sì, quello, vorrei spostarlo.",
+    "Да, эту, я хочу её перенести."])
+def test_an_appointment_the_caller_wants_moved_is_not_cancelled(confirmed, said):
+    """ "No voy a poder ir", "¿es esa la que quiere cancelar?", "sí, esa misma, y quería
+    cambiarla": and it was cancelled, and booked again at another time."""
+    toolbox, scenario = confirmed
+    own = toolbox.agenda.book(datetime(2026, 11, 10, 17, 0), "revisión",
+                              scenario.caller.pets[0].name,
+                              client_code=toolbox.session.client.code)
+    _call(toolbox, "list_appointments")
+    toolbox.heard(said)
+    refused, failed = _call(toolbox, "cancel_appointment", appointment_id=own.appointment_id)
+    assert failed and "they want it changed, not cancelled" in refused["error"]
+    assert toolbox.agenda.get(own.appointment_id).status == "booked"
+    toolbox.heard("No, mejor anúlela. Adelante, y me llaman al móvil si hace falta.")
+    assert not _call(toolbox, "cancel_appointment", appointment_id=own.appointment_id)[1]
+
+
+# --- an appointment made on this call ------------------------------------------------------------
+
+
+def test_whoever_booked_on_this_call_can_have_it_moved_or_cancelled(clinic, kb):
+    """Heard on a call: booked for the 13th, "el 13 no puedo, una semana más tarde", and a
+    second appointment booked for the 20th. Nobody who is not confirmed could have one
+    moved, so the model could only book again."""
+    later = "2026-11-16T09:30"
+    toolbox = _toolbox(clinic, kb)
+    booking = {"reason": "vacuna", "pet_name": "Nichi", "contact_name": "Marcelo Mastriani",
+               "contact_phone": "600112233"}
+    booked, _ = _call(toolbox, "book_appointment", start=SLOT, **booking)
+    assert "move this appointment with reschedule_appointment" in booked["note"]
+    ours = booked["appointment_id"]
+    # Not in the same breath: the caller has not heard yet what was booked.
+    assert _call(toolbox, "cancel_appointment", appointment_id=ours)[1]
+    toolbox.heard("Ay, el 9 no puedo. Tendría que ser una semana más tarde.")
+    # Booking it again is refused, with the way to do it; and the new time is said first.
+    again, failed = _call(toolbox, "book_appointment", start=later, **booking)
+    assert failed and "reschedule_appointment" in again["error"] and ours in again["error"]
+    refused, failed = _call(toolbox, "reschedule_appointment", appointment_id=ours,
+                            new_start=later)
+    assert failed and "lunes 16 de noviembre a las nueve y media" in refused["error"]
+    toolbox.heard("Sí, ese día sí.")
+    moved, failed = _call(toolbox, "reschedule_appointment", appointment_id=ours,
+                          new_start=later)
+    assert not failed and moved["status"] == "rescheduled"
+    assert [(a.start, a.status) for a in toolbox.agenda.all()] == \
+        [(datetime(2026, 11, 16, 9, 30), "booked")]
+    assert [notice.kind for notice in toolbox.session.notices] == ["booked", "moved"]
+    assert "SIN VERIFICAR: dice ser Marcelo Mastriani" in toolbox.session.notices[-1].text
+    # Another animal is another visit.
+    assert not _call(toolbox, "book_appointment", start=SLOT, **{**booking, "pet_name": "Rex"})[1]
+    toolbox.heard("No, déjelo, anule la de Nichi.")
+    gone, failed = _call(toolbox, "cancel_appointment", appointment_id=ours)
+    assert not failed and gone["status"] == "cancelled"
+    # Cancelled, it is no longer theirs to touch, and the animal can be booked afresh.
+    assert _call(toolbox, "cancel_appointment", appointment_id=ours)[1]
+    assert not _call(toolbox, "book_appointment", start=later, **booking)[1]
+
+
+def test_only_what_was_booked_on_this_call_is_open_to_a_caller_not_confirmed(clinic, kb):
+    toolbox = _toolbox(clinic, kb)
+    toolbox.agenda.add(Appointment("AP-0500", datetime(2026, 11, 10, 17, 0), "revisión",
+                                   "Toby", 10, None, None, None, True))
+    toolbox.agenda.book(datetime(2026, 11, 11, 17, 0), "revisión", "Rex",
+                        contact_name="Otra Persona", contact_phone="+34600000009")
+    toolbox.heard("Anule la cita del martes.")
+    for appointment in toolbox.agenda.all():
+        for tool, more in (("cancel_appointment", {}),
+                           ("reschedule_appointment", {"new_start": SLOT})):
+            refused, failed = _call(toolbox, tool, appointment_id=appointment.appointment_id,
+                                    **more)
+            assert failed and "The caller is not confirmed" in refused["error"]
+    assert [a.status for a in toolbox.agenda.all()] == ["booked", "booked"]
+
+
+# --- what cannot be done on this call -------------------------------------------------------------
+
+
+def test_what_cannot_be_done_is_said_only_once_a_tool_has_found_so(clinic, kb, scenarios):
+    """It was a set phrase for a day, and the model turned down with it callers it had not
+    asked who they were, and a client on their own phone: 10 requests of 24."""
+    from vetdesk.agent.prompt import NOT_FROM_HERE, PHRASES, call_context, system_prompt
+
+    every = list(NOT_FROM_HERE.values())
+    assert set(NOT_FROM_HERE) == set(PHRASES)
+    assert not any(phrase in system_prompt(kb) + call_context(kb, NOW, None, "")
+                   for phrase in every)
+    assert not any(phrase in " ".join(phrases) for phrase in every for phrases in PHRASES.values())
+
+    # Nobody has been asked who they are: the answer is to ask, not to turn them down.
+    toolbox = _toolbox(clinic, kb)
+    refused, failed = _call(toolbox, "list_appointments")
+    assert failed and "Ask who is calling" in refused["error"]
+    assert not any(phrase in refused["error"] for phrase in every)
+    # Not a client: now it cannot be done, and the words for it are handed over, in the
+    # language of the call.
+    toolbox.session.language = "ca"
+    nobody = _identify(toolbox, name="Marcelo Mastriani Roca")
+    assert nobody["status"] == "not_a_client" and NOT_FROM_HERE["ca"] in nobody["instructions"]
+    assert "anybody can book one" in nobody["instructions"]
+    refused, _ = _call(toolbox, "list_appointments")
+    assert NOT_FROM_HERE["ca"] in refused["error"] and "take_message" in refused["error"]
+
+    # A client on the phone of their record is never given the words; from another phone,
+    # for cancelling and moving only.
+    scenario = _by_phone(scenarios)
+    own = _toolbox(clinic, kb, scenario.call.caller_number)
+    known = _identify(own, name=scenario.caller.says_name)
+    assert known["status"] == "confirmed" and NOT_FROM_HERE["es"] not in known["instructions"]
+    hidden = next(s for s in scenarios if s.category == "identity.hidden_number"
+                  and s.speech.noise == "none")
+    away = _toolbox(clinic, kb)
+    _identify(away, name=hidden.caller.says_name)
+    _identify(away, pet_name=hidden.caller.pets[0].name)
+    known = _identify(away, town=hidden.caller.town)
+    assert known["status"] == "confirmed" and NOT_FROM_HERE["es"] in known["instructions"]
 
 
 # --- a model that gets things wrong ---------------------------------------------------------------

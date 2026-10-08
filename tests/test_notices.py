@@ -62,6 +62,7 @@ def test_appointments_booked_moved_and_cancelled_are_told(clinic, kb):
     toolbox = Toolbox(clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW, client.phones[0])
     name = f"{client.name.given} {client.name.surname1} {client.name.surname2}"
     toolbox.heard(f"Soy {name}, le toca la vacuna.")
+    toolbox.session.offered.update({SLOT: -1, "2026-11-10T09:30": -1})  # offered, and taken
     assert _run(toolbox, "identify_client", name=name)[0]["status"] == "confirmed"
     booked, _ = _run(toolbox, "book_appointment", start=SLOT, reason="vacuna", pet_name=pet,
                      contact_name=None, contact_phone=None)
@@ -86,6 +87,7 @@ def test_appointments_booked_moved_and_cancelled_are_told(clinic, kb):
 def test_an_unverified_booking_asks_reception_to_check(clinic, kb):
     toolbox = Toolbox(clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW, None)
     toolbox.heard("Es para una revisión de mi perro Toby.")
+    toolbox.session.offered[SLOT] = -1  # offered, and taken
     _run(toolbox, "book_appointment", start=SLOT, reason="revisión", pet_name="Toby",
          contact_name="Marta Soler", contact_phone="600 11 22 33")
     (notice,) = toolbox.session.notices
@@ -149,22 +151,27 @@ def test_an_emergency_is_told_at_once_and_once(clinic, kb):
 def test_notices_are_sent_when_the_turn_is_over(clinic, kb):
     """Through the voice server: the notice of a booking goes out with the turn that made
     it, and is taken off the call so that it goes out once."""
+    look = ToolCall("a", "get_availability", {
+        "date_from": SLOT[:10], "date_to": SLOT[:10], "part_of_day": "afternoon"})
     book = ToolCall("b", "book_appointment", {
         "start": SLOT, "reason": "revisión", "pet_name": "Toby",
         "contact_name": "Marta Soler", "contact_phone": "600 11 22 33"})
-    model = ScriptedClient([Reply("", (book,), "tool_calls"), Reply("Reservado."),
+    model = ScriptedClient([Reply("", (look,), "tool_calls"), Reply("¿A las cuatro y media?"),
+                            Reply("", (book,), "tool_calls"), Reply("Reservado."),
                             Reply("Adiós.")])
     agent = FrontDeskAgent(model, clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW)
     told = []
     app = build_app(Switchboard(agent.start_call), "key", tell=told.append)
     system = {"role": "system", "content": "vetdesk-conversation: c1\nvetdesk-caller: "}
-    first = [system, {"role": "user", "content": "Una revisión para mi perro Toby, el lunes."}]
+    offer = [system, {"role": "user", "content": "Una revisión para mi perro Toby, el lunes."}]
+    first = [*offer, {"role": "assistant", "content": "¿A las cuatro y media?"},
+             {"role": "user", "content": "Sí, a esa hora."}]
     second = [*first, {"role": "assistant", "content": "Reservado."},
               {"role": "user", "content": "Gracias, adiós."}]
 
     async def run():
         async with TestClient(TestServer(app)) as client:
-            for messages in (first, first, second):
+            for messages in (offer, first, first, second):
                 response = await client.post(
                     "/v1/chat/completions", json={"model": "x", "messages": messages},
                     headers={"Authorization": "Bearer key"})

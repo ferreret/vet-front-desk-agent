@@ -59,6 +59,11 @@ share phones, numbers change hands, and people call from someone else's phone.
 - In an emergency, ask nothing first, not even who is calling. Say at once the emergency
   sentence you were given for the caller's language, word for word, with its phone number
   in figures as it is written there.
+- It is an emergency when what the caller describes is one, or when they say it is urgent.
+  A caller who says only that something is wrong with their animal, or that it is not
+  itself, without saying what is happening, has not told you of one yet: ask what is
+  happening to the animal, and only that, before anything else. A name, a town or a
+  greeting never makes an emergency.
 
 # What you can do
 Only what your tools do. When the caller wants a person, it depends on whether you have
@@ -77,8 +82,16 @@ you, what is wrong or what the visit is for; then which days and time of day sui
 Never ask for what the caller has already told you: go on to the next thing.
 Do not offer times until you know when they can come. Then offer two or three, and say the
 day and time back once it is booked.
+Never choose a day or a time for the caller: an appointment is booked at, or moved to, a
+time you have said to them and they have accepted. When they name a day and a time
+themselves, say it back as your tools give it and ask whether it is right. Moving an
+appointment is like booking one: ask which days and time of day suit them before you
+look for free times.
 Cancelling and moving appointments is only possible for a confirmed caller's own
 appointments, and only on a call from a phone on their record: otherwise take a message.
+The one exception is an appointment booked on this same call: whoever booked it can have
+it moved or cancelled before they hang up. When a caller wants another time for the
+appointment you have just booked, move it with reschedule_appointment: never book it again.
 
 # What you know about the clinic
 Answer only from the clinic information below. If the answer is not there, say you do not
@@ -97,52 +110,61 @@ the animal, and if it sounds serious treat it as an emergency.
 # given only the phrases of the language the call is in.
 LANGUAGE_NAMES = {"es": "Spanish", "ca": "Catalan", "en": "English", "de": "German",
                   "fr": "French", "it": "Italian", "ru": "Russian"}
-# In each language: what they want, who is calling, no person to put them through to,
-# whether they want anything else, and what cannot be done on this call. The last two were
-# missing, and the model reached for the nearest: to "Okey, gracias" in the middle of a
-# call, "¿En qué puedo ayudarle?"; and to a caller it could not confirm who asked for
-# their appointments, "No puedo pasarle la llamada", when nobody had asked for a person.
+# In each language: what they want, who is calling, no person to put them through to, and
+# whether they want anything else. The last was missing, and the model reached for the
+# nearest: to "Okey, gracias" in the middle of a call, "¿En qué puedo ayudarle?".
 PHRASES = {
     "es": ("¿En qué puedo ayudarle?",
            "¿Me dice su nombre y sus dos apellidos, por favor?",
            "No puedo pasarle la llamada, pero le tomo nota y recepción le llamará.",
-           "¿Necesita algo más?",
-           "Eso no puedo hacerlo desde aquí, pero le tomo nota y recepción le llamará."),
+           "¿Necesita algo más?"),
     "ca": ("En què el puc ajudar?",
            "Em diu el seu nom i els dos cognoms, si us plau?",
            "No li puc passar la trucada, però en prenc nota i recepció li trucarà.",
-           "Necessita alguna cosa més?",
-           "Això no ho puc fer des d'aquí, però en prenc nota i recepció li trucarà."),
+           "Necessita alguna cosa més?"),
     "en": ("How can I help you?",
            "May I have your full name, please?",
            "I can't put you through, but I'll take a note and reception will call you back.",
-           "Is there anything else I can help you with?",
-           "I can't do that from here, but I'll take a note and reception will call you back."),
+           "Is there anything else I can help you with?"),
     "de": ("Wie kann ich Ihnen helfen?",
            "Wie ist Ihr vollständiger Name, bitte?",
            "Ich kann Sie nicht weiterverbinden, aber ich notiere Ihr Anliegen und die "
            "Rezeption ruft Sie zurück.",
-           "Kann ich sonst noch etwas für Sie tun?",
-           "Das kann ich von hier aus nicht erledigen, aber ich notiere es und die "
-           "Rezeption ruft Sie zurück."),
+           "Kann ich sonst noch etwas für Sie tun?"),
     "fr": ("Comment puis-je vous aider ?",
            "Puis-je avoir votre nom complet, s'il vous plaît ?",
            "Je ne peux pas vous transférer, mais je prends note et la réception vous "
            "rappellera.",
-           "Puis-je vous aider pour autre chose ?",
-           "Je ne peux pas le faire d'ici, mais je prends note et la réception vous "
-           "rappellera."),
+           "Puis-je vous aider pour autre chose ?"),
     "it": ("Come posso aiutarla?",
            "Mi dice il suo nome e cognome, per favore?",
            "Non posso passarle la chiamata, ma prendo nota e la reception la richiamerà.",
-           "Posso aiutarla in altro?",
-           "Da qui non posso farlo, ma prendo nota e la reception la richiamerà."),
+           "Posso aiutarla in altro?"),
     "ru": ("Чем могу помочь?",
            "Назовите, пожалуйста, ваше полное имя.",
            "Я не могу вас соединить, но я запишу ваше сообщение, и вам перезвонят из "
            "регистратуры.",
-           "Могу ещё чем-нибудь помочь?",
-           "Отсюда я не могу это сделать, но я запишу, и вам перезвонят из регистратуры."),
+           "Могу ещё чем-нибудь помочь?"),
+}
+
+
+# What a caller hears when they ask to see, cancel or move an appointment, or about what
+# the clinic holds on their animals, and it cannot be done on this call. It was a set
+# phrase for a day, and the model said it to callers it had not yet asked who they were,
+# and to a client calling from the phone on their record: asked to move an appointment by
+# such a client, it turned them down with it in 10 calls of 24. Like `THROUGH`, it now
+# reaches the model only in the answer of a tool that has found the caller cannot have
+# what they ask.
+NOT_FROM_HERE = {
+    "es": "Eso no puedo hacerlo desde aquí, pero le tomo nota y recepción le llamará.",
+    "ca": "Això no ho puc fer des d'aquí, però en prenc nota i recepció li trucarà.",
+    "en": "I can't do that from here, but I'll take a note and reception will call you back.",
+    "de": "Das kann ich von hier aus nicht erledigen, aber ich notiere es und die "
+          "Rezeption ruft Sie zurück.",
+    "fr": "Je ne peux pas le faire d'ici, mais je prends note et la réception vous "
+          "rappellera.",
+    "it": "Da qui non posso farlo, ma prendo nota e la reception la richiamerà.",
+    "ru": "Отсюда я не могу это сделать, но я запишу, и вам перезвонят из регистратуры.",
 }
 
 
@@ -206,15 +228,12 @@ def emergency_sentence(kb: KnowledgeBase, now: datetime, language: str) -> str:
 
 def set_phrases(language: str) -> str:
     """The set phrases of one language, as the model is told them."""
-    wants, who, person, more, cannot = PHRASES[language]
+    wants, who, person, more = PHRASES[language]
     return (f'Set phrases in {LANGUAGE_NAMES[language]}. To ask what they want, when the '
             f'call starts: "{wants}" To ask whether they want anything else, once they '
             f'have been answered or served: "{more}" '
             f'To ask who is calling: "{who}" Only when they ask to speak to a person: '
-            f'"{person}" Only when they ask to see, cancel or move an appointment, or about '
-            f'what the clinic holds on their animals, and you cannot because they are not '
-            f'confirmed or not calling from their own phone: "{cannot}" Booking a new '
-            f'appointment is never that: anybody can book one, confirmed or not.')
+            f'"{person}"')
 
 
 GREETINGS = {

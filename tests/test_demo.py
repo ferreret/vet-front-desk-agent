@@ -213,12 +213,16 @@ def test_a_demo_call_is_taken_as_from_that_callers_phone_and_touches_nothing_rea
     book = ToolCall("b", "book_appointment", {
         "start": SLOT, "reason": "revisión", "pet_name": "Toby",
         "contact_name": "Marta Soler", "contact_phone": "600 11 22 33"})
+    look = ToolCall("a", "get_availability", {
+        "date_from": SLOT[:10], "date_to": SLOT[:10], "part_of_day": "afternoon"})
     demo, told = Demo([MARTA], Clock()), []
     app, real, numbers = _front_desk(
-        clinic, [Reply("", (book,), "tool_calls"), Reply("Reservado.")], demo, told=told)
+        clinic, [Reply("", (look,), "tool_calls"), Reply("¿A las cuatro y media?"),
+                 Reply("", (book,), "tool_calls"), Reply("Reservado.")], demo, told=told)
     token = demo.start("own", "a")
-    (answer, after, nothing), _ = _post(
-        app, _chat(token, "Una revisión para mi perro Toby, el lunes."),
+    wants = "Una revisión para mi perro Toby, el lunes."
+    (_, answer, after, nothing), _ = _post(
+        app, _chat(token, wants), _chat(token, wants, "Sí, a esa hora."),
         f"/demo/result?pass={token}", "/demo/result?pass=made-up")
     assert answer[0] == 200 and _spoken(answer[1]) == ("Reservado.", [])
     assert numbers == ["+34600111222"]
