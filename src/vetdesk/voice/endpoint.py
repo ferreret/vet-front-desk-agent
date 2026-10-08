@@ -43,6 +43,7 @@ import secrets
 import time
 import urllib.parse
 import urllib.request
+from collections import deque
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -323,6 +324,34 @@ def _chunk(request_id: str, model: str, delta: dict, finish: str | None = None) 
     body = {"id": request_id, "object": "chat.completion.chunk", "created": int(time.time()),
             "model": model, "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
     return f"data: {json.dumps(body, ensure_ascii=False)}\n\n".encode()
+
+
+# What is kept, as it is, of a request whose shape is being looked at: the names of things.
+_STRUCTURAL = ("role", "type", "name", "provider", "model", "status", "object")
+
+
+def platform_key(key: str, platform: str) -> str:
+    """The key a second voice platform is given, made from ours and good for its route only.
+
+    Vapi hands back, to whoever can read the assistant, the key it was given for our
+    address. Ours opens the route real calls come by, so it is not the one handed over:
+    this one cannot be turned back into it, and needs no setting of its own.
+    """
+    return hmac.new(key.encode(), f"vetdesk:{platform}".encode(), hashlib.sha256).hexdigest()
+
+
+def shape(value, key: str = ""):
+    """The form of what a platform sent, with nothing of what was said in it: the keys,
+    and for a value only what kind of thing it is. The names of roles, tools and
+    providers are kept; a caller's words and their number are not."""
+    if isinstance(value, dict):
+        return {name: shape(inner, name) for name, inner in value.items()}
+    if isinstance(value, list):
+        return [shape(inner, key) for inner in value[:12]] + (
+            [f"... {len(value) - 12} more"] if len(value) > 12 else [])
+    if isinstance(value, str):
+        return value if key in _STRUCTURAL and len(value) <= 40 else f"str({len(value)})"
+    return type(value).__name__
 
 
 def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | None = None,
@@ -655,7 +684,45 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
     async def demo_view(request: web.Request) -> web.Response:
         return web.Response(text=demo_page, content_type="text/html")
 
+    # A second voice platform, Vapi, asked for to compare it with the first. Its route
+    # begins as a way of seeing what it sends: every call by it is answered as a call of
+    # the demo with no pass, so that it reaches no agenda and nobody's record, and the
+    # form of each request is kept (never its words) to be read with the clinic's key.
+    seen: deque[dict] = deque(maxlen=8)
+
+    async def vapi(request: web.Request) -> web.StreamResponse:
+        given = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        its_key = platform_key(key, "vapi") if key else ""
+        seen.append({"authorized": bool(key) and hmac.compare_digest(given.encode(),
+                                                                     its_key.encode()),
+                     "headers": sorted(name.lower() for name in request.headers),
+                     "body": shape(body)})
+        if not seen[-1]["authorized"]:
+            return web.json_response({"error": {"message": "invalid key"}}, status=401)
+        request_id, name = "chatcmpl-" + secrets.token_hex(8), "vetdesk"
+        response = web.StreamResponse(headers={"Content-Type": "text/event-stream",
+                                               "Cache-Control": "no-cache"})
+        await response.prepare(request)
+        await response.write(_chunk(request_id, name, {"role": "assistant", "content": ""}))
+        await response.write(_chunk(request_id, name, {"content": NO_PASS}))
+        await response.write(_chunk(request_id, name, {}, "stop"))
+        await response.write(b"data: [DONE]\n\n")
+        await response.write_eof()
+        return response
+
+    async def vapi_seen(request: web.Request) -> web.Response:
+        if not may_edit(request):
+            return web.json_response({"error": "invalid key"}, status=401)
+        return web.json_response(list(seen))
+
     app = web.Application()
+    app.router.add_post("/vapi/chat/completions", vapi)
+    if admin_key:
+        app.router.add_get("/vapi/seen", vapi_seen)
     if demo is not None and sign is not None:
         app.router.add_get("/demo/people", demo_people)
         app.router.add_post("/demo/call", demo_call)

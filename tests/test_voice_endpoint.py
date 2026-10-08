@@ -435,3 +435,73 @@ def test_the_platform_agent_can_be_told_to_change_language(monkeypatch):
     assert tools["language_detection"]["params"]["system_tool_type"] == "language_detection"
     assert tools["end_call"]["params"] == {"system_tool_type": "end_call"}
     assert tools["end_call"]["force_pre_tool_speech"] is True
+
+
+def test_a_second_platform_is_looked_at_before_it_is_answered_for_real(clinic, kb):
+    """Vapi's route begins as a way of seeing what it sends. Nothing of a caller's is kept,
+    and no call by it reaches a model, an agenda or anybody's record."""
+    from vetdesk.voice.demo import NO_PASS
+    from vetdesk.voice.endpoint import platform_key, shape
+
+    model = ScriptedClient([])  # asked anything, it would have no answer
+    agent = FrontDeskAgent(model, clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW)
+    app = build_app(Switchboard(agent.start_call), KEY, admin_key="admin")
+    sent = {"model": "vetdesk", "stream": True,
+            "messages": [{"role": "system", "content": "Eres la recepción."},
+                         {"role": "user", "content": "Soy Marta Soler, quiero una cita."}],
+            "tools": [{"type": "function", "function": {"name": "endCall"}}],
+            "call": {"id": "abc", "type": "webCall", "customer": {"number": "+34600111222"}}}
+
+    async def run():
+        async with TestClient(TestServer(app)) as client:
+            refused = await client.post("/vapi/chat/completions", json=sent)
+            ours = await client.post("/vapi/chat/completions", json=sent,
+                                     headers={"Authorization": f"Bearer {KEY}"})
+            answered = await client.post(
+                "/vapi/chat/completions", json=sent,
+                headers={"Authorization": f"Bearer {platform_key(KEY, 'vapi')}"})
+            theirs = await client.post(
+                "/v1/chat/completions", json={"model": "x", "messages": sent["messages"]},
+                headers={"Authorization": f"Bearer {platform_key(KEY, 'vapi')}"})
+            closed = await client.get("/vapi/seen")
+            kept = await client.get("/vapi/seen", headers={"Authorization": "Bearer admin"})
+            return (refused.status, await answered.text(), closed.status, await kept.json(),
+                    ours.status, theirs.status)
+
+    refused, answered, closed, kept, ours, theirs = asyncio.run(run())
+    assert refused == 401 and closed == 401
+    # Its key is its own: ours does not open its route, and its does not open ours, where
+    # real calls come. The platform shows the key it holds to whoever reads the assistant.
+    assert ours == 401 and theirs == 401
+    assert _spoken(answered) == NO_PASS and model.transcript.user_messages == []
+    assert [look["authorized"] for look in kept] == [False, False, True]
+    text = json.dumps(kept, ensure_ascii=False)
+    assert "Marta" not in text and "600111222" not in text and "recepción" not in text
+    body = kept[2]["body"]
+    assert body["call"] == {"id": "str(3)", "type": "webCall", "customer": {"number": "str(12)"}}
+    assert body["messages"][1] == {"role": "user", "content": "str(33)"}
+    assert body["tools"][0]["function"]["name"] == "endCall"
+    assert shape(list(range(20)))[-1] == "... 8 more"
+
+
+def test_the_second_platform_is_given_as_little_as_the_first(monkeypatch):
+    """A voice, a way of hearing, and where to ask what to say: nothing of the agent's."""
+    from vetdesk.agent.prompt import ANNOUNCED
+    from vetdesk.voice.endpoint import platform_key
+    from vetdesk.voice.vapi_agent import config
+
+    monkeypatch.setenv("VETDESK_TTS_VOICE", "voice")
+    monkeypatch.setenv("VETDESK_ENDPOINT_KEY", "the-platforms-key")
+    settings = config("https://example.test/")
+    model = settings["model"]
+    assert (model["provider"], model["url"]) == ("custom-llm", "https://example.test/vapi")
+    (prompt,) = model["messages"]
+    assert prompt["content"].splitlines() == [
+        "vetdesk-conversation: vapi-{{call.id}}", "vetdesk-caller: {{customer.number}}",
+        "vetdesk-demo: {{demo_pass}}"]
+    assert model["tools"] == [{"type": "endCall"}]
+    assert ANNOUNCED in settings["firstMessage"]  # it says at once that it is not a person
+    (credential,) = settings["credentials"]
+    assert credential["apiKey"] == platform_key("the-platforms-key", "vapi")
+    assert "the-platforms-key" not in json.dumps(settings)  # ours is never handed over
+    assert settings["maxDurationSeconds"] == 200
