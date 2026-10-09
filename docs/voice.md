@@ -451,6 +451,38 @@ itself, where on the first platform our server says which language to listen in 
 hears Catalan is among the first things to listen for); and a call started and never
 joined costs a third of a cent and ends by itself.
 
+### And by LiveKit, with a program of ours
+
+The third way, begun on 2026-10-09 after the second came out at twice the price. Nobody
+else's platform holds the call: LiveKit moves the sound (their cloud, free for this much
+use, or a server of one's own), ElevenLabs hears and speaks, and the program in between
+is ours (`voice/livekit_app.py`, the one that had only ever run in a terminal).
+**Written and tested without a call; not heard from a browser yet.**
+
+- **That program asks our server what to say** (`voice/desk_client.py`), at an address
+  like the ones the platforms ask and with a key made for it. It could hold the agent
+  itself, and in the console it does. For a real call it does not: the passes of the
+  demo, the record of the call, how long a call may last and when to hang up are decided
+  in one place for every way a call comes in, and this way is measured like the others.
+- **A pass into one room** (`voice/livekit_demo.py`). The browser joins a LiveKit room
+  with a pass signed with the project's secret, which only our server holds. The room is
+  named by the server, the pass is for that room only, and it asks for our program to be
+  sent into it. The room's name is what ties each request to its pass of the demo.
+- **Hanging up is ours to do**, so the farewell is waited for: the room is closed when
+  the last words have been played, and not before.
+- **Silence** is told to our server as the first platform tells it, with a line of dots,
+  after fifteen seconds of nobody speaking; the words for it are already there.
+- **Nothing of LiveKit's that is paid for by use** is switched on: where a turn ends and
+  what is an interruption are decided by small models that run in our program, said by
+  name. Left to choose, the library takes LiveKit's hosted ones when it finds the keys.
+- **On the server** the program is started by the voice server itself when a LiveKit
+  project is set (`LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`), and started
+  again if it stops. Without those three nothing of this exists.
+
+What it would cost, before any call: about 0.011 $ a minute of voice (speaking, measured
+at 18 credits for 357 characters; hearing, at the published 0.39 $ an hour), against
+0.033 $ on the first platform and 0.065 $ on the second.
+
 ## Two ways to carry the voice
 
 The first call with a microphone made one thing plain: the hard part of a voice line is

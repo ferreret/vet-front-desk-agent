@@ -40,6 +40,9 @@ import logging
 import os
 import re
 import secrets
+import subprocess
+import sys
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -84,9 +87,16 @@ from .demo import (
     with_an_appointment,
 )
 from .demo_page import PAGE as DEMO_PAGE
+from .desk_client import DESK_URL
+from .desk_client import PLATFORM as LIVEKIT
+from .livekit_demo import KEY as LIVEKIT_KEY
+from .livekit_demo import SECRET as LIVEKIT_SECRET
+from .livekit_demo import URL as LIVEKIT_URL
+from .livekit_demo import way_in
 from .telegram import CHAT as TELEGRAM_CHAT
 from .telegram import TOKEN as TELEGRAM_TOKEN
 from .telegram import Telegram
+from .token import platform_key
 from .vapi import AGENT_ID as VAPI_AGENT
 from .vapi import END_TOOL as VAPI_END_TOOL
 from .vapi import FOR_THE_PAGE, VAPI_KEY, say_and_hang_up, starter
@@ -341,16 +351,6 @@ def _chunk(request_id: str, model: str, delta: dict, finish: str | None = None) 
 _STRUCTURAL = ("role", "type", "name", "provider", "model", "status", "object")
 
 
-def platform_key(key: str, platform: str) -> str:
-    """The key a second voice platform is given, made from ours and good for its route only.
-
-    Vapi hands back, to whoever can read the assistant, the key it was given for our
-    address. Ours opens the route real calls come by, so it is not the one handed over:
-    this one cannot be turned back into it, and needs no setting of its own.
-    """
-    return hmac.new(key.encode(), f"vetdesk:{platform}".encode(), hashlib.sha256).hexdigest()
-
-
 def shape(value, key: str = ""):
     """The form of what a platform sent, with nothing of what was said in it: the keys,
     and for a value only what kind of thing it is. The names of roles, tools and
@@ -372,7 +372,8 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
               demo: Demo | None = None, sign: Callable[[], str] | None = None,
               demo_page: str = "",
               vapi_call: Callable[[], dict] | None = None,
-              vapi_say: Callable[[str, str], bool] | None = None) -> web.Application:
+              vapi_say: Callable[[str, str], bool] | None = None,
+              livekit_join: Callable[[str], dict] | None = None) -> web.Application:
     """`model` is the agent's own model, named only to put a price on each answer. With a
     `desk` whose information is in a file and an `admin_key`, that information can be read
     and replaced through the server. `tell` is how reception is told what happens on a
@@ -381,7 +382,8 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
     `admin_key`: see `call_log`. `demo` holds the public demo's passes, and `sign` asks
     the voice platform for the address one browser call is made at: see `demo`.
     `vapi_call` starts a browser call on the second platform, and `vapi_say` has one of
-    its calls say something and end when it has been said: see `vapi`."""
+    its calls say something and end when it has been said: see `vapi`. `livekit_join` is
+    how a browser gets into a room of the third way to carry a call: see `livekit_demo`."""
     agent_model = model
     put_through: set[int] = set()  # the lines the platform has been told to put through
     closed: set[int] = set()  # the lines a platform has been told to say goodbye on and end
@@ -491,7 +493,8 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
             if calls:
                 calls.said(line.name, text, "demo_over" if line.demo else "demo_refused")
             await response.write(_chunk(request_id, model, {"role": "assistant", "content": ""}))
-            if _offers(body, end_tool) and messages[-1].get("role") != "tool":
+            if _offers(body, end_tool) and (not messages
+                                            or messages[-1].get("role") != "tool"):
                 return await hang_up(text, "the demo call is over")
             await response.write(_chunk(request_id, model, {"content": text}))
             await response.write(_chunk(request_id, model, {}, "stop"))
@@ -685,7 +688,8 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                 "minutes_left": int(demo.left().total_seconds() // 60),
                 "seconds_a_call": int(demo.limit.total_seconds()),
                 # The voice platforms a call can be carried by, for the page to offer.
-                "platforms": ["elevenlabs"] + (["vapi"] if vapi_call else [])}
+                "platforms": ["elevenlabs"] + (["vapi"] if vapi_call else [])
+                + ([LIVEKIT] if livekit_join else [])}
 
     async def demo_people(request: web.Request) -> web.Response:
         return web.json_response(people())
@@ -696,7 +700,7 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
             wanted, platform = str(asked["as"]), str(asked.get("platform") or "elevenlabs")
         except (ValueError, KeyError, TypeError, AttributeError):
             return web.json_response({"error": "expected who to call as"}, status=400)
-        if platform not in ("elevenlabs", "vapi") or (platform == "vapi" and not vapi_call):
+        if platform not in people()["platforms"]:
             return web.json_response({"error": "no such voice platform"}, status=404)
         # Behind a proxy the visitor's address is the first it was forwarded for.
         address = (request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
@@ -713,6 +717,15 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
             # with this pass: see `vapi_web_call`.
             return web.json_response({"pass": token, "platform": platform,
                                       "seconds": int(demo.limit.total_seconds())})
+        if platform == LIVEKIT:
+            # A room of its own, named here: the name is what ties the call to its pass.
+            for old in [room for room, known in livekit_rooms.items() if demo.over(known)]:
+                del livekit_rooms[old]
+            room = "demo-" + secrets.token_urlsafe(9)
+            livekit_rooms[room] = token
+            return web.json_response({"pass": token, "platform": platform,
+                                      "seconds": int(demo.limit.total_seconds()),
+                                      **livekit_join(room)})
         try:
             address_to_call = await asyncio.to_thread(sign)
         except Exception as error:  # the platform would not: the minutes are given back
@@ -797,6 +810,26 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
             request, body, messages, line, VAPI_END_TOOL,
             (lambda text: vapi_say(str(steer), text)) if vapi_say and steer else None)
 
+    # The third way: LiveKit, where the program that listens and speaks is ours and asks
+    # here like a platform would. The pass of the demo each room was opened for.
+    livekit_rooms: dict[str, str] = {}
+
+    async def livekit(request: web.Request) -> web.StreamResponse:
+        given = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        its_key = platform_key(key, LIVEKIT) if key else ""
+        if not its_key or not hmac.compare_digest(given.encode(), its_key.encode()):
+            return web.json_response({"error": {"message": "invalid key"}}, status=401)
+        try:
+            body = await request.json()
+            messages, room = list(body["messages"]), str(body["call"]["id"])
+        except (ValueError, KeyError, TypeError):
+            return web.json_response({"error": {"message": "expected chat messages and "
+                                                           "the call they are for"}}, status=400)
+        # Every call by it is the demo's: a room this server did not name has no pass.
+        line = switchboard.line(messages, named=f"{LIVEKIT}-{room}",
+                                demo_pass=livekit_rooms.get(room, ""))
+        return await converse(request, body, messages, line, END_TOOL)
+
     async def vapi_seen(request: web.Request) -> web.Response:
         if not may_edit(request):
             return web.json_response({"error": "invalid key"}, status=401)
@@ -804,6 +837,7 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
 
     app = web.Application()
     app.router.add_post("/vapi/chat/completions", vapi)
+    app.router.add_post(f"/{LIVEKIT}/chat/completions", livekit)
     if admin_key:
         app.router.add_get("/vapi/seen", vapi_seen)
     if demo is not None and sign is not None:
@@ -886,6 +920,31 @@ def _vapi() -> Callable[[], dict] | None:
     return starter(key, agent) if key and agent else None
 
 
+def _livekit() -> Callable[[str], dict] | None:
+    """How a browser gets into a room of the third way, when a LiveKit project is set."""
+    url, key, secret = (os.environ.get(name) for name in
+                        (LIVEKIT_URL, LIVEKIT_KEY, LIVEKIT_SECRET))
+    return way_in(url, key, secret) if url and key and secret else None
+
+
+def _voice_program(port: int) -> None:
+    """Start the program that listens and speaks on a LiveKit call, beside this one, and
+    start it again if it stops. It asks this server what to say, on this machine."""
+    def keep_running() -> None:
+        soon = 0  # how many times in a row it stopped at once: it is not worth a sixth
+        while soon < 5:
+            started = time.monotonic()
+            code = subprocess.call(
+                [sys.executable, "-m", "vetdesk.voice", "start"],
+                env={**os.environ, DESK_URL: f"http://127.0.0.1:{port}"})
+            soon = soon + 1 if time.monotonic() - started < 60 else 0
+            log.warning("the voice program stopped (%s): started again in 5 s", code)
+            time.sleep(5)
+        log.error("the voice program keeps stopping: calls by LiveKit will not be answered")
+
+    threading.Thread(target=keep_running, daemon=True).start()
+
+
 def _agenda(kb, clinic):
     """The appointment book: in a file when one is set, so that it outlives a restart,
     and shown in a calendar as well when one is set."""
@@ -964,7 +1023,12 @@ def main() -> None:
     app = build_app(switchboard, key, getattr(llm, "model", ""), desk,
                     os.environ.get(ADMIN_KEY, ""), reception.send if reception else None,
                     numbers[0] if numbers else "", calls, demo, sign, DEMO_PAGE,
-                    _vapi() if demo is not None else None, say_and_hang_up)
+                    _vapi() if demo is not None else None, say_and_hang_up,
+                    livekit_join := _livekit() if demo is not None else None)
+    log.info("the demo %s", "can also be carried by LiveKit: its voice program is started"
+             if livekit_join else "is not carried by LiveKit: no project of it is set")
+    if livekit_join:
+        _voice_program(args.port)
     print(f"The front desk answers at http://{args.host}:{args.port}/v1/chat/completions")
     web.run_app(app, host=args.host, port=args.port, print=None)
 

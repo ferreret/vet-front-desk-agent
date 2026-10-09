@@ -159,7 +159,7 @@ def _spoken(stream):
 
 
 def _front_desk(clinic, steps, demo, sign=lambda: "wss://voice.example/one-call", told=None,
-                vapi_call=None, vapi_say=None):
+                vapi_call=None, vapi_say=None, livekit_join=None):
     kb = load_kb()
     real = SqliteAgenda(kb, lambda: NOW)
     model = ScriptedClient(list(steps))
@@ -176,7 +176,7 @@ def _front_desk(clinic, steps, demo, sign=lambda: "wss://voice.example/one-call"
         start_demo_call=start_demo_call)
     app = build_app(switchboard, KEY, demo=demo, sign=sign,
                     tell=told.append if told is not None else None, demo_page="<p>demo</p>",
-                    vapi_call=vapi_call, vapi_say=vapi_say)
+                    vapi_call=vapi_call, vapi_say=vapi_say, livekit_join=livekit_join)
     return app, real, numbers
 
 
@@ -445,6 +445,107 @@ def test_a_permit_to_start_a_call_is_good_for_a_minute_and_for_our_assistant_onl
     assert asked[1][3] == {"assistantId": "our-assistant"}
 
 
+# --- the same demo, carried by LiveKit and a program of ours --------------------------------
+
+def _claims(token):
+    import base64
+
+    part = token.split(".")[1]
+    return json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
+
+
+def test_a_pass_into_a_room_is_for_that_room_and_asks_for_our_program():
+    """A browser gets into a LiveKit room with a pass signed with the project's secret,
+    which only our server holds."""
+    import base64
+    import hashlib
+    import hmac
+
+    from vetdesk.voice.livekit_demo import AGENT, way_in
+
+    given = way_in("wss://rooms.example", "the-key", "the-secret", now=lambda: 1000.0)("demo-1")
+    assert given["url"] == "wss://rooms.example" and "the-secret" not in given["token"]
+    assert _claims(given["token"]) == {
+        "iss": "the-key", "sub": "visitor", "nbf": 1000, "exp": 1120,
+        "video": {"room": "demo-1", "roomJoin": True, "canPublish": True,
+                  "canSubscribe": True, "canPublishData": False},
+        "roomConfig": {"agents": [{"agentName": AGENT}],
+                       "emptyTimeout": 30, "departureTimeout": 5}}
+    said, _, mark = given["token"].rpartition(".")
+    signed = hmac.new(b"the-secret", said.encode(), hashlib.sha256).digest()
+    assert base64.urlsafe_b64decode(mark + "=" * (-len(mark) % 4)) == signed
+    # Said the way LiveKit's own library says it, where that library is installed.
+    api = pytest.importorskip("livekit.api")
+    theirs = _claims(
+        api.AccessToken("the-key", "the-secret-of-a-length-their-library-likes")
+        .with_identity("visitor")
+        .with_grants(api.VideoGrants(room_join=True, room="demo-1", can_publish=True,
+                                     can_subscribe=True, can_publish_data=False))
+        .with_room_config(api.RoomConfiguration(
+            agents=[api.RoomAgentDispatch(agent_name=AGENT)],
+            empty_timeout=30, departure_timeout=5)).to_jwt())
+    ours = _claims(given["token"])
+    assert {name: theirs[name] for name in ("iss", "sub", "video", "roomConfig")} == {
+        name: ours[name] for name in ("iss", "sub", "video", "roomConfig")}
+
+
+def test_the_program_that_listens_and_speaks_asks_the_front_desk_like_a_platform(clinic):
+    """By LiveKit nobody else's platform holds the call: a program of ours does, and it
+    asks our server what to say. The room, named by the server, is what ties a request
+    to the pass of the demo; a room the server did not name is told so and closed."""
+    from vetdesk.voice.desk_client import Asked, ask
+    from vetdesk.voice.livekit_demo import way_in
+
+    demo = Demo([MARTA, NOBODY], Clock(), minutes_a_day=9, minutes_a_call=3)
+    app, real, numbers = _front_desk(
+        clinic, [Reply("Abrimos a las nueve y media."), Reply("De nada. ¡Que vaya muy bien!")],
+        demo, livekit_join=way_in("wss://rooms.example", "the-key", "the-secret"))
+
+    async def run():
+        async with TestClient(TestServer(app)) as client:
+            desk, http = str(client.make_url("")), client.session
+            people = await (await client.get("/demo/people")).json()
+            other = await client.post("/demo/call", json={"as": "own", "platform": "another"})
+            given = await (await client.post(
+                "/demo/call", json={"as": "own", "platform": "livekit"})).json()
+            room = _claims(given["token"])["video"]["room"]
+
+            async def answer(call, *said, key=KEY):
+                messages, asked = [], Asked()
+                for index, text in enumerate(said):
+                    messages.append({"role": "user" if index % 2 else "assistant",
+                                     "content": text})
+                pieces = [piece async for piece in ask(http, desk, key, call, messages, asked)]
+                return "".join(pieces), asked.hang_up
+
+            hello = await answer(room)
+            first = await answer(room, hello[0], "¿A qué hora abrís?")
+            last = await answer(room, hello[0], "¿A qué hora abrís?", first[0],
+                                "No, eso es todo. Gracias.")
+            stray = await answer("demo-not-ours")
+            try:
+                await answer(room, key="another-key")
+                refused = None
+            except Exception as error:
+                refused = getattr(error, "status", error)
+            shown = await (await client.get(f"/demo/result?pass={given['pass']}")).json()
+            return people, other.status, given, room, hello, first, last, stray, refused, shown
+
+    people, other, given, room, hello, first, last, stray, refused, shown = asyncio.run(run())
+    assert people["platforms"] == ["elevenlabs", "livekit"] and other == 404
+    # The page is given where to connect and a pass to one room, named by the server.
+    assert set(given) == {"pass", "platform", "seconds", "url", "token"}
+    assert given["url"] == "wss://rooms.example" and room.startswith("demo-")
+    assert demo.call(given["pass"]).persona is MARTA
+    # The greeting is the front desk's own, and the call is as from that caller's phone.
+    assert "asistente de inteligencia artificial" in hello[0] and hello[1] is False
+    assert first == ("Abrimos a las nueve y media.", False) and numbers[0] == "+34600111222"
+    # The goodbye comes with the word to hang up once it has been said.
+    assert last == ("De nada. ¡Que vaya muy bien!", True)
+    assert stray == (NO_PASS, True) and refused == 401
+    assert shown["identity"] == {"level": "none", "why": "not_asked"} and real.all() == []
+
+
 # --- the demo's own agent on the voice platform ---------------------------------------------
 
 def test_the_demos_agent_needs_a_pass_has_limits_and_nobody_to_put_a_call_through_to(monkeypatch):
@@ -473,10 +574,11 @@ def test_the_demos_agent_needs_a_pass_has_limits_and_nobody_to_put_a_call_throug
 
 
 def test_the_page_is_served_only_when_the_demo_is_set_up(clinic):
-    from vetdesk.voice.demo_page import PAGE, SDK, VAPI_SDK
+    from vetdesk.voice.demo_page import LIVEKIT_SDK, PAGE, SDK, VAPI_SDK
 
     assert "@elevenlabs/client@1." in SDK and SDK in PAGE  # a version somebody saw work
     assert "@vapi-ai/web@2." in VAPI_SDK and VAPI_SDK in PAGE
+    assert "livekit-client@2." in LIVEKIT_SDK and LIVEKIT_SDK in PAGE
     assert 'fetch("demo/call"' in PAGE and "demo_pass" in PAGE
     # The second platform's library asks this server to start its call: no address of the
     # platform's is in the page for it, and no key.

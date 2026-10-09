@@ -10,7 +10,9 @@ ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy PYTHONUNBUFFERED=1
 
 COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src ./src
-RUN uv sync --frozen --no-dev --extra endpoint
+# The `voice` extra is for the calls LiveKit carries: the program that listens and speaks
+# on them is started by the server itself, when a LiveKit project is set.
+RUN uv sync --frozen --no-dev --extra endpoint --extra voice
 
 # The synthetic clinic, always the same from its seed. No real data exists to copy in.
 RUN uv run --no-sync vetdesk generate --seed 42 --out /app/data \
@@ -20,7 +22,8 @@ RUN uv run --no-sync vetdesk generate --seed 42 --out /app/data \
 # here: without one it is gone with the container, like everything else in it.
 VOLUME /app/state
 # The clinic's clock, not the server's: opening hours and the greeting depend on it.
-ENV VETDESK_DATA=/app/data TZ=Europe/Madrid
+# No home of its own for the user below: what a library wants to keep goes to /tmp.
+ENV VETDESK_DATA=/app/data TZ=Europe/Madrid HOME=/tmp
 USER vetdesk
 
 EXPOSE 8013

@@ -17,9 +17,6 @@ the browser says is believed about which call is which.
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
 import json
 import logging
 import time
@@ -27,6 +24,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
+
+from .token import signed
 
 log = logging.getLogger("vetdesk.vapi")
 
@@ -84,11 +83,6 @@ def say_and_hang_up(control: str, text: str) -> bool:
         return False
 
 
-def _part(value: dict) -> str:
-    packed = json.dumps(value, separators=(",", ":")).encode()
-    return base64.urlsafe_b64encode(packed).rstrip(b"=").decode()
-
-
 def permit(private_key: str, account: str, assistant: str, seconds: int = 60,
            now: Callable[[], float] = time.time) -> str:
     """A token to start one browser call of this assistant with, good for `seconds`.
@@ -101,9 +95,7 @@ def permit(private_key: str, account: str, assistant: str, seconds: int = 60,
               "token": {"tag": "public",
                         "restrictions": {"enabled": True, "allowedAssistantIds": [assistant],
                                          "allowTransientAssistant": False}}}
-    signed = _part({"alg": "HS256", "typ": "JWT"}) + "." + _part(claims)
-    mark = hmac.new(private_key.encode(), signed.encode(), hashlib.sha256).digest()
-    return signed + "." + base64.urlsafe_b64encode(mark).rstrip(b"=").decode()
+    return signed(claims, private_key)
 
 
 def starter(private_key: str, assistant: str,

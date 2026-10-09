@@ -5,31 +5,52 @@ letting them interrupt, playing the answer. ElevenLabs hears (Scribe) and speaks
 thinking is not theirs: every answer comes from `FrontDeskAgent`, the same one the
 evaluation harness measures, reached through LiveKit's `llm_node`.
 
-Run it with the computer's microphone and speakers, no server needed:
+Two ways to run it:
 
-    uv run python -m vetdesk.voice console
+    uv run python -m vetdesk.voice console    # this computer's microphone and speakers
+    uv run python -m vetdesk.voice start      # calls from a LiveKit project's rooms
+
+In the console the agent lives in this program, and nothing else is needed. For real
+rooms it does not: this program asks the voice server what to say (`desk_client`), where
+the passes of the demo, the record of the call and when to hang up are already decided for
+every other way a call comes in. It needs the project's address and keys (LIVEKIT_URL,
+LIVEKIT_API_KEY, LIVEKIT_API_SECRET) and the voice server running on this machine.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import sys
-from collections.abc import AsyncIterator
+import time
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime
 from pathlib import Path
 
-from livekit.agents import Agent, AgentServer, AgentSession, JobContext, JobProcess, cli, llm
+import aiohttp
+from livekit.agents import (
+    Agent,
+    AgentServer,
+    AgentSession,
+    JobContext,
+    JobProcess,
+    cli,
+    inference,
+    llm,
+)
 from livekit.plugins import elevenlabs, silero
 
 from ..agent import FrontDeskAgent
-from ..agent.agent import Call, Turn
+from ..agent.agent import Turn
 from ..kb import load_kb
 from ..legacy import LegacySqliteSource
 from ..llm import create_client
 from ..scheduling import SqliteAgenda
-from .bridge import Line, language_of
+from .bridge import TROUBLE, Line, language_of
+from .desk_client import DESK_URL, Asked, ask
+from .livekit_demo import AGENT
 
 log = logging.getLogger("vetdesk.voice")
 
@@ -59,6 +80,12 @@ STT_LANGUAGES = os.environ.get("VETDESK_STT_LANGUAGES", "es,ca").split(",")
 # Seconds of silence after which the recogniser closes what the caller said. Left to the
 # local voice detector, a phrase said into a real microphone stayed open for 20 seconds.
 STT_PAUSE = float(os.environ.get("VETDESK_STT_PAUSE", "0.6"))
+# A call from a room is closed after this long whatever is being said, as on the other
+# platforms' demos: a little over the three minutes the voice server gives a call.
+MAX_SECONDS = float(os.environ.get("VETDESK_DEMO_MAX_SECONDS", "200"))
+# Seconds of nobody speaking before the caller is asked whether they are still there, and
+# again before the line is given up: the voice server has the words for both.
+QUIET_SECONDS = 15.0
 
 
 class _ElsewhereLLM(llm.LLM):
@@ -70,19 +97,45 @@ class _ElsewhereLLM(llm.LLM):
 
 
 class VoiceFrontDesk(Agent):
-    def __init__(self, call: Call) -> None:
+    """Ears and a mouth. What is said comes from `answer`, given the conversation so far;
+    `asked.hang_up` says, once an answer is in, that the call ends when it has been said,
+    and `close` ends it."""
+
+    def __init__(self, answer: Callable[[list[dict]], AsyncIterator[str]], asked: Asked,
+                 close: Callable[[], object]) -> None:
         # The instructions live with the agent that does the answering, not here.
         super().__init__(instructions="")
-        self._line = Line(call)
-        self.language = "es"  # updated from what speech recognition hears
+        self._answer, self._asked, self._close = answer, asked, close
 
     async def llm_node(self, chat_ctx, tools, model_settings) -> AsyncIterator[str]:
-        heard = next((item.text_content for item in reversed(chat_ctx.items)
-                      if getattr(item, "role", None) == "user" and item.text_content), "")
-        async for piece in self._line.answer(heard, self.language, self._turn_done):
+        messages = [{"role": item.role, "content": item.text_content}
+                    for item in chat_ctx.items
+                    if getattr(item, "role", None) in ("user", "assistant") and item.text_content]
+        self._asked.hang_up = False
+        async for piece in self._answer(messages):
             yield piece
+        if self._asked.hang_up:
+            # Only this program can put the phone down, and not over its own goodbye.
+            asyncio.ensure_future(self.say_and_close(self.session.current_speech))
 
-    def _turn_done(self, turn: Turn) -> None:
+    async def say_and_close(self, speech) -> None:
+        if speech is not None:
+            await speech.wait_for_playout()
+        log.info("the goodbyes are said: the line is closed")
+        await self._close()
+
+
+def _in_this_program(ready: dict, agent_language: Callable[[], str]):
+    """The agent itself, for the console: no voice server, a hidden number, a book of
+    appointments that lasts as long as the call."""
+    kb = ready["kb"]
+    front_desk = FrontDeskAgent(ready["llm"], ready["clinic"], kb,
+                                SqliteAgenda(kb, datetime.now))
+    # No caller ID on a microphone. Set VETDESK_CALLER_NUMBER to try a call "from" a number.
+    call = front_desk.start_call(os.environ.get("VETDESK_CALLER_NUMBER") or None)
+    line = Line(call)
+
+    def turn_done(turn: Turn) -> None:
         for event in turn.events:
             log.info("tool %s %s -> %s", event.name,
                      json.dumps(event.arguments, ensure_ascii=False),
@@ -90,31 +143,76 @@ class VoiceFrontDesk(Agent):
         log.info("model: first words %.1f s, complete %.1f s (%s)", turn.first_words or 0,
                  turn.seconds, " + ".join(f"{s:.1f}" for s in turn.latencies))
 
+    async def answer(messages: list[dict]) -> AsyncIterator[str]:
+        heard = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+        if not heard:
+            yield call.greeting
+            return
+        async for piece in line.answer(heard, agent_language(), turn_done):
+            yield piece
+
+    return answer
+
+
+def _at_the_voice_server(http: aiohttp.ClientSession, room: str, asked: Asked):
+    """The agent where every other call finds it: asked over this machine's own network."""
+    desk = os.environ.get(DESK_URL, "http://127.0.0.1:8013")
+    key = os.environ.get("VETDESK_ENDPOINT_KEY", "")
+
+    async def answer(messages: list[dict]) -> AsyncIterator[str]:
+        started, first = time.perf_counter(), None
+        try:
+            async for piece in ask(http, desk, key, room, messages, asked):
+                first = first if first is not None else time.perf_counter() - started
+                yield piece
+        except (aiohttp.ClientError, TimeoutError) as error:
+            # The caller must never be left with nothing.
+            log.warning("the voice server did not answer (%s)", type(error).__name__)
+            if first is None:
+                yield TROUBLE["es"]
+        log.info("front desk: first words %.1f s, complete %.1f s", first or 0,
+                 time.perf_counter() - started)
+
+    return answer
+
 
 def prewarm(proc: JobProcess) -> None:
     """Load what takes time before the phone rings, not while the caller waits."""
     _load_env()
-    kb = load_kb()
-    proc.userdata.update(
-        vad=silero.VAD.load(),
-        kb=kb,
-        clinic=LegacySqliteSource(DATA / "clinic.db").load(),
-        llm=create_client(),
-    )
+    proc.userdata.update(vad=silero.VAD.load())
 
 
-server = AgentServer(setup_fnc=prewarm)
+server = AgentServer(
+    setup_fnc=prewarm,
+    # One call waiting to be taken is enough for a demo, on a server it shares.
+    num_idle_processes=int(os.environ.get("VETDESK_VOICE_IDLE", "1")),
+)
 
 
-@server.rtc_session()
+@server.rtc_session(agent_name=AGENT)
 async def entrypoint(ctx: JobContext) -> None:
-    ready = ctx.proc.userdata
-    kb = ready["kb"]
-    front_desk = FrontDeskAgent(ready["llm"], ready["clinic"], kb,
-                                SqliteAgenda(kb, datetime.now))
-    # No caller ID on a microphone. Set VETDESK_CALLER_NUMBER to try a call "from" a number.
-    call = front_desk.start_call(os.environ.get("VETDESK_CALLER_NUMBER") or None)
-    agent = VoiceFrontDesk(call)
+    ready, asked = ctx.proc.userdata, Asked()
+    language = ["es"]  # updated from what speech recognition hears
+    http: aiohttp.ClientSession | None = None
+
+    async def close() -> None:
+        if ctx.is_fake_job():
+            ctx.shutdown("the call is over")
+        else:
+            await ctx.delete_room()  # everybody in it is disconnected
+
+    if ctx.is_fake_job():  # the console: the agent is loaded here, once, off the loop
+        if "clinic" not in ready:
+            ready.update(kb=load_kb(), llm=create_client(), clinic=await asyncio.to_thread(
+                LegacySqliteSource(DATA / "clinic.db").load))
+        answer = _in_this_program(ready, lambda: language[0])
+    else:
+        await ctx.connect()
+        http = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60))
+        ctx.add_shutdown_callback(http.close)
+        log.info("call in room %s", ctx.room.name)
+        answer = _at_the_voice_server(http, ctx.room.name, asked)
+    agent = VoiceFrontDesk(answer, asked, close)
 
     session = AgentSession(
         # With a primary language set, the recogniser stops saying which language it
@@ -126,16 +224,27 @@ async def entrypoint(ctx: JobContext) -> None:
         llm=_ElsewhereLLM(),
         tts=elevenlabs.TTS(model=TTS_MODEL, **({"voice_id": TTS_VOICE} if TTS_VOICE else {})),
         vad=ready["vad"],
-        # LiveKit can start on an answer before it is sure the caller has finished, and
-        # throw it away if they go on. Our agent's turns have effects (a booking), so an
-        # answer is only asked for once the turn is over.
-        preemptive_generation=False,
+        turn_handling={
+            # The small model that runs here, said by name. Left to choose, the library
+            # takes LiveKit's hosted one whenever the project's keys are at hand, and the
+            # same for telling an interruption from a noise: both paid for, and neither
+            # the one this was tried with.
+            "turn_detection": inference.TurnDetector(version="v1-mini"),
+            "interruption": {"mode": "vad"},
+            # LiveKit can start on an answer before it is sure the caller has finished,
+            # and throw it away if they go on. Our agent's turns have effects (a booking),
+            # so an answer is only asked for once the turn is over.
+            "preemptive_generation": {"enabled": False},
+        },
+        user_away_timeout=QUIET_SECONDS,
     )
+    heard_at = [time.monotonic()]
 
     @session.on("user_input_transcribed")
     def _heard(event) -> None:
+        heard_at[0] = time.monotonic()
         if event.is_final:
-            agent.language = language_of(event.language)
+            language[0] = language_of(event.language)
             log.info("caller (%s): %s", event.language, event.transcript)
 
     @session.on("conversation_item_added")
@@ -152,8 +261,29 @@ async def entrypoint(ctx: JobContext) -> None:
             log.info("listening: %s", {k: round(v, 2) for k, v in metrics.items()
                                        if k in ("transcription_delay", "end_of_turn_delay")})
 
+    def quiet() -> None:
+        """Nobody has spoken for a while. The voice server is told as the first platform
+        tells it, with a line of dots, and has the words: "are you still there?" the
+        first time, and a goodbye that closes the line the second."""
+        if time.monotonic() - heard_at[0] < QUIET_SECONDS - 1:
+            return  # they spoke meanwhile
+        session.generate_reply(user_input="...")
+        asyncio.get_running_loop().call_later(QUIET_SECONDS + 5, quiet)
+
+    @session.on("user_state_changed")
+    def _gone_quiet(event) -> None:
+        if event.new_state == "away" and not ctx.is_fake_job():
+            quiet()
+
     await session.start(agent=agent, room=ctx.room)
-    await session.say(call.greeting, allow_interruptions=False)
+    if not ctx.is_fake_job():
+        asyncio.get_running_loop().call_later(MAX_SECONDS, lambda: asyncio.ensure_future(close()))
+    # The greeting is the front desk's too: a call the voice server has no pass for is
+    # told so in its place, and closed.
+    greeting = "".join([piece async for piece in answer([])])
+    speech = session.say(greeting, allow_interruptions=False)
+    if asked.hang_up:
+        await agent.say_and_close(speech)
 
 
 def main() -> None:
@@ -161,7 +291,7 @@ def main() -> None:
     if not os.environ.get("ELEVEN_API_KEY") and "--list-devices" not in sys.argv:
         raise SystemExit("Set ELEVEN_API_KEY in .env: ElevenLabs does the listening and the "
                          "speaking.")
-    if not (DATA / "clinic.db").exists():
+    if "console" in sys.argv and not (DATA / "clinic.db").exists():
         raise SystemExit(f"{DATA / 'clinic.db'} not found; run `vetdesk generate` first.")
     # What the caller said, what the agent said and how long it took. Not every packet.
     os.environ.setdefault("LIVEKIT_LOG_LEVEL", "INFO")

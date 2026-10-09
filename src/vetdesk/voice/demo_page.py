@@ -4,16 +4,18 @@ One file with no build step, served by the voice server itself. It asks the serv
 visitor can call as and for a pass, and hands the call to the voice platform's own
 browser library. Everything it shows of a caller is made up by this project.
 
-When the server has a second voice platform set up, the page can offer the choice: the
-same front desk, carried by one or by the other, to compare them. No key of either is in
-it. The choice is shown only to whoever opens the page with `?via` in its address
-(`?via=vapi` starts on the second): the page is being tried by people who were sent it
-before the second platform was, and they see it as it was.
+When the server has other ways to carry a call set up, the page can offer the choice: the
+same front desk, carried by one voice platform, by another, or by LiveKit with a program
+of ours, to compare them. No key of any is in it. The choice is shown only to whoever
+opens the page with `?via` in its address (`?via=vapi` or `?via=livekit` starts on that
+one): the page is being tried by people who were sent it before there was a choice, and
+they see it as it was.
 """
 
 # The voice platforms' browser libraries, at the versions this page was written against.
 SDK = "https://cdn.jsdelivr.net/npm/@elevenlabs/client@1.27.0/+esm"
 VAPI_SDK = "https://cdn.jsdelivr.net/npm/@vapi-ai/web@2.7.1/+esm"
+LIVEKIT_SDK = "https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/+esm"
 
 PAGE = """<!doctype html>
 <html lang="es">
@@ -198,7 +200,7 @@ const TEXT = {
  },
 };
 const ROLE = {own: "own", hidden: "hidden_role", borrowed: "borrowed", stranger: "stranger"};
-const PLATFORM = {elevenlabs: "ElevenLabs", vapi: "Vapi"};
+const PLATFORM = {elevenlabs: "ElevenLabs", vapi: "Vapi", livekit: "LiveKit"};
 const $ = id => document.getElementById(id);
 const speaks = navigator.language || "es";
 let lang = speaks.startsWith("es") || speaks.startsWith("ca") ? "es" : "en";
@@ -220,6 +222,7 @@ function line(who, text) {
   item.textContent = text;  // as text, never as markup
   $("said").append(item);
   item.scrollIntoView({block: "nearest"});
+  return item;
 }
 
 function sheet() {
@@ -361,6 +364,46 @@ async function by_vapi(given) {
   return over ? null : {endSession: async () => { await vapi.stop(); end(); }};
 }
 
+async function by_livekit(given) {
+  const {Room, RoomEvent} = await import("__LIVEKIT_SDK__");
+  // A room of this call's own, and a pass to it signed by this server: no key is here.
+  const room = new Room();
+  const written = new Map(), playing = [];
+  let over = false;
+  const end = () => {
+    if (over) return;
+    over = true;
+    playing.forEach(player => player.remove());
+    ended();
+  };
+  // What is said arrives as text, a phrase at a time and more than once while it is
+  // being heard: each phrase is written once and corrected in place.
+  room.registerTextStreamHandler("lk.transcription", async (reader, who) => {
+    let text;
+    try { text = await reader.readAll(); } catch { return; }
+    const phrase = reader.info.attributes["lk.segment_id"] || reader.info.id;
+    const mine = who.identity === room.localParticipant.identity;
+    if (written.has(phrase)) written.get(phrase).textContent = text;
+    else if (text) written.set(phrase, line(mine ? "you" : "agent", text));
+  });
+  room.on(RoomEvent.TrackSubscribed, track => {
+    if (track.kind !== "audio") return;
+    const player = track.attach();
+    document.body.append(player);
+    playing.push(player);
+  });
+  room.on(RoomEvent.ParticipantAttributesChanged, changed => {
+    const doing = changed["lk.agent.state"];
+    if (doing && !over) state(t(doing === "speaking" ? "speaking" : "listening"));
+  });
+  room.on(RoomEvent.Disconnected, end);
+  await room.connect(given.url, given.token);
+  await room.localParticipant.setMicrophoneEnabled(true);
+  return over ? null : {endSession: async () => { await room.disconnect(); end(); }};
+}
+
+const BY = {elevenlabs: by_elevenlabs, vapi: by_vapi, livekit: by_livekit};
+
 async function call() {
   if (conversation) { await conversation.endSession(); return; }
   $("call").disabled = true;
@@ -385,7 +428,7 @@ async function call() {
     const given = await answer.json();
     pass = given.pass;
     state(t("ringing"));
-    conversation = await (platform === "vapi" ? by_vapi(given) : by_elevenlabs(given));
+    conversation = await BY[platform](given);
     if (!conversation) return;  // over before it began: it has been said so already
     // The server closes the call when its time is up; this is for a page it cannot reach.
     timer = setTimeout(() => conversation && conversation.endSession(),
@@ -406,4 +449,5 @@ load().catch(() => state(t("failed"), true));
 </script>
 </body>
 </html>
-""".replace("__SDK__", SDK).replace("__VAPI_SDK__", VAPI_SDK)
+""".replace("__SDK__", SDK).replace("__VAPI_SDK__", VAPI_SDK).replace(
+    "__LIVEKIT_SDK__", LIVEKIT_SDK)
