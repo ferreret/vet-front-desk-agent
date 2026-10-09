@@ -521,5 +521,9 @@ def test_the_second_platform_is_given_as_little_as_the_first(monkeypatch):
     from vetdesk.voice.elevenlabs_agent import config as first
 
     spoken_by = first("https://example.test", "secret")["conversation_config"]["tts"]
-    assert settings["voice"] == {"provider": "11labs", "voiceId": spoken_by["voice_id"],
-                                 "model": spoken_by["model_id"]}
+    voice = dict(settings["voice"])
+    # Our words as they are, cut only where a sentence ends: never at a comma.
+    assert voice.pop("chunkPlan") == {"enabled": True, "punctuationBoundaries": [".", "!", "?"],
+                                      "formatPlan": {"enabled": False}}
+    assert voice == {"provider": "11labs", "voiceId": spoken_by["voice_id"],
+                     "model": spoken_by["model_id"]}

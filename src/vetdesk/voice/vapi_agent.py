@@ -57,7 +57,13 @@ def config(url: str, credential: str) -> dict:
         # the platforms. With an older model the same voice was heard as a dry one, and
         # the first call by this platform was hung up at the greeting.
         "voice": {"provider": "11labs", "voiceId": os.environ["VETDESK_TTS_VOICE"],
-                  "model": os.environ.get("VETDESK_TTS_MODEL", "eleven_v4_turbo")},
+                  "model": os.environ.get("VETDESK_TTS_MODEL", "eleven_v4_turbo"),
+                  # What is said is ours, word for word and a sentence at a time. Left to
+                  # itself the platform cut an answer at its commas and had each piece
+                  # spoken apart ("...sus dos apellidos? Por favor?"), and rewrote the
+                  # numbers: on the first whole call it was heard as less fluent.
+                  "chunkPlan": {"enabled": True, "punctuationBoundaries": [".", "!", "?"],
+                                "formatPlan": {"enabled": False}}},
         # A recogniser that tells the language by itself: the clinic is on a tourist coast.
         "transcriber": {"provider": "deepgram", "model": "nova-3", "language": "multi"},
         # The page tells a visitor that the voice is not recorded. The platform records
