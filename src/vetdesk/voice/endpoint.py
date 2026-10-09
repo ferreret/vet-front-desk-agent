@@ -180,10 +180,12 @@ class Switchboard:
         return self._demo_lines.get(token)
 
     def line(self, messages: list[dict], can_transfer: bool = False,
-             named: str | None = None, demo_pass: str = "") -> Line:
+             named: str | None = None, demo_pass: str = "",
+             caller: str | None = None) -> Line:
         """`named` is for a platform that says which call a request is for outside what
         is said (see `vapi`). Nothing is then read from the system text: the call is the
-        demo's, with `demo_pass` for its pass."""
+        demo's, with `demo_pass` for its pass, unless `caller` is given. Then it is a
+        call that came in by phone, from that number ("" when it is hidden)."""
         system = "" if named else " \n".join(
             _text(m.get("content")) for m in messages if m.get("role") == "system")
         found = _CONVERSATION.search(system)
@@ -200,7 +202,8 @@ class Switchboard:
         now = self._clock()
         self._lines = {k: v for k, v in self._lines.items() if now - v[1] < IDLE_SECONDS}
         from_demo = _DEMO.search(system)
-        token = demo_pass if named else from_demo.group(1) if from_demo else None
+        token = (None if caller is not None else
+                 demo_pass if named else from_demo.group(1) if from_demo else None)
         if conversation not in self._lines and token is not None:
             # The number is the one of whoever the visitor chose to call as. With no pass,
             # or one that is not good, the line exists only to be told so and closed.
@@ -219,15 +222,16 @@ class Switchboard:
         elif token is not None and self._demo and self._lines[conversation][0].demo:
             self._demo.call(self._lines[conversation][0].demo)  # heard of again
         if conversation not in self._lines:
-            caller = _CALLER.search(system)
-            numbers, _ = parse_phones((caller.group(1) if caller else "") or "")
+            said = _CALLER.search(system)
+            numbers, _ = parse_phones(caller if caller is not None else
+                                      (said.group(1) if said else "") or "")
             number = numbers[0] if numbers else None
             if number in self._stand_ins:
                 number = self._stand_ins[number]
                 log.info("call %s from a number that stands in for %s", conversation, number)
             else:
                 log.info("call %s from %s", conversation, number or "a hidden number")
-            if not found:
+            if not found and not named:
                 log.info("no conversation id in what the platform sent as system text: %r",
                          system)
             # No waiting phrase of ours on this route. The platform holds back whatever it
@@ -825,9 +829,19 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
         except (ValueError, KeyError, TypeError):
             return web.json_response({"error": {"message": "expected chat messages and "
                                                            "the call they are for"}}, status=400)
-        # Every call by it is the demo's: a room this server did not name has no pass.
-        line = switchboard.line(messages, named=f"{LIVEKIT}-{room}",
-                                demo_pass=livekit_rooms.get(room, ""))
+        phone = body["call"].get("phone") if isinstance(body["call"], dict) else None
+        if room in livekit_rooms or phone is None:
+            # A call from the demo's page: a room this server did not name has no pass.
+            line = switchboard.line(messages, named=f"{LIVEKIT}-{room}",
+                                    demo_pass=livekit_rooms.get(room, ""))
+        else:
+            # A call that came in by phone: our program saw it arrive over the phone line
+            # and says from which number. It is a real call, with the real appointment
+            # book and reception told. Nobody is put through on it yet. Phone rooms are
+            # named with the caller's number in them, which is kept out of the call's name.
+            name = hashlib.sha256(room.encode()).hexdigest()[:16]
+            line = switchboard.line(messages, named=f"{LIVEKIT}-call-{name}",
+                                    caller=str(phone))
         return await converse(request, body, messages, line, END_TOOL)
 
     async def vapi_seen(request: web.Request) -> web.Response:

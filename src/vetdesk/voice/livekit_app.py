@@ -30,6 +30,7 @@ from datetime import datetime
 from pathlib import Path
 
 import aiohttp
+from livekit import rtc
 from livekit.agents import (
     Agent,
     AgentServer,
@@ -83,6 +84,9 @@ STT_PAUSE = float(os.environ.get("VETDESK_STT_PAUSE", "0.6"))
 # A call from a room is closed after this long whatever is being said, as on the other
 # platforms' demos: a little over the three minutes the voice server gives a call.
 MAX_SECONDS = float(os.environ.get("VETDESK_DEMO_MAX_SECONDS", "200"))
+# A call that came in by phone has no such limit from the voice server. This one is only
+# against a line left open by mistake.
+PHONE_MAX_SECONDS = float(os.environ.get("VETDESK_CALL_MAX_SECONDS", "900"))
 # Seconds of nobody speaking before the caller is asked whether they are still there, and
 # again before the line is given up: the voice server has the words for both.
 QUIET_SECONDS = 15.0
@@ -154,15 +158,17 @@ def _in_this_program(ready: dict, agent_language: Callable[[], str]):
     return answer
 
 
-def _at_the_voice_server(http: aiohttp.ClientSession, room: str, asked: Asked):
-    """The agent where every other call finds it: asked over this machine's own network."""
+def _at_the_voice_server(http: aiohttp.ClientSession, room: str, asked: Asked,
+                         phone: str | None = None):
+    """The agent where every other call finds it: asked over this machine's own network.
+    `phone`: the number a call over the phone line came from; None for a browser's."""
     desk = os.environ.get(DESK_URL, "http://127.0.0.1:8013")
     key = os.environ.get("VETDESK_ENDPOINT_KEY", "")
 
     async def answer(messages: list[dict]) -> AsyncIterator[str]:
         started, first = time.perf_counter(), None
         try:
-            async for piece in ask(http, desk, key, room, messages, asked):
+            async for piece in ask(http, desk, key, room, messages, asked, phone):
                 first = first if first is not None else time.perf_counter() - started
                 yield piece
         except (aiohttp.ClientError, TimeoutError) as error:
@@ -196,6 +202,7 @@ async def entrypoint(ctx: JobContext) -> None:
     http: aiohttp.ClientSession | None = None
 
     over = []  # anything in it: the line has been closed
+    by_phone = False
 
     async def close() -> None:
         if over:
@@ -218,8 +225,14 @@ async def entrypoint(ctx: JobContext) -> None:
         await ctx.connect()
         http = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60))
         ctx.add_shutdown_callback(http.close)
-        log.info("call in room %s", ctx.room.name)
-        answer = _at_the_voice_server(http, ctx.room.name, asked)
+        # Who is on the line, as LiveKit itself says: somebody who came in over the phone
+        # line is marked so by its server, and a browser cannot pass for one. The number
+        # is the first clue of who is calling, and it is the voice server that weighs it.
+        caller = await ctx.wait_for_participant()
+        by_phone = caller.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP
+        phone = caller.attributes.get("sip.phoneNumber", "") if by_phone else None
+        log.info("call %s", "over the phone line" if by_phone else f"in room {ctx.room.name}")
+        answer = _at_the_voice_server(http, ctx.room.name, asked, phone)
     agent = VoiceFrontDesk(answer, asked, close)
 
     session = AgentSession(
@@ -302,7 +315,9 @@ async def entrypoint(ctx: JobContext) -> None:
 
     await session.start(agent=agent, room=ctx.room)
     if not ctx.is_fake_job():
-        asyncio.get_running_loop().call_later(MAX_SECONDS, lambda: asyncio.ensure_future(close()))
+        asyncio.get_running_loop().call_later(
+            PHONE_MAX_SECONDS if by_phone else MAX_SECONDS,
+            lambda: asyncio.ensure_future(close()))
     # The greeting is the front desk's too: a call the voice server has no pass for is
     # told so in its place, and closed.
     greeting = "".join([piece async for piece in answer([])])

@@ -438,6 +438,35 @@ def test_the_platform_agent_can_be_told_to_change_language(monkeypatch):
     assert tools["end_call"]["force_pre_tool_speech"] is True
 
 
+def test_a_call_over_the_phone_line_by_livekit_is_a_real_call_from_that_number(clinic, kb):
+    """By LiveKit the program that listens and speaks is ours, and it sees a call arrive
+    over the phone line: it says so, and from which number. That is a real call, with no
+    pass to ask for. One it does not say came by phone is the demo's, and has none."""
+    from vetdesk.voice.demo import NO_PASS
+    from vetdesk.voice.desk_client import Asked, ask
+
+    model, calls, app = _front_desk([Reply("Dígame."), Reply("Dígame.")], clinic, kb)
+
+    async def run():
+        async with TestClient(TestServer(app)) as client:
+            desk, http = str(client.make_url("")), client.session
+
+            async def answer(room, phone):
+                asked, said = Asked(), [{"role": "assistant", "content": "Clínica."},
+                                        {"role": "user", "content": "Hola, buenos días."}]
+                words = [piece async for piece in ask(http, desk, KEY, room, said, asked, phone)]
+                return "".join(words), asked.hang_up
+
+            return (await answer("call-_+34600111222_abc", "+34 600 111 222"),
+                    await answer("call-_hidden_def", ""),
+                    await answer("call-_+34600111222_ghi", None))
+
+    known, hidden, no_phone = asyncio.run(run())
+    assert known == ("Dígame.", False) and hidden == ("Dígame.", False)
+    assert no_phone == (NO_PASS, True)
+    assert calls == ["+34600111222", None, None]  # the last, only to be told so and closed
+
+
 def test_a_call_by_the_second_platform_that_we_did_not_start_is_closed(clinic, kb):
     """Every call by Vapi is a call of the demo, and one our server did not start has no
     pass: it reaches no model, agenda or record. Of what it sent the form is kept to be

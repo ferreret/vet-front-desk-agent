@@ -523,6 +523,13 @@ def test_the_program_that_listens_and_speaks_asks_the_front_desk_like_a_platform
             last = await answer(room, hello[0], "¿A qué hora abrís?", first[0],
                                 "No, eso es todo. Gracias.")
             stray = await answer("demo-not-ours")
+            # A room this server named is the demo's, whatever is said of a phone line.
+            asked = Asked()
+            claimed = "".join([piece async for piece in ask(
+                http, desk, KEY, room, [{"role": "assistant", "content": hello[0]},
+                                        {"role": "user", "content": "¿A qué hora abrís?"}],
+                asked, "+34 699 000 000")])
+            assert claimed == first[0] and numbers == ["+34600111222", None]  # no new call
             try:
                 await answer(room, key="another-key")
                 refused = None

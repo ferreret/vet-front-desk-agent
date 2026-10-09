@@ -32,10 +32,14 @@ class Asked:
 
 
 async def ask(http: aiohttp.ClientSession, desk: str, key: str, call: str,
-              messages: list[dict], asked: Asked) -> AsyncIterator[str]:
+              messages: list[dict], asked: Asked,
+              phone: str | None = None) -> AsyncIterator[str]:
     """What the front desk says to the conversation so far, piece by piece. `key` is our
-    own; what is sent is the one made from it for this route. `call` is the room."""
-    body = {"model": "vetdesk", "stream": True, "messages": messages, "call": {"id": call},
+    own; what is sent is the one made from it for this route. `call` is the room.
+    `phone` is for a call that came in over the phone line: the number it came from, or
+    "" when that is hidden. None for a call from a browser."""
+    body = {"model": "vetdesk", "stream": True, "messages": messages,
+            "call": {"id": call, **({} if phone is None else {"phone": phone})},
             "tools": [{"type": "function", "function": {"name": END_TOOL}}]}
     headers = {"Authorization": f"Bearer {platform_key(key, PLATFORM)}"}
     url = desk.rstrip("/") + f"/{PLATFORM}/chat/completions"
@@ -48,6 +52,6 @@ async def ask(http: aiohttp.ClientSession, desk: str, key: str, call: str,
             delta = json.loads(line[6:])["choices"][0]["delta"]
             if delta.get("content"):
                 yield delta["content"]
-            if any((call.get("function") or {}).get("name") == END_TOOL
-                   for call in delta.get("tool_calls") or []):
+            if any((used.get("function") or {}).get("name") == END_TOOL
+                   for used in delta.get("tool_calls") or []):
                 asked.hang_up = True
