@@ -10,6 +10,7 @@ from datetime import date, datetime
 
 from ..kb import KnowledgeBase
 from ..kb.model import WEEKDAYS_ES, spoken_phone
+from ..spoken import clock_es, weekday
 
 INSTRUCTIONS = """\
 You are the phone front desk of {clinic}, a veterinary clinic. You are on a phone call:
@@ -289,16 +290,32 @@ def call_context(kb: KnowledgeBase, now: datetime, caller_number: str | None, sa
     through = ("A caller can be put through to a person right now: you have"
                if can_transfer else
                "No caller can be put through to a person on this call: you do not have")
+    # Today's hours, looked up here. Left to find today's row in the week's table, a
+    # model asked in Catalan for "today's hours" on a Friday read out the first row and
+    # called it today: "Avui dilluns...". Told only which day it was, it still did.
+    today = " y ".join(f"de {clock_es(opens)} a {clock_es(closes)}"
+                       for opens, closes in kb.opening_intervals(now.date())) or "cerrado"
     return (
         "# This call\n"
         f"It is {WEEKDAYS_ES[now.weekday()]}, {now:%Y-%m-%d %H:%M}. The clinic is {status} "
         f"right now.\n"
+        f'Today\'s opening hours, for a caller who asks for today\'s: "{today}".\n'
         f"Calling number: {number}.\n"
         f"{through} transfer_to_reception.\n"
         f'You have already answered the phone with: "{said}"\n'
         f"The call starts in Spanish. {set_phrases('es')}\n"
         f'{in_an_emergency(kb, now, "es")}{closed}'
     )
+
+
+def today_is(now: datetime, language: str) -> str:
+    """Which day of the week it is, in one language, as the model is told it.
+
+    The call's own note says it in Spanish. Left to put it into Catalan, a model that was
+    asked "what are your hours today?" on a Friday answered "today, Tuesday" and "today,
+    Monday": three times in eight. What a caller will use is not worked out by the model.
+    """
+    return f'Today is "{weekday(now, language)}" in {LANGUAGE_NAMES[language]}.'
 
 
 def in_an_emergency(kb: KnowledgeBase, now: datetime, language: str) -> str:

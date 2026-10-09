@@ -65,6 +65,22 @@ def test_what_to_do_in_an_emergency_depends_on_the_hour_and_code_decides(kb):
     assert "venga directamente" not in closed and "veterinario de guardia" in closed
 
 
+def test_the_day_of_the_week_is_told_in_the_callers_language_and_code_names_it(clinic, kb):
+    """Heard on a call in Catalan, on a Friday: "Avui dimarts estem oberts...". The call's
+    note says the day in Spanish, and the model put it into Catalan wrong three times in
+    eight. It is told the day in the caller's language, by name."""
+    friday = datetime(2026, 10, 9, 13, 20)
+    for line, told in (("Hola, bona tarda.", 'Today is "divendres" in Catalan.'),
+                       ("Hello, good afternoon.", 'Today is "Friday" in English.')):
+        model = ScriptedClient([Reply("...")])
+        _call(model, clinic, kb, now=friday).say(line)
+        assert told in model.transcript.user_messages[0]
+    # In Spanish, the language the call starts in, nothing is added to what is said.
+    model = ScriptedClient([Reply("Dígame.")])
+    _call(model, clinic, kb, now=friday).say("Hola, buenas tardes.")
+    assert model.transcript.user_messages == ["Hola, buenas tardes."]
+
+
 def test_the_emergency_sentence_is_written_in_code_in_every_language(clinic, kb):
     """Left to the model to say in Italian, the emergency number came out in words, and
     wrong. Every language has the sentence, with the number in figures, for the open clinic

@@ -211,6 +211,14 @@ SAY = {"es": say_es, "ca": say_ca, "en": say_en, "de": say_de, "fr": say_fr, "it
        "ru": say_ru}
 
 
+_WORDS = {"es": _ES, "ca": _CA, "en": _EN, "de": _DE, "fr": _FR, "it": _IT, "ru": _RU}
+
+
+def weekday(moment: datetime, language: str) -> str:
+    """The name of that day of the week, in one language."""
+    return _WORDS[language]["weekdays"][moment.weekday()]
+
+
 def say(moment: datetime, language: str) -> str:
     """A day and a time in words, in the language of the call."""
     return SAY[language](moment)

@@ -23,6 +23,7 @@ from .prompt import (
     in_an_emergency,
     set_phrases,
     system_prompt,
+    today_is,
 )
 from .tools import SPECS, TRANSFER, CallSession, Toolbox, ToolEvent
 
@@ -369,5 +370,6 @@ class FrontDeskAgent:
         # Made for each call and not once: a server runs across the day the hours change.
         system = system_prompt(self._kb, now.date())
         return Call(self._llm.start(system, context, tools), toolbox, hello,
-                    lambda language: in_an_emergency(self._kb, now, language),
+                    lambda language: f"{today_is(now, language)} "
+                                     f"{in_an_emergency(self._kb, now, language)}",
                     tuple(self._kb.clinic.languages), spoken_phone(self._kb.emergency.phone))
