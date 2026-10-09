@@ -58,12 +58,13 @@ def config(url: str, credential: str) -> dict:
         # the first call by this platform was hung up at the greeting.
         "voice": {"provider": "11labs", "voiceId": os.environ["VETDESK_TTS_VOICE"],
                   "model": os.environ.get("VETDESK_TTS_MODEL", "eleven_v4_turbo"),
-                  # What is said is ours, word for word and a sentence at a time. Left to
-                  # itself the platform cut an answer at its commas and had each piece
-                  # spoken apart ("...sus dos apellidos? Por favor?"), and rewrote the
-                  # numbers: on the first whole call it was heard as less fluent.
-                  "chunkPlan": {"enabled": True, "punctuationBoundaries": [".", "!", "?"],
-                                "formatPlan": {"enabled": False}}},
+                  # What is said is ours, word for word, and it is the voice's own maker
+                  # that decides where to breathe, as on the first platform. Left to
+                  # itself Vapi cut an answer at its commas and had each piece spoken
+                  # apart ("...sus dos apellidos? Por favor?"), and rewrote the numbers.
+                  # Told to cut at the end of a sentence only, it cut a long one in the
+                  # middle. Both were heard as an agent that speaks in fits and starts.
+                  "chunkPlan": {"enabled": False}},
         # A recogniser that tells the language by itself: the clinic is on a tourist coast.
         "transcriber": {"provider": "deepgram", "model": "nova-3", "language": "multi"},
         # The page tells a visitor that the voice is not recorded. The platform records

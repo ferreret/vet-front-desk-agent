@@ -21,10 +21,14 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
+
+log = logging.getLogger("vetdesk.vapi")
 
 API = "https://api.vapi.ai"
 VAPI_KEY, AGENT_ID = "VAPI_API_KEY", "VETDESK_VAPI_AGENT_ID"
@@ -53,6 +57,31 @@ def ask(method: str, path: str, key: str, body: dict | None = None, timeout: flo
             return json.loads(response.read() or b"{}")
     except urllib.error.HTTPError as error:
         raise Refused(f"{error.code}: {error.read().decode()[:900]}") from error
+
+
+def say_and_hang_up(control: str, text: str) -> bool:
+    """Have a call say `text` and end when it has been said. Whether Vapi took the order.
+
+    Vapi's tool for hanging up ends the call the moment it is asked to, over whatever is
+    still being said: on the first calls a farewell handed over ahead of it was cut short.
+    Each call has an address to steer it by, sent with every request for it, and one of
+    the things it takes is this. Nothing is sent to an address that is not Vapi's own.
+    """
+    where = urllib.parse.urlparse(control)
+    if where.scheme != "https" or not (where.hostname or "").endswith(".vapi.ai"):
+        log.warning("the address to steer the call by is not the platform's: nothing sent")
+        return False
+    request = urllib.request.Request(
+        control, method="POST",
+        data=json.dumps({"type": "say", "content": text, "endCallAfterSpoken": True}).encode(),
+        headers={"Content-Type": "application/json", "User-Agent": "vetdesk/0.1"})
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return 200 <= response.status < 300
+    except OSError as error:
+        log.warning("the call could not be told to say goodbye and end (%s)",
+                    type(error).__name__)
+        return False
 
 
 def _part(value: dict) -> str:

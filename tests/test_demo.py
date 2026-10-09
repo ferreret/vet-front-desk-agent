@@ -159,7 +159,7 @@ def _spoken(stream):
 
 
 def _front_desk(clinic, steps, demo, sign=lambda: "wss://voice.example/one-call", told=None,
-                vapi_call=None):
+                vapi_call=None, vapi_say=None):
     kb = load_kb()
     real = SqliteAgenda(kb, lambda: NOW)
     model = ScriptedClient(list(steps))
@@ -176,7 +176,7 @@ def _front_desk(clinic, steps, demo, sign=lambda: "wss://voice.example/one-call"
         start_demo_call=start_demo_call)
     app = build_app(switchboard, KEY, demo=demo, sign=sign,
                     tell=told.append if told is not None else None, demo_page="<p>demo</p>",
-                    vapi_call=vapi_call)
+                    vapi_call=vapi_call, vapi_say=vapi_say)
     return app, real, numbers
 
 
@@ -277,7 +277,9 @@ def _vapi_chat(call, *said):
         messages.append({"role": "user", "content": text})
     return ("/vapi/chat/completions",
             {"model": "vetdesk", "stream": True, "messages": messages, "tools": VAPI_HANG_UP,
-             "call": {"id": call, "type": "webCall"}}, platform_key(KEY, "vapi"))
+             "call": {"id": call, "type": "webCall",
+                      "monitor": {"controlUrl": f"https://steer.vapi.ai/{call}/control"}}},
+            platform_key(KEY, "vapi"))
 
 
 def test_a_call_by_the_second_platform_is_started_by_our_server_with_the_pass(clinic):
@@ -342,6 +344,46 @@ def test_the_second_platform_is_told_to_hang_up_by_its_own_tools_name(clinic):
     assert _spoken(first[1]) == ("Abrimos a las nueve y media.", [])
     assert _spoken(bye[1]) == ("De nada. ¡Que vaya muy bien!", ["endCall"])
     assert _spoken(late[1]) == (TIME_IS_UP["es"], ["endCall"])
+
+
+def test_the_second_platform_says_the_farewell_itself_and_then_hangs_up(clinic):
+    """Heard on its first calls: its tool for hanging up ends the call at once, over the
+    farewell handed to it ahead of the tool. The call is told to say it and end after."""
+    from vetdesk.voice.vapi import say_and_hang_up
+
+    told, takes_it = [], [True]
+
+    def vapi_say(control, text):
+        told.append((control, text))
+        return takes_it[0]
+
+    def front_desk(steps):
+        demo = Demo([MARTA], Clock())
+        app, _, _ = _front_desk(
+            clinic, steps, demo, vapi_say=vapi_say,
+            vapi_call=lambda: {"id": "call-1", "webCallUrl": "https://rooms.example/one"})
+        return app, demo.start("own", "a")
+
+    bye = [Reply("Abrimos a las nueve y media."), Reply("De nada. ¡Que vaya muy bien!")]
+    said = ("¿A qué hora abrís?", "No, eso es todo. Gracias.")
+    app, token = front_desk(bye)
+    (_, first, last, again), _ = _post(
+        app, ("/demo/vapi/call/web", {}, token), _vapi_chat("call-1", said[0]),
+        _vapi_chat("call-1", *said), _vapi_chat("call-1", *said))
+    assert _spoken(first[1]) == ("Abrimos a las nueve y media.", [])
+    # Nothing to say and no tool in our answer: the words went to the call itself, once,
+    # however often the platform asks for that answer.
+    assert _spoken(last[1]) == ("", []) and _spoken(again[1]) == ("", [])
+    assert told == [("https://steer.vapi.ai/call-1/control", "De nada. ¡Que vaya muy bien!")]
+    # A call that will not take the order is closed as before: the words, then the tool.
+    takes_it[0] = False
+    app, token = front_desk(bye)
+    (_, _, last), _ = _post(app, ("/demo/vapi/call/web", {}, token),
+                            _vapi_chat("call-1", said[0]), _vapi_chat("call-1", *said))
+    assert _spoken(last[1]) == ("De nada. ¡Que vaya muy bien!", ["endCall"])
+    # Nothing is sent to an address that is not the platform's own.
+    assert say_and_hang_up("https://steer.example/call-1/control", "Adiós.") is False
+    assert say_and_hang_up("http://steer.vapi.ai/call-1/control", "Adiós.") is False
 
 
 def test_when_the_second_platform_starts_no_call_the_minutes_are_given_back(clinic):

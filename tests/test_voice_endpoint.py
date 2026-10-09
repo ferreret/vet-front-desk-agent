@@ -522,8 +522,8 @@ def test_the_second_platform_is_given_as_little_as_the_first(monkeypatch):
 
     spoken_by = first("https://example.test", "secret")["conversation_config"]["tts"]
     voice = dict(settings["voice"])
-    # Our words as they are, cut only where a sentence ends: never at a comma.
-    assert voice.pop("chunkPlan") == {"enabled": True, "punctuationBoundaries": [".", "!", "?"],
-                                      "formatPlan": {"enabled": False}}
+    # Our words as they are, and where to breathe left to the voice's own maker: the
+    # platform cut answers at their commas, and then in the middle of a sentence.
+    assert voice.pop("chunkPlan") == {"enabled": False}
     assert voice == {"provider": "11labs", "voiceId": spoken_by["voice_id"],
                      "model": spoken_by["model_id"]}

@@ -89,7 +89,7 @@ from .telegram import TOKEN as TELEGRAM_TOKEN
 from .telegram import Telegram
 from .vapi import AGENT_ID as VAPI_AGENT
 from .vapi import END_TOOL as VAPI_END_TOOL
-from .vapi import FOR_THE_PAGE, VAPI_KEY, starter
+from .vapi import FOR_THE_PAGE, VAPI_KEY, say_and_hang_up, starter
 
 log = logging.getLogger("vetdesk.endpoint")
 
@@ -371,7 +371,8 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
               transfer_to: str = "", calls: CallLog | None = None,
               demo: Demo | None = None, sign: Callable[[], str] | None = None,
               demo_page: str = "",
-              vapi_call: Callable[[], dict] | None = None) -> web.Application:
+              vapi_call: Callable[[], dict] | None = None,
+              vapi_say: Callable[[str, str], bool] | None = None) -> web.Application:
     """`model` is the agent's own model, named only to put a price on each answer. With a
     `desk` whose information is in a file and an `admin_key`, that information can be read
     and replaced through the server. `tell` is how reception is told what happens on a
@@ -379,9 +380,11 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
     through to. `calls` is where every call is written down, to be read back with the
     `admin_key`: see `call_log`. `demo` holds the public demo's passes, and `sign` asks
     the voice platform for the address one browser call is made at: see `demo`.
-    `vapi_call` starts a browser call on the second platform: see `vapi`."""
+    `vapi_call` starts a browser call on the second platform, and `vapi_say` has one of
+    its calls say something and end when it has been said: see `vapi`."""
     agent_model = model
     put_through: set[int] = set()  # the lines the platform has been told to put through
+    closed: set[int] = set()  # the lines a platform has been told to say goodbye on and end
     waiting: set[asyncio.Future] = set()  # answers being worked out for a request to come
 
     def spent(turn: Turn) -> None:
@@ -443,8 +446,11 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
         return await converse(request, body, messages, line, END_TOOL)
 
     async def converse(request: web.Request, body: dict, messages: list[dict], line: Line,
-                       end_tool: str) -> web.StreamResponse:
-        """Answer one request of a call. `end_tool` is the platform's name for hanging up."""
+                       end_tool: str,
+                       say_and_end: Callable[[str], bool] | None = None) -> web.StreamResponse:
+        """Answer one request of a call. `end_tool` is the platform's name for hanging up.
+        `say_and_end` is for a platform whose tool hangs up over what is being said: a way
+        of having it say the last words and end when they have been said."""
         said = [_text(m.get("content")) for m in messages if m.get("role") == "user"]
         if calls and line.on_taken_back is None:  # the first that is heard of this call
             # The greeting written down is the one the caller heard: the platform's own,
@@ -461,6 +467,22 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                                                "Cache-Control": "no-cache"})
         await response.prepare(request)
         started = time.perf_counter()
+
+        async def hang_up(text: str, reason: str) -> web.StreamResponse:
+            """The last words, and the line closed. Words first: said by us ahead of the
+            platform's tool, or, where that tool cuts them short, by the platform itself
+            when it is told to say them and end."""
+            told = id(line) in closed or (say_and_end is not None and
+                                          await asyncio.to_thread(say_and_end, text))
+            if not told:
+                return await use(response, request_id, model, end_tool, say=text,
+                                 reason=reason)
+            closed.add(id(line))  # asked again for this answer, it is not said again
+            await response.write(_chunk(request_id, model, {}, "stop"))
+            await response.write(b"data: [DONE]\n\n")
+            await response.write_eof()
+            return response
+
         if line.demo is not None and (not line.demo or demo is None or demo.over(line.demo)):
             # A demo call with no pass, or one that has run its time: told so, and closed.
             # No model is asked anything, so it costs no more than the words.
@@ -470,8 +492,7 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                 calls.said(line.name, text, "demo_over" if line.demo else "demo_refused")
             await response.write(_chunk(request_id, model, {"role": "assistant", "content": ""}))
             if _offers(body, end_tool) and messages[-1].get("role") != "tool":
-                return await use(response, request_id, model, end_tool, say=text,
-                                 reason="the demo call is over")
+                return await hang_up(text, "the demo call is over")
             await response.write(_chunk(request_id, model, {"content": text}))
             await response.write(_chunk(request_id, model, {}, "stop"))
             await response.write(b"data: [DONE]\n\n")
@@ -563,8 +584,7 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                         calls.note(line.name, "hung_up")
                     # Ours to say too, before the tool: handed to the tool as its
                     # farewell, on a phone call it was not said and the line just closed.
-                    return await use(response, request_id, model, end_tool, say=text,
-                                     reason="the caller and the agent have said goodbye")
+                    return await hang_up(text, "the caller and the agent have said goodbye")
                 if closing:
                     await response.write(_chunk(request_id, model, {"content": text}))
             await response.write(_chunk(request_id, model, {}, "stop"))
@@ -770,7 +790,12 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
         # call when our server started it. Nothing in what is said is believed about it.
         token = next((known for known, started in vapi_calls.items() if started == call), "")
         line = switchboard.line(messages, named="vapi-" + call, demo_pass=token)
-        return await converse(request, body, messages, line, VAPI_END_TOOL)
+        # Its tool for hanging up cuts the farewell short: the call is told, at the
+        # address Vapi sends to steer it by, to say it and end when it has.
+        steer = ((body.get("call") or {}).get("monitor") or {}).get("controlUrl")
+        return await converse(
+            request, body, messages, line, VAPI_END_TOOL,
+            (lambda text: vapi_say(str(steer), text)) if vapi_say and steer else None)
 
     async def vapi_seen(request: web.Request) -> web.Response:
         if not may_edit(request):
@@ -939,7 +964,7 @@ def main() -> None:
     app = build_app(switchboard, key, getattr(llm, "model", ""), desk,
                     os.environ.get(ADMIN_KEY, ""), reception.send if reception else None,
                     numbers[0] if numbers else "", calls, demo, sign, DEMO_PAGE,
-                    _vapi() if demo is not None else None)
+                    _vapi() if demo is not None else None, say_and_hang_up)
     print(f"The front desk answers at http://{args.host}:{args.port}/v1/chat/completions")
     web.run_app(app, host=args.host, port=args.port, print=None)
 
