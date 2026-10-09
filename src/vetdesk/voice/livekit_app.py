@@ -81,6 +81,11 @@ STT_LANGUAGES = os.environ.get("VETDESK_STT_LANGUAGES", "es,ca").split(",")
 # Seconds of silence after which the recogniser closes what the caller said. Left to the
 # local voice detector, a phrase said into a real microphone stayed open for 20 seconds.
 STT_PAUSE = float(os.environ.get("VETDESK_STT_PAUSE", "0.6"))
+# The longest the caller is waited for once they have stopped, when the model that tells
+# whether a turn is over thinks it is not. The library's 2.5 s was reached on three turns
+# of seven on the first phone calls, all of them short answers ("José Canals Company",
+# "A las siete"): four seconds of silence before the agent spoke.
+TURN_MAX_WAIT = float(os.environ.get("VETDESK_TURN_MAX_WAIT", "1.5"))
 # A call from a room is closed after this long whatever is being said, as on the other
 # platforms' demos: a little over the three minutes the voice server gives a call.
 MAX_SECONDS = float(os.environ.get("VETDESK_DEMO_MAX_SECONDS", "200"))
@@ -251,6 +256,7 @@ async def entrypoint(ctx: JobContext) -> None:
             # same for telling an interruption from a noise: both paid for, and neither
             # the one this was tried with.
             "turn_detection": inference.TurnDetector(version="v1-mini"),
+            "endpointing": {"max_delay": TURN_MAX_WAIT},
             # The agent stops for words, not for a sound. Left to stop at any half second
             # of sound, it stood still in the middle of a long sentence, waited two
             # seconds for words that did not come, and went on: heard on the first call
