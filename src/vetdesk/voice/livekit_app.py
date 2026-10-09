@@ -195,11 +195,19 @@ async def entrypoint(ctx: JobContext) -> None:
     language = ["es"]  # updated from what speech recognition hears
     http: aiohttp.ClientSession | None = None
 
+    over = []  # anything in it: the line has been closed
+
     async def close() -> None:
+        if over:
+            return
+        over.append(True)
         if ctx.is_fake_job():
             ctx.shutdown("the call is over")
-        else:
+            return
+        try:
             await ctx.delete_room()  # everybody in it is disconnected
+        except Exception as error:  # gone already: the caller left first
+            log.info("the room was not closed from here (%s)", type(error).__name__)
 
     if ctx.is_fake_job():  # the console: the agent is loaded here, once, off the loop
         if "clinic" not in ready:
@@ -265,15 +273,27 @@ async def entrypoint(ctx: JobContext) -> None:
         """Nobody has spoken for a while. The voice server is told as the first platform
         tells it, with a line of dots, and has the words: "are you still there?" the
         first time, and a goodbye that closes the line the second."""
-        if time.monotonic() - heard_at[0] < QUIET_SECONDS - 1:
-            return  # they spoke meanwhile
-        session.generate_reply(user_input="...")
+        if over or time.monotonic() - heard_at[0] < QUIET_SECONDS - 1:
+            return  # the call is over, or they spoke meanwhile
+        try:
+            session.generate_reply(user_input="...")
+        except RuntimeError:  # the session has ended
+            return
         asyncio.get_running_loop().call_later(QUIET_SECONDS + 5, quiet)
 
     @session.on("user_state_changed")
     def _gone_quiet(event) -> None:
         if event.new_state == "away" and not ctx.is_fake_job():
             quiet()
+
+    @session.on("close")
+    def _ended(event) -> None:
+        # However it ended: a caller who left, or ears and a mouth that failed (a key
+        # that may not hear or speak was heard as a line that picks up and says nothing).
+        # Nobody is left in a room that will not answer.
+        if getattr(event, "error", None):
+            log.error("the call ended on an error: %s", event.error)
+        asyncio.ensure_future(close())
 
     await session.start(agent=agent, room=ctx.room)
     if not ctx.is_fake_job():
