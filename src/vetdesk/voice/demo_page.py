@@ -4,8 +4,11 @@ One file with no build step, served by the voice server itself. It asks the serv
 visitor can call as and for a pass, and hands the call to the voice platform's own
 browser library. Everything it shows of a caller is made up by this project.
 
-When the server has a second voice platform set up, the page offers the choice: the same
-front desk, carried by one or by the other, to compare them. No key of either is in it.
+When the server has a second voice platform set up, the page can offer the choice: the
+same front desk, carried by one or by the other, to compare them. No key of either is in
+it. The choice is shown only to whoever opens the page with `?via` in its address
+(`?via=vapi` starts on the second): the page is being tried by people who were sent it
+before the second platform was, and they see it as it was.
 """
 
 # The voice platforms' browser libraries, at the versions this page was written against.
@@ -201,6 +204,8 @@ const speaks = navigator.language || "es";
 let lang = speaks.startsWith("es") || speaks.startsWith("ca") ? "es" : "en";
 let people = [], chosen = null, conversation = null, timer = null, info = null;
 let pass = null, result = null, platform = "elevenlabs";
+// The choice of voice platform, for whoever opens the page asking for it: see above.
+const via = new URLSearchParams(location.search).get("via");
 const t = key => TEXT[lang][key];
 
 function state(text, warn = false) {
@@ -289,7 +294,7 @@ function draw() {
     return button;
   }));
   sheet();
-  const offered = (info && info.platforms) || [];
+  const offered = (via !== null && info && info.platforms) || [];
   $("via").hidden = offered.length < 2;
   $("platforms").replaceChildren(...offered.map(name => {
     const button = document.createElement("button");
@@ -305,8 +310,10 @@ function draw() {
 }
 
 async function load() {
+  const first = !info;
   info = await (await fetch("demo/people")).json();
   people = info.people;
+  if (first && (info.platforms || []).includes(via)) platform = via;
   chosen = chosen || (people[0] && people[0].key);
   draw();
 }

@@ -419,9 +419,11 @@ offered.
 
 Asked for to compare platforms with the same agent behind: Vapi, which also takes a
 "custom LLM" and asks it in the same form (`voice/vapi.py`, `voice/vapi_agent.py`).
-Switched on by two more settings on the server (`VAPI_API_KEY`, `VETDESK_VAPI_AGENT_ID`);
-with them the page offers the choice, and without them it shows nothing of it. Written
-and tried against the platform on 2026-10-09; **not heard by voice yet**.
+Switched on by two more settings on the server (`VAPI_API_KEY`, `VETDESK_VAPI_AGENT_ID`).
+With them the page offers the choice to whoever opens it with `?via` in its address
+(`?via=vapi` starts on the second platform), and to nobody else: the page was already
+being tried by people it had been sent to, who see it as it was. Written and tried
+against the platform on 2026-10-09; **not heard by voice yet**.
 
 - **What the platform is given** is a voice, a recogniser and our address. No prompt at
   all, no model of its own, nothing read from the call afterwards, and the voice is not

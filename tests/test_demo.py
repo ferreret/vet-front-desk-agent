@@ -439,6 +439,9 @@ def test_the_page_is_served_only_when_the_demo_is_set_up(clinic):
     # The second platform's library asks this server to start its call: no address of the
     # platform's is in the page for it, and no key.
     assert 'new URL("demo/vapi", location.href)' in PAGE and "api.vapi.ai" not in PAGE
+    # The choice of platform is for whoever opens the page asking for it.
+    assert 'new URLSearchParams(location.search).get("via")' in PAGE
+    assert "(via !== null && info && info.platforms) || []" in PAGE
     # The page names nobody: it is served from an address that is not the author's own.
     assert "Barceló" not in PAGE and "portfolio" not in PAGE.lower()
     assert "ayuda de IA" not in PAGE and "help of AI" not in PAGE  # nor how it was made
