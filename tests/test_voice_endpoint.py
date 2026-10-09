@@ -498,7 +498,7 @@ def test_the_second_platform_is_given_as_little_as_the_first(monkeypatch):
 
     monkeypatch.setenv("VETDESK_TTS_VOICE", "voice")
     monkeypatch.setenv("VETDESK_ENDPOINT_KEY", "the-platforms-key")
-    settings = config("https://example.test/")
+    settings = config("https://example.test/", "credential-1")
     model = settings["model"]
     assert (model["provider"], model["url"]) == ("custom-llm", "https://example.test/vapi")
     (prompt,) = model["messages"]
@@ -507,7 +507,9 @@ def test_the_second_platform_is_given_as_little_as_the_first(monkeypatch):
         "vetdesk-demo: {{demo_pass}}"]
     assert model["tools"] == [{"type": "endCall"}]
     assert ANNOUNCED in settings["firstMessage"]  # it says at once that it is not a person
-    (credential,) = settings["credentials"]
-    assert credential["apiKey"] == platform_key("the-platforms-key", "vapi")
-    assert "the-platforms-key" not in json.dumps(settings)  # ours is never handed over
+    # The key is kept at the platform and named by its id; no key travels with the
+    # assistant, ours least of all.
+    assert (settings["credentials"], settings["credentialIds"]) == ([], ["credential-1"])
+    assert "the-platforms-key" not in json.dumps(settings)
+    assert platform_key("the-platforms-key", "vapi") not in json.dumps(settings)
     assert settings["maxDurationSeconds"] == 200

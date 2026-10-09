@@ -26,6 +26,8 @@ from .endpoint import KEY_NAME, _load_env, platform_key
 
 API = "https://api.vapi.ai"
 VAPI_KEY, AGENT_ID = "VAPI_API_KEY", "VETDESK_VAPI_AGENT_ID"
+# The key our address asks of this platform, kept at the platform under an id of its own.
+CREDENTIAL_ID = "VETDESK_VAPI_CREDENTIAL_ID"
 # Which call a request belongs to, who is calling, and the pass of a call made from the
 # demo's page: the same three lines our address reads from the first platform.
 PROMPT = ("vetdesk-conversation: vapi-{{call.id}}\n"
@@ -49,8 +51,8 @@ def _call(method: str, path: str, body: dict | None = None) -> dict:
             from error
 
 
-def config(url: str) -> dict:
-    """The whole of what lives at Vapi."""
+def config(url: str, credential: str) -> dict:
+    """The whole of what lives at Vapi, but for the key: see `main`."""
     kb = load_kb()
     return {
         "name": f"{kb.clinic.name} demo (vetdesk)",
@@ -63,10 +65,10 @@ def config(url: str) -> dict:
             # To hang up: only the platform can put the phone down.
             "tools": [{"type": "endCall"}],
         },
-        # The key our address asks of this platform. Not our own: the platform shows it
-        # again to whoever can read the assistant (see `platform_key`).
-        "credentials": [{"provider": "custom-llm",
-                         "apiKey": platform_key(os.environ[KEY_NAME], "vapi")}],
+        # The key our address asks of this platform is kept at the platform and named
+        # here by its id. Handed over with the assistant instead, it was not the one the
+        # platform then sent: it sent another the account already held.
+        "credentials": [], "credentialIds": [credential],
         "voice": {"provider": "11labs", "voiceId": os.environ["VETDESK_TTS_VOICE"],
                   "model": os.environ.get("VETDESK_VAPI_TTS_MODEL", "eleven_turbo_v2_5")},
         # A recogniser that tells the language by itself: the clinic is on a tourist coast.
@@ -85,7 +87,14 @@ def main() -> None:
     for needed in (VAPI_KEY, "VETDESK_TTS_VOICE", KEY_NAME):
         if not os.environ.get(needed):
             raise SystemExit(f"{needed} is not set in .env")
-    settings = config(args.url)
+    # Not our own key: the platform shows what it holds to whoever can read it (see
+    # `platform_key`). Written again on every run, so that it follows ours when ours changes.
+    key = {"provider": "custom-llm", "apiKey": platform_key(os.environ[KEY_NAME], "vapi")}
+    if os.environ.get(CREDENTIAL_ID):
+        _call("PATCH", f"/credential/{os.environ[CREDENTIAL_ID]}", key)
+    else:
+        _remember(CREDENTIAL_ID, _call("POST", "/credential", {**key, "name": "vetdesk"})["id"])
+    settings = config(args.url, os.environ[CREDENTIAL_ID])
     # Never the address in what is printed: it is not for a log.
     if os.environ.get(AGENT_ID):
         assistant = _call("PATCH", f"/assistant/{os.environ[AGENT_ID]}", settings)
