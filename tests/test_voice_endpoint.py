@@ -516,3 +516,10 @@ def test_the_second_platform_is_given_as_little_as_the_first(monkeypatch):
     assert "the-platforms-key" not in json.dumps(settings)
     assert platform_key("the-platforms-key", "vapi") not in json.dumps(settings)
     assert settings["maxDurationSeconds"] == 200
+    # The same voice by the same model as on the first platform: it is the platforms
+    # that are compared.
+    from vetdesk.voice.elevenlabs_agent import config as first
+
+    spoken_by = first("https://example.test", "secret")["conversation_config"]["tts"]
+    assert settings["voice"] == {"provider": "11labs", "voiceId": spoken_by["voice_id"],
+                                 "model": spoken_by["model_id"]}

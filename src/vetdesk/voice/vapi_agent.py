@@ -53,8 +53,11 @@ def config(url: str, credential: str) -> dict:
         # here by its id. Handed over with the assistant instead, it was not the one the
         # platform then sent: it sent another the account already held.
         "credentials": [], "credentialIds": [credential],
+        # The first platform's voice and its model for it, so that what is compared is
+        # the platforms. With an older model the same voice was heard as a dry one, and
+        # the first call by this platform was hung up at the greeting.
         "voice": {"provider": "11labs", "voiceId": os.environ["VETDESK_TTS_VOICE"],
-                  "model": os.environ.get("VETDESK_VAPI_TTS_MODEL", "eleven_turbo_v2_5")},
+                  "model": os.environ.get("VETDESK_TTS_MODEL", "eleven_v4_turbo")},
         # A recogniser that tells the language by itself: the clinic is on a tourist coast.
         "transcriber": {"provider": "deepgram", "model": "nova-3", "language": "multi"},
         # The page tells a visitor that the voice is not recorded. The platform records
