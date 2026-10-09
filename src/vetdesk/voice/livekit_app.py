@@ -238,7 +238,12 @@ async def entrypoint(ctx: JobContext) -> None:
             # same for telling an interruption from a noise: both paid for, and neither
             # the one this was tried with.
             "turn_detection": inference.TurnDetector(version="v1-mini"),
-            "interruption": {"mode": "vad"},
+            # The agent stops for words, not for a sound. Left to stop at any half second
+            # of sound, it stood still in the middle of a long sentence, waited two
+            # seconds for words that did not come, and went on: heard on the first call
+            # from a browser with a real microphone as a line that hangs. The same
+            # sentence played into the same server with no microphone was said in one go.
+            "interruption": {"mode": "vad", "min_words": 2},
             # LiveKit can start on an answer before it is sure the caller has finished,
             # and throw it away if they go on. Our agent's turns have effects (a booking),
             # so an answer is only asked for once the turn is over.
