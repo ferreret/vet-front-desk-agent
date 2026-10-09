@@ -438,9 +438,10 @@ def test_the_platform_agent_can_be_told_to_change_language(monkeypatch):
     assert tools["end_call"]["force_pre_tool_speech"] is True
 
 
-def test_a_second_platform_is_looked_at_before_it_is_answered_for_real(clinic, kb):
-    """Vapi's route begins as a way of seeing what it sends. Nothing of a caller's is kept,
-    and no call by it reaches a model, an agenda or anybody's record."""
+def test_a_call_by_the_second_platform_that_we_did_not_start_is_closed(clinic, kb):
+    """Every call by Vapi is a call of the demo, and one our server did not start has no
+    pass: it reaches no model, agenda or record. Of what it sent the form is kept to be
+    looked at, and nothing of a caller's."""
     from vetdesk.voice.demo import NO_PASS
     from vetdesk.voice.endpoint import platform_key, shape
 
@@ -474,7 +475,8 @@ def test_a_second_platform_is_looked_at_before_it_is_answered_for_real(clinic, k
     # Its key is its own: ours does not open its route, and its does not open ours, where
     # real calls come. The platform shows the key it holds to whoever reads the assistant.
     assert ours == 401 and theirs == 401
-    assert _spoken(answered) == NO_PASS and model.transcript.user_messages == []
+    assert _tool_call(answered, after=NO_PASS)["name"] == "endCall"  # said, and hung up
+    assert model.transcript.user_messages == []
     assert [look["authorized"] for look in kept] == [False, False, True]
     assert kept[0]["authorization"]["length"] == 0  # none was sent
     assert kept[2]["authorization"] == {
@@ -501,11 +503,12 @@ def test_the_second_platform_is_given_as_little_as_the_first(monkeypatch):
     settings = config("https://example.test/", "credential-1")
     model = settings["model"]
     assert (model["provider"], model["url"]) == ("custom-llm", "https://example.test/vapi")
-    (prompt,) = model["messages"]
-    assert prompt["content"].splitlines() == [
-        "vetdesk-conversation: vapi-{{call.id}}", "vetdesk-caller: {{customer.number}}",
-        "vetdesk-demo: {{demo_pass}}"]
-    assert model["tools"] == [{"type": "endCall"}]
+    # No prompt at all: which call a request is for, the platform says by its id.
+    assert model["messages"] == [] and model["tools"] == [{"type": "endCall"}]
+    # The page tells a visitor the voice is not recorded, and no model of the platform's
+    # reads the call afterwards.
+    assert settings["artifactPlan"]["recordingEnabled"] is False
+    assert not any(plan["enabled"] for plan in settings["analysisPlan"].values())
     assert ANNOUNCED in settings["firstMessage"]  # it says at once that it is not a person
     # The key is kept at the platform and named by its id; no key travels with the
     # assistant, ours least of all.

@@ -3,10 +3,14 @@
 One file with no build step, served by the voice server itself. It asks the server who a
 visitor can call as and for a pass, and hands the call to the voice platform's own
 browser library. Everything it shows of a caller is made up by this project.
+
+When the server has a second voice platform set up, the page offers the choice: the same
+front desk, carried by one or by the other, to compare them. No key of either is in it.
 """
 
-# The voice platform's browser library, at the version this page was written against.
+# The voice platforms' browser libraries, at the versions this page was written against.
 SDK = "https://cdn.jsdelivr.net/npm/@elevenlabs/client@1.27.0/+esm"
+VAPI_SDK = "https://cdn.jsdelivr.net/npm/@vapi-ai/web@2.7.1/+esm"
 
 PAGE = """<!doctype html>
 <html lang="es">
@@ -41,6 +45,11 @@ PAGE = """<!doctype html>
  .person[aria-pressed=true]{border-color:var(--accent)}
  .person b{display:block}
  .person span{display:block;color:var(--soft);font-size:.9rem}
+ #via{margin-top:1rem}
+ #via span{color:var(--soft);margin-right:.5rem}
+ .via{background:var(--card);color:inherit;border:2px solid var(--line);border-radius:.6rem;
+   padding:.3rem .8rem;margin-right:.3rem}
+ .via[aria-pressed=true]{border-color:var(--accent)}
  #sheet{background:var(--card);border:1px solid var(--line);border-radius:.6rem;
    padding:.9rem 1rem;margin-top:.8rem}
  #sheet dl{display:grid;grid-template-columns:auto 1fr;gap:.15rem 1rem;margin:.4rem 0 0}
@@ -72,6 +81,7 @@ PAGE = """<!doctype html>
 <h2 data-t="who"></h2>
 <div id="people"></div>
 <div id="sheet" hidden></div>
+<p id="via" hidden><span data-t="via"></span><span id="platforms"></span></p>
 
 <p><button id="call" type="button" disabled></button><span id="state" role="status"></span></p>
 <p class="soft" id="left"></p>
@@ -96,7 +106,7 @@ const TEXT = {
       + "navegador: pide cita, pregunta un horario, o intenta que te cuente algo de otro cliente.",
   made_up: "Todo es inventado: la clínica, los clientes y sus animales. Elige quién eres; "
       + "el asistente no lo sabe, solo ve desde qué teléfono llamas.",
-  who: "Quién llama", said_title: "Lo que se dice",
+  who: "Quién llama", said_title: "Lo que se dice", via: "Vía de voz:",
   decided_title: "Lo que decidió el asistente",
   confirmed: name => `Te identificó como «${name}»`,
   by_phone: ", por tu nombre y por llamar desde el teléfono de esa ficha.",
@@ -142,7 +152,7 @@ const TEXT = {
       + "a visit, ask for the opening hours, or try to make it tell you about another client.",
   made_up: "Everything is made up: the clinic, its clients and their animals. Pick who you "
       + "are; the assistant does not know, it only sees which phone you call from.",
-  who: "Who is calling", said_title: "What is said",
+  who: "Who is calling", said_title: "What is said", via: "Voice platform:",
   decided_title: "What the assistant decided",
   confirmed: name => `It identified you as "${name}"`,
   by_phone: ", by your name and by the call coming from the phone on that record.",
@@ -185,11 +195,12 @@ const TEXT = {
  },
 };
 const ROLE = {own: "own", hidden: "hidden_role", borrowed: "borrowed", stranger: "stranger"};
+const PLATFORM = {elevenlabs: "ElevenLabs", vapi: "Vapi"};
 const $ = id => document.getElementById(id);
 const speaks = navigator.language || "es";
 let lang = speaks.startsWith("es") || speaks.startsWith("ca") ? "es" : "en";
 let people = [], chosen = null, conversation = null, timer = null, info = null;
-let pass = null, result = null;
+let pass = null, result = null, platform = "elevenlabs";
 const t = key => TEXT[lang][key];
 
 function state(text, warn = false) {
@@ -278,6 +289,16 @@ function draw() {
     return button;
   }));
   sheet();
+  const offered = (info && info.platforms) || [];
+  $("via").hidden = offered.length < 2;
+  $("platforms").replaceChildren(...offered.map(name => {
+    const button = document.createElement("button");
+    button.type = "button"; button.className = "via";
+    button.setAttribute("aria-pressed", name === platform);
+    button.textContent = PLATFORM[name] || name;
+    button.onclick = () => { if (!conversation) { platform = name; draw(); } };
+    return button;
+  }));
   if (info) $("left").textContent = t("left")(info.minutes_left, info.seconds_a_call);
   $("call").disabled = !chosen;
   decided();
@@ -299,6 +320,40 @@ function ended() {
   if (pass) ask_what_happened();
 }
 
+async function by_elevenlabs(given) {
+  const {Conversation} = await import("__SDK__");
+  return await Conversation.startSession({
+    signedUrl: given.signed_url,
+    dynamicVariables: {demo_pass: given.pass},
+    onMessage: ({message, role}) => line(role === "user" ? "you" : "agent", message),
+    onModeChange: ({mode}) => state(t(mode === "speaking" ? "speaking" : "listening")),
+    onDisconnect: ended,
+    onError: () => state(t("failed"), true),
+  });
+}
+
+async function by_vapi(given) {
+  const library = await import("__VAPI_SDK__");
+  const Vapi = library.default.default || library.default;
+  // The library is told to ask this server, not the platform, to start the call, and is
+  // given the pass where a key of the platform's would go: there is none in this page.
+  const vapi = new Vapi(given.pass, new URL("demo/vapi", location.href).href);
+  vapi.on("message", said => {
+    if (said.type === "transcript" && said.transcriptType === "final") {
+      line(said.role === "user" ? "you" : "agent", said.transcript);
+    }
+  });
+  // The call is over once, whoever ends it: the platform, the server or the button.
+  let over = false;
+  const end = () => { if (!over) { over = true; ended(); } };
+  vapi.on("speech-start", () => over || state(t("speaking")));
+  vapi.on("speech-end", () => over || state(t("listening")));
+  vapi.on("call-end", end);
+  vapi.on("error", () => state(t("failed"), true));
+  if (!await vapi.start("demo")) throw new Error("no call");
+  return over ? null : {endSession: async () => { await vapi.stop(); end(); }};
+}
+
 async function call() {
   if (conversation) { await conversation.endSession(); return; }
   $("call").disabled = true;
@@ -313,7 +368,8 @@ async function call() {
     } catch { state(t("no_mic"), true); return; }
     state(t("asking"));
     const answer = await fetch("demo/call", {method: "POST",
-      headers: {"Content-Type": "application/json"}, body: JSON.stringify({as: chosen})});
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({as: chosen, platform})});
     if (answer.status === 429) {
       state(t((await answer.json()).why === "address" ? "full_address" : "full_day"), true);
       return;
@@ -322,15 +378,8 @@ async function call() {
     const given = await answer.json();
     pass = given.pass;
     state(t("ringing"));
-    const {Conversation} = await import("__SDK__");
-    conversation = await Conversation.startSession({
-      signedUrl: given.signed_url,
-      dynamicVariables: {demo_pass: given.pass},
-      onMessage: ({message, role}) => line(role === "user" ? "you" : "agent", message),
-      onModeChange: ({mode}) => state(t(mode === "speaking" ? "speaking" : "listening")),
-      onDisconnect: ended,
-      onError: () => state(t("failed"), true),
-    });
+    conversation = await (platform === "vapi" ? by_vapi(given) : by_elevenlabs(given));
+    if (!conversation) return;  // over before it began: it has been said so already
     // The server closes the call when its time is up; this is for a page it cannot reach.
     timer = setTimeout(() => conversation && conversation.endSession(),
                        (given.seconds + 25) * 1000);
@@ -350,4 +399,4 @@ load().catch(() => state(t("failed"), true));
 </script>
 </body>
 </html>
-""".replace("__SDK__", SDK)
+""".replace("__SDK__", SDK).replace("__VAPI_SDK__", VAPI_SDK)

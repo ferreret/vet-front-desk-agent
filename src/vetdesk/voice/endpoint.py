@@ -87,6 +87,9 @@ from .demo_page import PAGE as DEMO_PAGE
 from .telegram import CHAT as TELEGRAM_CHAT
 from .telegram import TOKEN as TELEGRAM_TOKEN
 from .telegram import Telegram
+from .vapi import AGENT_ID as VAPI_AGENT
+from .vapi import END_TOOL as VAPI_END_TOOL
+from .vapi import FOR_THE_PAGE, VAPI_KEY, starter
 
 log = logging.getLogger("vetdesk.endpoint")
 
@@ -166,10 +169,17 @@ class Switchboard:
         """The call a pass of the public demo was used for, while it is remembered."""
         return self._demo_lines.get(token)
 
-    def line(self, messages: list[dict], can_transfer: bool = False) -> Line:
-        system = " \n".join(_text(m.get("content")) for m in messages if m.get("role") == "system")
+    def line(self, messages: list[dict], can_transfer: bool = False,
+             named: str | None = None, demo_pass: str = "") -> Line:
+        """`named` is for a platform that says which call a request is for outside what
+        is said (see `vapi`). Nothing is then read from the system text: the call is the
+        demo's, with `demo_pass` for its pass."""
+        system = "" if named else " \n".join(
+            _text(m.get("content")) for m in messages if m.get("role") == "system")
         found = _CONVERSATION.search(system)
-        if found and "{{" not in found.group(1):
+        if named:
+            conversation = named
+        elif found and "{{" not in found.group(1):
             conversation = found.group(1)
         else:
             # No id from the platform: the opening of a conversation never changes, so it
@@ -180,22 +190,23 @@ class Switchboard:
         now = self._clock()
         self._lines = {k: v for k, v in self._lines.items() if now - v[1] < IDLE_SECONDS}
         from_demo = _DEMO.search(system)
-        if conversation not in self._lines and from_demo:
+        token = demo_pass if named else from_demo.group(1) if from_demo else None
+        if conversation not in self._lines and token is not None:
             # The number is the one of whoever the visitor chose to call as. With no pass,
             # or one that is not good, the line exists only to be told so and closed.
-            given = self._demo.call(from_demo.group(1)) if self._demo else None
+            given = self._demo.call(token) if self._demo else None
             log.info("call %s from the demo, %s", conversation,
                      f"as '{given.persona.key}'" if given else "with no pass")
             line = Line(self._start_demo_call(given.persona if given else None), patience=None)
             line.listening_in, line.name = FIRST_LANGUAGE, conversation
-            line.demo = from_demo.group(1) if given else ""
+            line.demo = token if given else ""
             self._lines[conversation] = (line, now)
             if given:
                 going = {id(kept) for kept, _ in self._lines.values()}
                 self._demo_lines = {token: kept for token, kept in self._demo_lines.items()
                                     if id(kept) in going}
                 self._demo_lines[line.demo] = line
-        elif from_demo and self._demo and self._lines[conversation][0].demo:
+        elif token is not None and self._demo and self._lines[conversation][0].demo:
             self._demo.call(self._lines[conversation][0].demo)  # heard of again
         if conversation not in self._lines:
             caller = _CALLER.search(system)
@@ -359,14 +370,16 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
               tell: Callable[[Notice], None] | None = None,
               transfer_to: str = "", calls: CallLog | None = None,
               demo: Demo | None = None, sign: Callable[[], str] | None = None,
-              demo_page: str = "") -> web.Application:
+              demo_page: str = "",
+              vapi_call: Callable[[], dict] | None = None) -> web.Application:
     """`model` is the agent's own model, named only to put a price on each answer. With a
     `desk` whose information is in a file and an `admin_key`, that information can be read
     and replaced through the server. `tell` is how reception is told what happens on a
     call: see `notices`. `transfer_to` is the number a person answers at, to put calls
     through to. `calls` is where every call is written down, to be read back with the
     `admin_key`: see `call_log`. `demo` holds the public demo's passes, and `sign` asks
-    the voice platform for the address one browser call is made at: see `demo`."""
+    the voice platform for the address one browser call is made at: see `demo`.
+    `vapi_call` starts a browser call on the second platform: see `vapi`."""
     agent_model = model
     put_through: set[int] = set()  # the lines the platform has been told to put through
     waiting: set[asyncio.Future] = set()  # answers being worked out for a request to come
@@ -427,6 +440,11 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
             return web.json_response({"error": {"message": "expected chat messages"}},
                                      status=400)
         line = switchboard.line(messages, bool(transfer_to) and _offers(body, TRANSFER_TOOL))
+        return await converse(request, body, messages, line, END_TOOL)
+
+    async def converse(request: web.Request, body: dict, messages: list[dict], line: Line,
+                       end_tool: str) -> web.StreamResponse:
+        """Answer one request of a call. `end_tool` is the platform's name for hanging up."""
         said = [_text(m.get("content")) for m in messages if m.get("role") == "user"]
         if calls and line.on_taken_back is None:  # the first that is heard of this call
             # The greeting written down is the one the caller heard: the platform's own,
@@ -451,8 +469,8 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
             if calls:
                 calls.said(line.name, text, "demo_over" if line.demo else "demo_refused")
             await response.write(_chunk(request_id, model, {"role": "assistant", "content": ""}))
-            if _offers(body, END_TOOL) and messages[-1].get("role") != "tool":
-                return await use(response, request_id, model, END_TOOL, say=text,
+            if _offers(body, end_tool) and messages[-1].get("role") != "tool":
+                return await use(response, request_id, model, end_tool, say=text,
                                  reason="the demo call is over")
             await response.write(_chunk(request_id, model, {"content": text}))
             await response.write(_chunk(request_id, model, {}, "stop"))
@@ -498,7 +516,7 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                 # goodbye too, the platform is handed it to say and told to hang up.
                 asked = next((_text(m.get("content")) for m in reversed(messages[:-1])
                               if m.get("role") == "assistant"), "")
-                closing = _offers(body, END_TOOL) and not after_a_tool and (
+                closing = _offers(body, end_tool) and not after_a_tool and (
                     may_end(said[-1]) or says_no_more(asked, said[-1]))
                 session = line.call.session
                 done_before = len(session.events)  # to tell whether this turn did anything
@@ -545,7 +563,7 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                         calls.note(line.name, "hung_up")
                     # Ours to say too, before the tool: handed to the tool as its
                     # farewell, on a phone call it was not said and the line just closed.
-                    return await use(response, request_id, model, END_TOOL, say=text,
+                    return await use(response, request_id, model, end_tool, say=text,
                                      reason="the caller and the agent have said goodbye")
                 if closing:
                     await response.write(_chunk(request_id, model, {"content": text}))
@@ -645,16 +663,21 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                             "language": p.language, "appointment": starts_with(p)}
                            for p in demo.people.values()],
                 "minutes_left": int(demo.left().total_seconds() // 60),
-                "seconds_a_call": int(demo.limit.total_seconds())}
+                "seconds_a_call": int(demo.limit.total_seconds()),
+                # The voice platforms a call can be carried by, for the page to offer.
+                "platforms": ["elevenlabs"] + (["vapi"] if vapi_call else [])}
 
     async def demo_people(request: web.Request) -> web.Response:
         return web.json_response(people())
 
     async def demo_call(request: web.Request) -> web.Response:
         try:
-            wanted = str((await request.json())["as"])
-        except (ValueError, KeyError, TypeError):
+            asked = await request.json()
+            wanted, platform = str(asked["as"]), str(asked.get("platform") or "elevenlabs")
+        except (ValueError, KeyError, TypeError, AttributeError):
             return web.json_response({"error": "expected who to call as"}, status=400)
+        if platform not in ("elevenlabs", "vapi") or (platform == "vapi" and not vapi_call):
+            return web.json_response({"error": "no such voice platform"}, status=404)
         # Behind a proxy the visitor's address is the first it was forwarded for.
         address = (request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
                    or request.remote or "")
@@ -665,6 +688,11 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
         except Full as full:
             log.info("demo: no call given (%s)", full.why)
             return web.json_response({"error": "full", "why": full.why}, status=429)
+        if platform == "vapi":
+            # The call itself is started when the platform's browser library asks for it,
+            # with this pass: see `vapi_web_call`.
+            return web.json_response({"pass": token, "platform": platform,
+                                      "seconds": int(demo.limit.total_seconds())})
         try:
             address_to_call = await asyncio.to_thread(sign)
         except Exception as error:  # the platform would not: the minutes are given back
@@ -684,11 +712,36 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
     async def demo_view(request: web.Request) -> web.Response:
         return web.Response(text=demo_page, content_type="text/html")
 
-    # A second voice platform, Vapi, asked for to compare it with the first. Its route
-    # begins as a way of seeing what it sends: every call by it is answered as a call of
-    # the demo with no pass, so that it reaches no agenda and nobody's record, and the
-    # form of each request is kept (never its words) to be read with the clinic's key.
+    # A second voice platform, Vapi, asked for to compare it with the first. Every call
+    # by it is a call of the demo: one our server did not start has no pass, and is told
+    # so and closed. The form of its last requests is kept (never their words) to be read
+    # with the clinic's key: what it sends is not all in its documentation.
     seen: deque[dict] = deque(maxlen=8)
+    # The call Vapi started for each pass of the demo, by the id it gave it; None while
+    # it is being started. A pass starts one call.
+    vapi_calls: dict[str, str | None] = {}
+
+    async def vapi_web_call(request: web.Request) -> web.Response:
+        """Start the browser call a pass of the demo is for. Vapi's browser library is
+        told to ask here instead of Vapi, and sends the pass where its key would go."""
+        token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        if not token or demo.over(token) or token in vapi_calls:
+            return web.json_response({"error": "no pass for a call"}, status=401)
+        for old in [known for known in vapi_calls if demo.over(known)]:
+            del vapi_calls[old]
+        vapi_calls[token] = None
+        try:
+            started = await asyncio.to_thread(vapi_call)
+            vapi_calls[token] = str(started["id"])
+        except Exception as error:  # the platform would not: the minutes are given back
+            demo.forget(token)
+            del vapi_calls[token]
+            log.warning("demo: the second voice platform started no call (%s)",
+                        type(error).__name__)
+            return web.json_response({"error": "the voice platform is not answering"},
+                                     status=503)
+        return web.json_response({name: started[name] for name in FOR_THE_PAGE
+                                  if name in started}, status=201)
 
     async def vapi(request: web.Request) -> web.StreamResponse:
         given = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
@@ -708,16 +761,16 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                      "body": shape(body)})
         if not seen[-1]["authorized"]:
             return web.json_response({"error": {"message": "invalid key"}}, status=401)
-        request_id, name = "chatcmpl-" + secrets.token_hex(8), "vetdesk"
-        response = web.StreamResponse(headers={"Content-Type": "text/event-stream",
-                                               "Cache-Control": "no-cache"})
-        await response.prepare(request)
-        await response.write(_chunk(request_id, name, {"role": "assistant", "content": ""}))
-        await response.write(_chunk(request_id, name, {"content": NO_PASS}))
-        await response.write(_chunk(request_id, name, {}, "stop"))
-        await response.write(b"data: [DONE]\n\n")
-        await response.write_eof()
-        return response
+        try:
+            messages, call = list(body["messages"]), str(body["call"]["id"])
+        except (KeyError, TypeError):
+            return web.json_response({"error": {"message": "expected chat messages and "
+                                                           "the call they are for"}}, status=400)
+        # Which call this is, and so whose pass it has, is told by the id Vapi gave the
+        # call when our server started it. Nothing in what is said is believed about it.
+        token = next((known for known, started in vapi_calls.items() if started == call), "")
+        line = switchboard.line(messages, named="vapi-" + call, demo_pass=token)
+        return await converse(request, body, messages, line, VAPI_END_TOOL)
 
     async def vapi_seen(request: web.Request) -> web.Response:
         if not may_edit(request):
@@ -731,6 +784,8 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
     if demo is not None and sign is not None:
         app.router.add_get("/demo/people", demo_people)
         app.router.add_post("/demo/call", demo_call)
+        if vapi_call:
+            app.router.add_post("/demo/vapi/call/web", vapi_web_call)
         app.router.add_get("/demo/result", demo_result)
         if demo_page:
             app.router.add_get("/demo", demo_view)
@@ -796,6 +851,14 @@ def _demo(data: Path, clinic) -> tuple[Demo | None, Callable[[], str] | None]:
     log.info("the public demo is on: %d callers to call as, %.0f minutes a day",
              len(demo.people), demo.left().total_seconds() / 60)
     return demo, sign
+
+
+def _vapi() -> Callable[[], dict] | None:
+    """How a demo call is started on the second voice platform, when it is set up."""
+    key, agent = os.environ.get(VAPI_KEY), os.environ.get(VAPI_AGENT)
+    log.info("the demo %s", "can also be carried by the second voice platform" if key and agent
+             else f"has one voice platform: the second needs {VAPI_KEY} and {VAPI_AGENT}")
+    return starter(key, agent) if key and agent else None
 
 
 def _agenda(kb, clinic):
@@ -875,7 +938,8 @@ def main() -> None:
              else "not written down: no file is set for them")
     app = build_app(switchboard, key, getattr(llm, "model", ""), desk,
                     os.environ.get(ADMIN_KEY, ""), reception.send if reception else None,
-                    numbers[0] if numbers else "", calls, demo, sign, DEMO_PAGE)
+                    numbers[0] if numbers else "", calls, demo, sign, DEMO_PAGE,
+                    _vapi() if demo is not None else None)
     print(f"The front desk answers at http://{args.host}:{args.port}/v1/chat/completions")
     web.run_app(app, host=args.host, port=args.port, print=None)
 

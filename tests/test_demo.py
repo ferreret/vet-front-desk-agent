@@ -158,7 +158,8 @@ def _spoken(stream):
             [call["function"]["name"] for delta in deltas for call in delta.get("tool_calls", [])])
 
 
-def _front_desk(clinic, steps, demo, sign=lambda: "wss://voice.example/one-call", told=None):
+def _front_desk(clinic, steps, demo, sign=lambda: "wss://voice.example/one-call", told=None,
+                vapi_call=None):
     kb = load_kb()
     real = SqliteAgenda(kb, lambda: NOW)
     model = ScriptedClient(list(steps))
@@ -174,7 +175,8 @@ def _front_desk(clinic, steps, demo, sign=lambda: "wss://voice.example/one-call"
         FrontDeskAgent(model, clinic, kb, real, lambda: NOW).start_call, demo=demo,
         start_demo_call=start_demo_call)
     app = build_app(switchboard, KEY, demo=demo, sign=sign,
-                    tell=told.append if told is not None else None, demo_page="<p>demo</p>")
+                    tell=told.append if told is not None else None, demo_page="<p>demo</p>",
+                    vapi_call=vapi_call)
     return app, real, numbers
 
 
@@ -259,6 +261,148 @@ def test_a_demo_call_that_has_run_its_time_is_said_goodbye_to_and_closed(clinic)
     assert _spoken(late[1]) == (TIME_IS_UP["es"], ["end_call"])
 
 
+# --- the same demo, carried by a second voice platform --------------------------------------
+
+VAPI_HANG_UP = [{"type": "function", "function": {"name": "endCall"}}]
+
+
+def _vapi_chat(call, *said):
+    """A request as Vapi sends it: the conversation, and the call it is for by its id."""
+    from vetdesk.voice.endpoint import platform_key
+
+    messages = [{"role": "assistant", "content": "Clínica veterinaria Planeta Animal."}]
+    for index, text in enumerate(said):
+        if index:
+            messages.append({"role": "assistant", "content": "(heard)"})
+        messages.append({"role": "user", "content": text})
+    return ("/vapi/chat/completions",
+            {"model": "vetdesk", "stream": True, "messages": messages, "tools": VAPI_HANG_UP,
+             "call": {"id": call, "type": "webCall"}}, platform_key(KEY, "vapi"))
+
+
+def test_a_call_by_the_second_platform_is_started_by_our_server_with_the_pass(clinic):
+    """The platform starts a browser call for whoever holds a key meant to sit in the
+    page. The page is given none: its library asks our server, with the pass, and our
+    server starts the call and remembers which pass the call it was given is for."""
+    started = []
+
+    def vapi_call():
+        started.append(f"call-{len(started) + 1}")
+        return {"id": started[-1], "webCallUrl": "https://rooms.example/one",
+                "transport": {"provider": "daily"}, "orgId": "the-account",
+                "monitor": {"controlUrl": "https://steer.example/one"}}
+
+    demo = Demo([MARTA, NOBODY], Clock(), minutes_a_day=9, minutes_a_call=3)
+    app, real, numbers = _front_desk(clinic, [Reply("Dígame, Marta.")], demo,
+                                     vapi_call=vapi_call)
+    token = demo.start("own", "a")
+    (asked, other, no_pass, made_up, call, again, answer, stray), people = _post(
+        app, ("/demo/call", {"as": "hidden", "platform": "vapi"}, None),
+        ("/demo/call", {"as": "own", "platform": "another"}, None),
+        ("/demo/vapi/call/web", {"assistantId": "demo"}, None),
+        ("/demo/vapi/call/web", {"assistantId": "demo"}, "made-up"),
+        ("/demo/vapi/call/web", {"assistantId": "demo"}, token),
+        ("/demo/vapi/call/web", {"assistantId": "demo"}, token),  # a pass starts one call
+        _vapi_chat("call-1", "Hola, soy Marta Soler."),
+        _vapi_chat("call-9", "Hola, soy Marta Soler."))  # a call our server did not start
+    # The page is given a pass and no address: the call is not started until the
+    # platform's library asks for it.
+    given = json.loads(asked[1])
+    assert asked[0] == 200 and set(given) == {"pass", "platform", "seconds"}
+    assert demo.call(given["pass"]).persona is NOBODY
+    assert other[0] == 404 and no_pass[0] == 401 and made_up[0] == 401
+    assert json.loads(people[1])["platforms"] == ["elevenlabs", "vapi"]
+    # The page is handed what its library needs to join, and nothing else of the call.
+    assert call[0] == 201 and json.loads(call[1]) == {
+        "id": "call-1", "webCallUrl": "https://rooms.example/one",
+        "transport": {"provider": "daily"}}
+    assert again[0] == 401 and started == ["call-1"]
+    # The call is taken as from the phone of whoever the visitor chose to call as.
+    assert _spoken(answer[1]) == ("Dígame, Marta.", []) and numbers[0] == "+34600111222"
+    assert _spoken(stray[1]) == (NO_PASS, ["endCall"]) and numbers[1:] == [None]
+    assert real.all() == []
+
+
+def test_the_second_platform_is_told_to_hang_up_by_its_own_tools_name(clinic):
+    clock = Clock()
+    demo = Demo([MARTA], clock, minutes_a_call=3)
+    app, _, _ = _front_desk(
+        clinic, [Reply("Abrimos a las nueve y media."), Reply("De nada. ¡Que vaya muy bien!")],
+        demo, vapi_call=lambda: {"id": "call-1", "webCallUrl": "https://rooms.example/one"})
+    token = demo.start("own", "a")
+
+    def three_minutes_on():
+        clock.now += timedelta(minutes=3)
+
+    (_, first, bye, late), _ = _post(
+        app, ("/demo/vapi/call/web", {}, token), _vapi_chat("call-1", "¿A qué hora abrís?"),
+        _vapi_chat("call-1", "¿A qué hora abrís?", "No, eso es todo. Gracias."),
+        three_minutes_on,
+        _vapi_chat("call-1", "¿A qué hora abrís?", "No, eso es todo. Gracias.", "¿Oiga?"))
+    assert _spoken(first[1]) == ("Abrimos a las nueve y media.", [])
+    assert _spoken(bye[1]) == ("De nada. ¡Que vaya muy bien!", ["endCall"])
+    assert _spoken(late[1]) == (TIME_IS_UP["es"], ["endCall"])
+
+
+def test_when_the_second_platform_starts_no_call_the_minutes_are_given_back(clinic):
+    def vapi_call():
+        raise OSError("no")
+
+    demo = Demo([MARTA], Clock(), minutes_a_day=3, minutes_a_call=3)
+    app, _, _ = _front_desk(clinic, [], demo, vapi_call=vapi_call)
+    token = demo.start("own", "a")
+    (refused,), _ = _post(app, ("/demo/vapi/call/web", {}, token))
+    assert refused[0] == 503 and demo.left() == timedelta(minutes=3)
+    # With no second platform set up, the page is offered one and the route is not there.
+    off, _, _ = _front_desk(clinic, [], Demo([MARTA], Clock()))
+    (asked, call), people = _post(off, ("/demo/call", {"as": "own", "platform": "vapi"}, None),
+                                  ("/demo/vapi/call/web", {}, "a-pass"))
+    assert asked[0] == 404 and call[0] == 404
+    assert json.loads(people[1])["platforms"] == ["elevenlabs"]
+
+
+def test_a_permit_to_start_a_call_is_good_for_a_minute_and_for_our_assistant_only():
+    """Vapi starts no browser call with the account's private key, and the key that does
+    is meant for a page. What our server uses instead is a token signed with the private
+    key, which never leaves it."""
+    import base64
+    import hashlib
+    import hmac
+
+    from vetdesk.voice.vapi import permit, starter
+
+    token = permit("the-private-key", "the-account", "our-assistant", now=lambda: 1000.0)
+    head, claims, mark = token.split(".")
+
+    def read(part):
+        return json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
+
+    assert read(head) == {"alg": "HS256", "typ": "JWT"}
+    assert read(claims) == {
+        "orgId": "the-account", "iat": 1000, "exp": 1060,
+        "token": {"tag": "public", "restrictions": {
+            "enabled": True, "allowedAssistantIds": ["our-assistant"],
+            "allowTransientAssistant": False}}}
+    signed = hmac.new(b"the-private-key", f"{head}.{claims}".encode(), hashlib.sha256).digest()
+    assert base64.urlsafe_b64decode(mark + "=" * (-len(mark) % 4)) == signed
+    assert "the-private-key" not in token
+
+    asked = []
+
+    def ask(method, path, key, body=None, timeout=30):
+        asked.append((method, path, key, body))
+        return {"orgId": "the-account"} if method == "GET" else {"id": "call-1"}
+
+    start = starter("the-private-key", "our-assistant", ask)
+    assert start() == {"id": "call-1"} and start() == {"id": "call-1"}
+    # Whose the assistant is, asked once and with the private key; each call, with a
+    # permit and never with that key.
+    assert [(method, path) for method, path, _, _ in asked] == [
+        ("GET", "/assistant/our-assistant"), ("POST", "/call/web"), ("POST", "/call/web")]
+    assert asked[0][2] == "the-private-key" and asked[1][2].count(".") == 2
+    assert asked[1][3] == {"assistantId": "our-assistant"}
+
+
 # --- the demo's own agent on the voice platform ---------------------------------------------
 
 def test_the_demos_agent_needs_a_pass_has_limits_and_nobody_to_put_a_call_through_to(monkeypatch):
@@ -287,10 +431,14 @@ def test_the_demos_agent_needs_a_pass_has_limits_and_nobody_to_put_a_call_throug
 
 
 def test_the_page_is_served_only_when_the_demo_is_set_up(clinic):
-    from vetdesk.voice.demo_page import PAGE, SDK
+    from vetdesk.voice.demo_page import PAGE, SDK, VAPI_SDK
 
     assert "@elevenlabs/client@1." in SDK and SDK in PAGE  # a version somebody saw work
+    assert "@vapi-ai/web@2." in VAPI_SDK and VAPI_SDK in PAGE
     assert 'fetch("demo/call"' in PAGE and "demo_pass" in PAGE
+    # The second platform's library asks this server to start its call: no address of the
+    # platform's is in the page for it, and no key.
+    assert 'new URL("demo/vapi", location.href)' in PAGE and "api.vapi.ai" not in PAGE
     # The page names nobody: it is served from an address that is not the author's own.
     assert "Barceló" not in PAGE and "portfolio" not in PAGE.lower()
     assert "ayuda de IA" not in PAGE and "help of AI" not in PAGE  # nor how it was made

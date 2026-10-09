@@ -415,6 +415,40 @@ the agent asked them to spell their name, twice. Each caller the page offers is 
 of the identity resolver first, and only one who is taken the way the page says is
 offered.
 
+### The same demo by a second voice platform
+
+Asked for to compare platforms with the same agent behind: Vapi, which also takes a
+"custom LLM" and asks it in the same form (`voice/vapi.py`, `voice/vapi_agent.py`).
+Switched on by two more settings on the server (`VAPI_API_KEY`, `VETDESK_VAPI_AGENT_ID`);
+with them the page offers the choice, and without them it shows nothing of it. Written
+and tried against the platform on 2026-10-09; **not heard by voice yet**.
+
+- **What the platform is given** is a voice, a recogniser and our address. No prompt at
+  all, no model of its own, nothing read from the call afterwards, and the voice is not
+  recorded (it is unless told not to).
+- **A key of its own for our address.** Vapi hands back, to whoever can read the
+  assistant, the key it holds for our server. So it holds one made from ours that opens
+  its route only (`platform_key`), kept at the platform as a credential and named by its
+  id: handed over with the assistant, it was not the key the platform then sent.
+- **No key of the platform's in the page.** Vapi starts a browser call for whoever holds
+  a "public" key, meant to sit in the page for anybody to read. The page holds none. Its
+  library is told to ask our server, with the pass of the demo where the key would go,
+  and our server starts the call with a token signed with the account's private key,
+  good for a minute and for that one assistant. The private key alone starts no browser
+  call: the platform refuses it.
+- **Which call is which is not believed from the browser.** Our server started the call,
+  so it knows the id Vapi gave it, and every request Vapi sends carries that id: that is
+  what ties a request to its pass. A call of the assistant that our server did not start
+  has no pass, and is told so and closed with no model asked. The variables of a prompt
+  were the first idea, as on the first platform, and did not come filled in.
+- **Hanging up** is the platform's tool under its own name (`endCall`); the rest of the
+  conversation is the same code for both platforms.
+
+What is known to differ before any call: Vapi's recogniser is set to tell the language by
+itself, where on the first platform our server says which language to listen in (how it
+hears Catalan is among the first things to listen for); and a call started and never
+joined costs a third of a cent and ends by itself.
+
 ## Two ways to carry the voice
 
 The first call with a microphone made one thing plain: the hard part of a voice line is
