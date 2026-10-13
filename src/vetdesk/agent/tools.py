@@ -146,6 +146,22 @@ ALREADY_BOOKED = (
     "book it again. A second visit for the same animal is not booked on the same call: if "
     "they want both, take a message for reception with take_message."
 )
+# What kind of animal it is, in the languages the agent speaks: never what it is called.
+# Asked "¿Qué animal es?", a caller who says little answered "Un perro", and the
+# appointment went into the agenda for an animal called "Perro", linked to none on the
+# client's record.
+KINDS_OF_ANIMAL = frozenset(fold_any(word) for word in """
+    animal mascota perro perra perrito perrita cachorro gato gata gatito gatita conejo
+    gos gossa gosset gat gatet conill pet dog puppy cat kitten rabbit tier haustier hund
+    katze kaninchen chien chienne chat chatte lapin animale cane gatto gatta coniglio
+    питомец животное собака пёс кошка кот кролик""".split())
+_ARTICLES = frozenset(fold_any(word) for word in
+                      "un una el la mi mon ma el meu la meva a my the ein eine mein meine "
+                      "le un une mon ma il un una mio mia мой моя".split())
+NO_NAME = (
+    "'{pet}' is what kind of animal it is, not what it is called. Ask the caller for the "
+    "animal's name, and book once they have said it."
+)
 NO_REASON = (
     "The caller has not said what the visit is for: nothing in '{reason}' is in their own "
     "words. Do not make a reason up. If they did tell you, call again with what they said, "
@@ -660,6 +676,8 @@ class Toolbox:
                 names = [a.name for a in self.clinic.animals_of(client.code)]
                 grade, matched = pet_grade(pet_name, names, verified=False)
                 known = matched if grade >= SOUNDS_SAME else None
+                if known is None:
+                    self._named(pet_name)
                 animal = next(
                     (a for a in self.clinic.animals_of(client.code) if a.name == known), None
                 )
@@ -668,6 +686,7 @@ class Toolbox:
                     client_code=client.code, animal_code=animal.code if animal else None,
                 )
             else:
+                self._named(pet_name)
                 if not contact_name or not contact_phone:
                     raise ToolError(
                         "This caller is not confirmed: contact_name and contact_phone are "
@@ -696,6 +715,13 @@ class Toolbox:
         return {"appointment_id": appointment.appointment_id,
                 **_when(appointment.start, self.session.language),
                 "pet_name": appointment.pet_name, "reason": appointment.reason}
+
+    @staticmethod
+    def _named(pet_name: str) -> None:
+        """Refuse a kind of animal given as an animal's name: see `KINDS_OF_ANIMAL`."""
+        words = [word for word in fold_any(pet_name).split() if word not in _ARTICLES]
+        if words and set(words) <= KINDS_OF_ANIMAL:
+            raise ToolError(NO_NAME.format(pet=pet_name))
 
     def _reason_given(self, reason: str, pet_name: str) -> None:
         """Refuse a reason for the visit that the caller never gave.

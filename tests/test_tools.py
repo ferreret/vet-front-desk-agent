@@ -831,6 +831,20 @@ def test_bad_calls_are_answered_not_raised(clinic, kb):
 
 
 
+def test_a_kind_of_animal_is_not_an_animals_name(clinic, kb):
+    """Played by a caller who says little: asked "¿Qué animal es?", they said "Un perro",
+    and the appointment was booked for an animal called "Perro"."""
+    booking = {"start": SLOT, "reason": "vacuna", "contact_name": "Pere Garriga",
+               "contact_phone": "973 664 209"}
+    for kind in ("Perro", "Un perro", "el meu gos", "Katze", "my dog", "кошка"):
+        refused, failed = _call(_toolbox(clinic, kb), "book_appointment", **booking,
+                                pet_name=kind)
+        assert failed and "not what it is called" in refused["error"], kind
+    for name in ("Toby", "Gata Negra", "Perla"):
+        assert not _call(_toolbox(clinic, kb), "book_appointment", **booking,
+                         pet_name=name)[1], name
+
+
 def test_a_reason_the_caller_never_gave_is_not_booked(clinic, kb):
     """Heard on a call: asked what the visit was for, the caller corrected the kind of
     animal, and the booking went into the agenda with a reason of the model's own."""
