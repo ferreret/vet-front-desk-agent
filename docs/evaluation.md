@@ -405,7 +405,66 @@ Spanish where its brief said Catalan; the Catalan sentence was checked by hand).
 Eight calls in a language are few. They show that the language holds and that nothing
 unsafe happens; they do not show that the German is good German.
 
+### A call that opens with a symptom (2026-10-13)
+
+The first person from outside the project to phone the number said "I have a problem with
+my cat", was asked what was wrong, and on "it trembles and stares at me" was given the
+emergency number. His verdict: sent to the emergency line for little, and otherwise asked
+for a phone so that reception could call back, with "little screening in between". No
+scenario opened that way, so six were written (`symptom.routine`, `symptom.urgent`), and
+two things are now read in code: the emergency number given to a caller with nothing
+urgent, and a caller who has only described a symptom being asked who they are with no
+word of an appointment.
+
+**Before any change**, 34 calls (both kinds of caller): every outcome was right, an
+appointment or the emergency number, and in 17 of 17 the answer to the symptom was the bare
+question "your name and both surnames, please?". The outcome was never the problem; the
+caller was not told where the call was going.
+
+**The fix was a sentence of instructions, and its first two wordings were wrong.**
+
+| Wording | What it did |
+|---|---|
+| "When it is not an emergency, say a vet should see the animal and that you will give them an appointment" | Offered the appointment to "I have a problem with my cat" before asking what was wrong: 8 of 8 |
+| The same, "once they have told you what is happening, and never before" | Asked first again. But the caller's own sentence, the trembling cat, moved sides unasked: with the clinic closed, emergency in 8 of 8 before and **an appointment in 11 of 12** after; with it open, emergency in 10 of 12 |
+| The same, with "an emergency, which it also is whenever you cannot tell, whether the clinic is open or closed" | Trembling: emergency 24 of 24. Chocolate eaten: 12 of 12. An itching ear, a slight limp: an appointment 24 of 24, said as one |
+
+The second row is the one to remember. Telling a model what to do when something is *not*
+an emergency also tells it where the line is, and it drew its own, by the opening hours.
+Nobody had decided that. Where the line belongs is the clinic's decision and is still open;
+this wording only puts it back where it was.
+
+What stays the model's to decide, and is not stable: "two days without eating and very
+listless" went to the emergency number in 4 of 12 before and 1 of 12 after.
+
+**After**, the same 36 calls: no word of an appointment in 0 of 17, emergency number given
+17 of 17 when wanted and 0 of 16 when not. All 88 scenarios with forthcoming callers and 25
+with terse ones, no judge: 0 false identifications, 0 failures with terse callers and 2
+with forthcoming ones, neither from this change (a phone number dictated in Catalan number
+words that the model could not put into figures, and a caller who hung up while being
+asked for a number). In 912 answers the new "say it again" was never said to a sentence
+that made sense.
+
+Two more things came out of it:
+
+- **A sentence the recogniser garbled is not a question without an answer.** On the call,
+  "¿en festivos también?" arrived as "¿en prestigios también?" and got "I do not have that
+  information, shall I take a message?"; the "yes" that began the caller's next sentence
+  was then taken for a yes to the message. The answer was in the clinic's information all
+  along: asked clearly, 8 of 8. The agent is now told to say it did not catch it: 8 of 8.
+- **A kind of animal is not its name.** Asked "¿Qué animal es?", a terse caller said "Un
+  perro" and the appointment was booked for an animal called "Perro", linked to none on the
+  record. The booking tool now refuses it.
+
+The simulated caller is itself a model and failed in its own ways: in five Catalan
+scenarios it spoke Spanish throughout (the agent followed it, and the count of "answers in
+the wrong language" is the caller's, 22 of 23), and in two calls it produced text that was
+no part of any conversation. Those calls are not scored.
+
 ### What is open
+
+- **Where an emergency begins.** Decided by the model today, call by call. To be the
+  clinic's: a list in its validated file, with a scenario for what lies in between.
 
 - **Somebody who speaks them to read German, French, Italian and Russian.**
 - **English with a judge, and over all 82 scenarios.** And scenarios of its own: a
