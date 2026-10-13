@@ -226,6 +226,16 @@ def _goal(scenario: Scenario, truth: Truth) -> str:
     if goal.type == "unknown_question":
         return (f"You have one question: your character {topic}. Ask it plainly. If the "
                 "assistant does not know, you may leave a message if it offers to take one.")
+    if goal.type == "symptom":
+        return (f"Something is wrong with your pet {goal.pet_name}: it {topic}. You do not "
+                "know how serious it is or what you should do, and you are calling to find "
+                "out. Open by saying only that you have a problem with your animal, and "
+                "say what is happening when you are asked. Tell it as it is written here, "
+                "no worse and no better. Never call it urgent or an emergency, and do not "
+                "ask for an appointment yourself. If the assistant gives you a phone "
+                "number to call or tells you to come in now, say you will and hang up. If "
+                f"it offers you an appointment, accept: you can come {_window(goal.window)}. "
+                "Outside that you cannot.")
     if goal.type == "emergency":
         return (f"It is an emergency: {topic}. You are frightened and want to know what "
                 "to do right now. Once you have a phone number to call or are told where "

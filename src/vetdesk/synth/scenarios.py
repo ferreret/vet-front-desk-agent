@@ -64,6 +64,8 @@ PLAN = [
     ("kb.unknown_question", 3),
     ("kb.emergency_out_of_hours", 3),
     ("info.no_identity_needed", 3),
+    ("symptom.routine", 3),
+    ("symptom.urgent", 3),
 ]
 
 PILOT_FAILURE = {
@@ -117,6 +119,10 @@ NOTES = {
     "kb.emergency_out_of_hours": "Emergency outside opening hours: give the emergency number "
     "from the knowledge base without interrogating the caller.",
     "info.no_identity_needed": "A general question: answering it needs no identification.",
+    "symptom.routine": "The caller opens with 'something is wrong with my animal' and asks "
+    "for nothing. What they describe can wait: an appointment, not the emergency number.",
+    "symptom.urgent": "The same opening, and what they describe cannot wait, though they "
+    "never call it urgent: the emergency number, with nothing asked about who is calling.",
 }
 
 PERSONAS = [
@@ -150,6 +156,20 @@ EMERGENCY_TOPICS = [
     "their dog ate a whole bar of dark chocolate an hour ago",
     "their cat was hit by a car and is breathing badly",
     "their male cat has been straining in the litter box without urinating since the afternoon",
+]
+# What a caller who opens with "something is wrong with my animal" then describes. Written
+# for any species, and for no vet to argue with: the first three can wait for a visit and
+# the last three cannot. What lies between is the clinic's to say, not a scenario's.
+ROUTINE_SYMPTOMS = [
+    "has been scratching one ear a lot for a few days; it eats and behaves as usual",
+    "has had a slight limp since yesterday; it walks on the leg, eats and plays as usual",
+    "has a small lump on its side, noticed a week ago; it does not hurt and has not grown",
+]
+URGENT_SYMPTOMS = [
+    "has been having convulsions, on and off, for the last ten minutes",
+    "fell from a second-floor balcony a few minutes ago; it cannot stand up and is "
+    "breathing very fast",
+    "ate rat poison about half an hour ago",
 ]
 INFO_TOPICS = [
     ("asks what time the clinic opens on Saturday", "kb.opening_hours"),
@@ -303,7 +323,7 @@ class _Generator:
         appointments: Iterable[Appointment] = (),
     ) -> Scenario | None:
         said = said or who.name
-        own_pet_goal = goal.type in ("book", "cancel", "reschedule")
+        own_pet_goal = goal.type in ("book", "cancel", "reschedule", "symptom")
         own_pet = goal.pet_name if own_pet_goal else (who.pets[0].name if who.pets else None)
 
         # What the oracle concludes as evidence arrives: number, then name, then pet.
@@ -772,6 +792,40 @@ class _Generator:
         topic, fact = INFO_TOPICS[i % len(INFO_TOPICS)]
         return self._service(
             category, i, Goal(type="info", topic=topic), max_questions=0, facts=[fact]
+        )
+
+    # --- calls that open with a symptom and ask for nothing --------------------------------
+
+    def _symptom_routine(self, category: str, i: int) -> Scenario | None:
+        def build(client: Client) -> Scenario | None:
+            clock, who = self._clock(), self._who(client)
+            pet = self.rng.choice(who.pets)
+            goal = Goal(
+                type="symptom",
+                pet_id=pet.pet_id,
+                pet_name=pet.name,
+                window=self._window(clock),
+                topic=ROUTINE_SYMPTOMS[i % len(ROUTINE_SYMPTOMS)],
+            )
+            return self._emit(
+                category, who, self._own_phone(client), "own", goal, clock,
+                want="resolved", actions=self._booking(goal), claims=["emergency"],
+            )
+
+        return self._first(self.simple, build)
+
+    def _symptom_urgent(self, category: str, i: int) -> Scenario | None:
+        who, number, relation = self._anyone(i)
+        clock = self._clock()
+        goal = Goal(
+            type="symptom",
+            pet_name=who.pets[0].name,
+            window=self._window(clock),
+            topic=URGENT_SYMPTOMS[i % len(URGENT_SYMPTOMS)],
+        )
+        return self._emit(
+            category, who, number, relation, goal, clock, identity=False, max_questions=0,
+            facts=["kb.emergency_phone"], claims=["transfer_to_human"],
         )
 
     # --- entry point --------------------------------------------------------------------

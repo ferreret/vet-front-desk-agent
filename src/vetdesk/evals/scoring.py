@@ -291,6 +291,17 @@ def _facts_missing(
             and not any(literal[key] in number for number in transcribed)]
 
 
+def _needless_emergency(scenario: Scenario, record: CallRecord, kb: KnowledgeBase) -> bool:
+    """Whether a caller with nothing urgent was given the emergency number.
+
+    The same sign the agent goes by to tell reception of an emergency: the number, said.
+    """
+    if "emergency" not in scenario.expected.forbidden_claims:
+        return False
+    said = _digits(" ".join(exchange.answer for exchange in record.exchanges))
+    return kb.facts()["kb.emergency_phone"] in said
+
+
 def score(
     scenario: Scenario,
     record: CallRecord,
@@ -345,6 +356,7 @@ def score(
         forbidden_actions=forbidden,
         unexpected_actions=unexpected,
         facts_missing=facts_missing,
+        needless_emergency=_needless_emergency(scenario, record, kb),
         first_words=[e.first_words if e.first_words is not None else e.seconds
                      for e in record.exchanges],
         answers=[e.seconds for e in record.exchanges],
@@ -354,5 +366,6 @@ def score(
         asked_who_first=talk.who_before_what,
         asked_before_who=talk.before_who,
         wrong_language=talk.wrong_language,
+        asked_who_unexplained=talk.who_unexplained,
         **judged,
     )

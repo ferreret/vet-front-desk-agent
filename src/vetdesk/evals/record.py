@@ -145,17 +145,22 @@ class Verdict(_Model):
     forbidden_actions: list[str]
     unexpected_actions: list[str]
     facts_missing: list[str]
+    # The emergency number said to a caller whose scenario has nothing urgent in it.
+    needless_emergency: bool = False
     first_words: list[float]
     answers: list[float]
     words: list[int]  # length of each answer: on the phone every word takes time
     formatted: int  # answers with line breaks or list marks, which a voice cannot say
     # How it talked, read from its words by `manners`: turns that asked for several things,
     # whether a bare hello was answered by asking who was calling, what was asked about the
-    # visit before asking who was calling, and turns in the wrong language.
+    # visit before asking who was calling, turns in the wrong language, and whether a
+    # caller who had only described a symptom was asked who they were with no word of an
+    # appointment.
     asked_several: list[int] = []
     asked_who_first: bool | None = None
     asked_before_who: list[str] | None = None
     wrong_language: list[int] = []
+    asked_who_unexplained: bool | None = None
     # Read by the judge; None when the call was not judged.
     identity_questions: int | None = None
     over_asked: bool | None = None
@@ -176,6 +181,8 @@ class Verdict(_Model):
         if self.action in ("wrong", "missing"):
             found.append(f"task {self.action}: {'; '.join(self.action_notes)}")
         found += [f"did not say: {fact}" for fact in self.facts_missing]
+        if self.needless_emergency:
+            found.append("sent to the emergency number a caller with nothing urgent")
         found += self.forbidden_claims + self.said_wrong
         return found
 

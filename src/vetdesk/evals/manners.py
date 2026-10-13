@@ -71,6 +71,12 @@ ABOUT_THE_VISIT = ("pet", "reason", "when")
 # Goals that are about the caller's own animals or appointments: the agent has to know who
 # is calling, and is told to ask it before anything else about them.
 OWN_BUSINESS = ("book", "cancel", "reschedule")
+# An appointment, named. A caller who has only said what is wrong with their animal and is
+# asked for their name has to be told what for: heard on a call on 2026-10-11, where the
+# way from a symptom to anything the clinic could do was never said.
+_APPOINTMENT = tuple(fold(word) for word in (
+    "cita", "visita", "hora", "appointment", "termin", "rendez", "appuntamento", "запис",
+    "приём", "прием"))
 
 
 def _has(text: str, phrase: str) -> bool:
@@ -111,6 +117,10 @@ class Manners:
     # caller's goal needs no identification.
     before_who: list[str] | None
     wrong_language: list[int]  # turns answered in the language the caller is not speaking
+    # Whether a caller who had described a symptom and asked for nothing was asked who they
+    # were with no word of an appointment, then or before. None when the caller's goal is
+    # another, or they were never asked.
+    who_unexplained: bool | None
 
 
 def manners(scenario: Scenario, record: CallRecord) -> Manners:
@@ -122,6 +132,13 @@ def manners(scenario: Scenario, record: CallRecord) -> Manners:
                          len(asks))
         before_who = sorted({thing for things in asks[:until_who] for thing in things
                              if thing in ABOUT_THE_VISIT}, key=ABOUT_THE_VISIT.index)
+    who_unexplained = None
+    if scenario.caller.goal.type == "symptom":
+        until = next((turn for turn, things in enumerate(asks) if "name" in things), None)
+        if until is not None:
+            so_far = " " + fold(" ".join(e.answer for e in record.exchanges[:until + 1]))
+            # From the start of a word: "ahora" names no appointment, "citas" does.
+            who_unexplained = not any(f" {word}" in so_far for word in _APPOINTMENT)
     return Manners(
         several=[turn for turn, things in enumerate(asks, start=1) if len(things) > 1],
         who_before_what="name" in asks[0] if opened_bare else None,
@@ -131,4 +148,5 @@ def manners(scenario: Scenario, record: CallRecord) -> Manners:
             if spoken_language(exchange.answer)
             not in (None, record.caller_language or scenario.language)
         ],
+        who_unexplained=who_unexplained,
     )

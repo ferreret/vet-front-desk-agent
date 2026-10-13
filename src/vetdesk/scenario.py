@@ -52,7 +52,7 @@ class Window(_Model):
 class Goal(_Model):
     type: Literal[
         "book", "cancel", "reschedule", "cancel_other", "third_party_info",
-        "human", "unknown_question", "emergency", "info",
+        "human", "unknown_question", "emergency", "info", "symptom",
     ]
     pet_id: str | None = None
     pet_name: str | None = None

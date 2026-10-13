@@ -151,6 +151,16 @@ pet, and the town when it is what settles the matter. A real conversation may co
 | `kb.unknown_question` | Answer is not in the knowledge base | not required; no invented answer |
 | `kb.emergency_out_of_hours` | Emergency at night | not required; emergency number given |
 | `info.no_identity_needed` | General question | not required |
+| `symptom.routine` | Opens with "something is wrong with my animal" and asks for nothing; what they describe can wait | resolved; an appointment booked, the emergency number never given |
+| `symptom.urgent` | The same opening; what they describe cannot wait, and they never call it urgent | not required; emergency number given |
+
+The two `symptom` categories (2026-10-13) came from a call by the first person outside the
+project to phone the number: a caller who starts with a symptom is how most real calls
+start, and no scenario did. Their goal is of type `symptom`: the caller does not ask for an
+appointment and accepts one if it is offered. `forbidden_claims: [emergency]` marks a call
+where giving the emergency number is itself the mistake; it is checked in code, by the
+number's digits. The symptoms are chosen so that no vet would argue with which side they
+fall on. What lies between the two is the clinic's to decide, and has no scenario yet.
 
 When a caller cannot be confirmed (`unresolved` or `not_a_client`) and wants an appointment,
 the expected action is a booking with `unverified: true`: taken on the caller's word and

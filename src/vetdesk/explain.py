@@ -67,6 +67,9 @@ def _goal(goal: Goal, labels: Labels) -> str:
         return f"to cancel {pet}'s appointment {goal.appointment_id}"
     if goal.type == "reschedule":
         return f"to move {pet}'s appointment {goal.appointment_id} to {_window(goal.window)}"
+    if goal.type == "symptom":
+        return (f"to know what to do: {pet} {goal.topic}. They do not ask for an "
+                f"appointment; offered one, they can come {_window(goal.window)}")
     about = f" It concerns {labels.client(goal.about_client_id)}" if goal.about_client_id else ""
     about += f" and their pet {pet}." if about and goal.pet_name else "." if about else ""
     return f"{goal.topic}.{about}" if goal.topic else goal.type
