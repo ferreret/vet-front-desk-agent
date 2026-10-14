@@ -560,6 +560,18 @@ an emergency number falls under the high-risk uses of the EU AI Act (emergency c
 classification), what the callers are told about their data, and what the clinic wants
 done with a note about a sick animal taken at night.
 
+### The symptom they called about is what the visit is for (2026-10-14)
+
+On a phone call that afternoon: "my dog scratches its ear a lot", the three ways offered,
+"an appointment, please", a name, the dog's name, and then "what is wrong with Moby, or
+what is the visit for?". Played back in text, the reason was asked again in 4 of 8 calls in
+Spanish and 7 of 8 in Catalan. The booking instructions now say that what is wrong with the
+animal counts as told whenever it was said, the symptom they called about included: 0 of
+16, while a caller who has given no reason is still asked for it (7 of 8; the other was
+asked their town first, to identify them). The symptom scenarios three times with each
+kind of caller and one scenario of each kind, no judge: 0 failures, and in the 12
+appointments booked after a symptom the reason was never asked again.
+
 ### What is open
 
 - **A visitor's phone number.** Only Spanish numbers are taken (nine figures, from 6 to
