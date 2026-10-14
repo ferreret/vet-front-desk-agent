@@ -80,7 +80,9 @@ STT_MODEL = os.environ.get("VETDESK_STT_MODEL", "scribe_v2_realtime")
 STT_LANGUAGES = os.environ.get("VETDESK_STT_LANGUAGES", "es,ca").split(",")
 # Seconds of silence after which the recogniser closes what the caller said. Left to the
 # local voice detector, a phrase said into a real microphone stayed open for 20 seconds.
-STT_PAUSE = float(os.environ.get("VETDESK_STT_PAUSE", "0.6"))
+# At 0.6 s a pause in the middle of a phrase closed it on three phone calls ("la cita
+# queee he-", "Esto...", "No, espé-"), and the agent answered half a sentence.
+STT_PAUSE = float(os.environ.get("VETDESK_STT_PAUSE", "0.9"))
 # The longest the caller is waited for once they have stopped, when the model that tells
 # whether a turn is over thinks it is not. The library's 2.5 s was reached on three turns
 # of seven on the first phone calls, all of them short answers ("José Canals Company",

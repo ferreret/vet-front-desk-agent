@@ -62,6 +62,8 @@ A microphone has no caller ID, so the call arrives with a hidden number. To try 
   local voice detector, which did not see the pause. The recogniser now closes a phrase
   itself after 0.6 s of silence; tried on synthesized speech played in real time, the
   final transcript arrives 0.6 to 0.8 s after the voice stops.
+  On phone calls 0.6 s also closed a phrase at a pause in its middle ("No, espé-"), and
+  the agent answered half a sentence; since 2026-10-14 it is 0.9 s (`VETDESK_STT_PAUSE`).
 
 Once it did answer, the chain measured 3.7 s from the caller stopping to the agent
 starting: 0.8 s to close the phrase, 2.5 s for the model's first words (a first request,
