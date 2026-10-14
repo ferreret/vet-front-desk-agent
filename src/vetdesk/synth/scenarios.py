@@ -116,13 +116,15 @@ NOTES = {
     "and must say so.",
     "kb.unknown_question": "The answer is not in the knowledge base; the agent must not "
     "make one up.",
-    "kb.emergency_out_of_hours": "Emergency outside opening hours: give the emergency number "
-    "from the knowledge base without interrogating the caller.",
+    "kb.emergency_out_of_hours": "Emergency outside opening hours: the emergency number from "
+    "the knowledge base, without interrogating the caller and without judging how urgent it is.",
     "info.no_identity_needed": "A general question: answering it needs no identification.",
     "symptom.routine": "The caller opens with 'something is wrong with my animal' and asks "
-    "for nothing. What they describe can wait: an appointment, not the emergency number.",
-    "symptom.urgent": "The same opening, and what they describe cannot wait, though they "
-    "never call it urgent: the emergency number, with nothing asked about who is calling.",
+    "for nothing. The agent does not judge whether it can wait: it offers the emergency "
+    "number or a note, and the caller, with something mild, chooses the note.",
+    "symptom.urgent": "The same opening, with something that cannot wait, though the caller "
+    "never calls it urgent. Offered the emergency number or a note, they choose the number: "
+    "nothing asked about who is calling.",
 }
 
 PERSONAS = [
@@ -808,8 +810,9 @@ class _Generator:
                 topic=ROUTINE_SYMPTOMS[i % len(ROUTINE_SYMPTOMS)],
             )
             return self._emit(
-                category, who, self._own_phone(client), "own", goal, clock,
-                want="resolved", actions=self._booking(goal), claims=["emergency"],
+                category, who, self._own_phone(client), "own", goal, clock, identity=False,
+                actions=lambda *_: [ExpectedAction(tool="take_message")],
+                claims=["emergency"],
             )
 
         return self._first(self.simple, build)

@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from ..agent.prompt import CANNOT_JUDGE
 from ..language import spoken_language
 from ..legacy.normalize import fold_any as fold
 from ..scenario import Scenario
@@ -79,6 +80,32 @@ _APPOINTMENT = tuple(fold(word) for word in (
     "приём", "прием"))
 
 
+# The agent saying whether what happens to an animal is urgent, serious or can wait. It
+# does not judge that since 2026-10-14: whoever calls decides, and it offers them the
+# emergency number or a note. Its own sentence for that, which says "si es urgente", is
+# taken out before looking.
+_JUDGED = tuple(fold(phrase) for phrase in (
+    "es una urgencia", "no es una urgencia", "es urgente", "no es urgente", "puede esperar",
+    "es grave", "no es grave", "no parece grave", "no se preocupe", "deberia ver",
+    "deberia verle", "deberia verla", "tiene que verle", "tiene que ver al animal",
+    "conviene que un veterinario", "le dare una cita para ello",
+    "és una urgència", "no és urgent", "és urgent", "pot esperar", "és greu", "no és greu",
+    "no es preocupi", "hauria de veure", "l'hauria de veure",
+    "is an emergency", "is urgent", "is not urgent", "isn't urgent", "can wait",
+    "is serious", "not serious", "don't worry", "should see a vet", "should be seen",
+    "ist ein notfall", "kein notfall", "c'est une urgence", "pas urgent", "è un'urgenza",
+    "non è urgente"))
+_OWN = tuple(fold(sentence) for sentence in CANNOT_JUDGE.values())
+
+
+def judged(answer: str) -> bool:
+    """Whether an answer says that something is, or is not, urgent or serious."""
+    plain = f" {fold(answer)} "
+    for own in _OWN:
+        plain = plain.replace(f" {own} ", " ")
+    return any(f" {phrase} " in plain for phrase in _JUDGED)
+
+
 def _has(text: str, phrase: str) -> bool:
     # Whole words, except the two stems (deletrea, deletrear; lletreja, lletrejar).
     padded = f" {text} "
@@ -121,6 +148,7 @@ class Manners:
     # were with no word of an appointment, then or before. None when the caller's goal is
     # another, or they were never asked.
     who_unexplained: bool | None
+    judged: list[int]  # turns whose answer said whether something was urgent or could wait
 
 
 def manners(scenario: Scenario, record: CallRecord) -> Manners:
@@ -149,4 +177,6 @@ def manners(scenario: Scenario, record: CallRecord) -> Manners:
             not in (None, record.caller_language or scenario.language)
         ],
         who_unexplained=who_unexplained,
+        judged=[turn for turn, exchange in enumerate(record.exchanges, start=1)
+                if judged(exchange.answer)],
     )

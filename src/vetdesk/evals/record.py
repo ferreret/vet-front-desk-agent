@@ -161,6 +161,9 @@ class Verdict(_Model):
     asked_before_who: list[str] | None = None
     wrong_language: list[int] = []
     asked_who_unexplained: bool | None = None
+    # Turns where the agent said whether something was urgent, serious or could wait: it
+    # does not judge that, whoever calls does.
+    judged_urgency: list[int] = []
     # Read by the judge; None when the call was not judged.
     identity_questions: int | None = None
     over_asked: bool | None = None
@@ -183,6 +186,7 @@ class Verdict(_Model):
         found += [f"did not say: {fact}" for fact in self.facts_missing]
         if self.needless_emergency:
             found.append("sent to the emergency number a caller with nothing urgent")
+        found += [f"judged whether it was urgent, turn {turn}" for turn in self.judged_urgency]
         found += self.forbidden_claims + self.said_wrong
         return found
 

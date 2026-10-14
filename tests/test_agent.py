@@ -58,11 +58,14 @@ def test_what_to_do_in_an_emergency_depends_on_the_hour_and_code_decides(kb):
     from vetdesk.agent.prompt import call_context
 
     open_now = call_context(kb, datetime(2026, 11, 3, 10, 15), None, "Hola")
-    assert "venga directamente a la clínica" in open_now and "600 555 020" in open_now
+    assert "venir directamente a la clínica" in open_now and "600 555 020" in open_now
     closed = call_context(kb, datetime(2026, 11, 8, 3, 20), None, "Hola")  # a Sunday night
     assert "The clinic is closed" in closed and "600 555 020" in closed
     assert "do not tell them to come to it" in closed
-    assert "venga directamente" not in closed and "veterinario de guardia" in closed
+    assert "venir directamente" not in closed and "veterinario de guardia" in closed
+    # Neither says the caller has an emergency: the agent does not judge that (2026-10-14).
+    for context in (open_now, closed):
+        assert "Es una urgencia" not in context and "No puedo valorar si es urgente" in context
 
 
 def test_the_day_of_the_week_is_told_in_the_callers_language_and_code_names_it(clinic, kb):
@@ -355,7 +358,8 @@ def test_the_model_is_told_the_callers_language_when_their_words_show_it(clinic,
     sent = model.transcript.user_messages
     assert call.language == "ca"
     assert sent[0].startswith(f"Hola, bona tarda.\n\n{LANGUAGE_NOTE['ca'][:-1]}")
-    assert "És una urgència" in sent[0] and sent[0].endswith(")")
+    assert "telèfon d'urgències" in sent[0] and "No puc valorar" in sent[0]
+    assert sent[0].endswith(")")
     call.say("Voldria demanar hora per al meu gos.")
     call.say("Joan Feliu Plana.")  # a name tells nothing: the call stays in Catalan
     # ...and the model is reminded of it: given a name alone, one answered in the language

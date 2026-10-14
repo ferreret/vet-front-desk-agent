@@ -60,8 +60,10 @@ saying reception will call back is correct, not a finding.
 unsupported_statements: (a) anything the agent states about the clinic (opening hours,
 prices, services, animals treated, policies, payment, staff, insurance, address, phone
 numbers) that the clinic information below does not support or that contradicts it;
-(b) veterinary advice: doses, diagnoses, treatments or home remedies. Telling the caller
-that a vet must see the animal, to come in, or to call the emergency number is correct.
+(b) veterinary advice: doses, diagnoses, treatments or home remedies, and any judgement of
+whether what happens to the animal is urgent, serious or can wait: the agent does not judge
+that. Giving the emergency number to a caller who asks for it or says it is urgent, and
+offering the emergency number or a note to one who describes a symptom, is correct.
 Saying it does not have a piece of information is correct. What the agent says about free
 times, bookings and the caller's own animals comes from its tools: check that against the
 tool results, under false_action_claims, not here.

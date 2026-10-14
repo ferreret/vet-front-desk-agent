@@ -71,22 +71,22 @@ share phones, numbers change hands, and people call from someone else's phone.
   appointment under the name and phone they give you, or take a message.
 - General questions (opening hours, prices, services, the address) need no
   identification. Just answer them.
-- In an emergency, ask nothing first, not even who is calling. Say at once the emergency
-  sentence you were given for the caller's language, word for word, with its phone number
-  in figures as it is written there.
-- It is an emergency when what the caller describes is one, or when they say it is urgent.
-  A caller who says only that something is wrong with their animal, or that it is not
-  itself, without saying what is happening, has not told you of one yet: ask what is
-  happening to the animal, and only that, before anything else. A name, a town or a
-  greeting never makes an emergency.
-- Once they have told you what is happening to the animal, and never before, it is one of
-  two things. An emergency, which it also is whenever you cannot tell, whether the clinic
-  is open or closed: the emergency sentence. Plainly not one, something that has gone on
-  for days or an animal that eats and behaves as usual: they have still called because
-  something is wrong, so do not ask who they are with no word of what comes next. In that
-  one answer, say in a few words that a vet should see the animal and that you will give
-  them an appointment for it, and ask who is calling. Do not say how serious it is or is
-  not, and give no advice.
+- You are not a vet, and you never judge whether what happens to an animal is urgent or
+  can wait. Never say that something is or is not an emergency, serious or nothing to
+  worry about, that it can wait, or that a vet should see the animal: whoever calls
+  decides that, not you.
+- When the caller asks for the emergency number, or says it is urgent or an emergency,
+  ask nothing first, not even who is calling. Say at once the emergency sentence you were
+  given for the caller's language, word for word, with its phone number in figures as it
+  is written there.
+- When the caller tells you something is wrong with their animal, at any point of the
+  call, say the sentence you were given for when you cannot judge it, word for word, and
+  nothing else. Anything they have said about the animal (what it ate, how it breathes,
+  eats, moves or behaves, for how long) is what is happening: never ask for it again. Only
+  when all they have said is that something is wrong, with no word of what, as in "I have
+  a problem with my cat", ask what is happening to the animal first, and only that. Then
+  do what they choose: the emergency sentence, or a message for the team with
+  take_message. If they ask for an appointment, book it as any other.
 
 # What you can do
 Only what your tools do. When the caller wants a person, it depends on whether you have
@@ -123,8 +123,9 @@ appointment you have just booked, move it with reschedule_appointment: never boo
 Answer only from the clinic information below. If the answer is not there, say you do not
 have that information and offer to take a message; never fill the gap with a guess.
 Prices are approximate starting prices: say so.
-You are not a vet. Do not give doses, diagnoses or treatment advice; say a vet has to see
-the animal, and if it sounds serious treat it as an emergency.
+You are not a vet. Do not give doses, diagnoses or treatment advice, and do not judge
+whether something can wait: say you cannot advise on that, and offer what the sentence for
+when you cannot judge it offers.
 
 # Clinic information
 {knowledge_base}
@@ -194,39 +195,54 @@ NOT_FROM_HERE = {
 }
 
 
-# What a caller with an emergency is told: (when the clinic is open, when it is closed).
-# Left to the model to put into the caller's language, a caller speaking Italian was
-# given the emergency number in words, and wrong: "sessocento cinquanta
-# cinquantaduecentoventi". The sentence is written here, with the number in figures.
+# What a caller who asks for the emergency number is told: (when the clinic is open, when
+# it is closed). Left to the model to put into the caller's language, a caller speaking
+# Italian was given the emergency number in words, and wrong: "sessocento cinquanta
+# cinquantaduecentoventi". The sentence is written here, with the number in figures. It
+# does not say that anything is an emergency: whoever calls has said so, or asked.
 EMERGENCY = {
-    "es": ("Es una urgencia: venga directamente a la clínica, o llame al teléfono de "
-           "urgencias, {phone}, para avisar de que viene.",
-           "Es una urgencia: llame ahora al teléfono de urgencias, {phone}. Le atenderá el "
-           "veterinario de guardia."),
-    "ca": ("És una urgència: vingui directament a la clínica, o truqui al telèfon "
-           "d'urgències, {phone}, per avisar que ve.",
-           "És una urgència: truqui ara al telèfon d'urgències, {phone}. L'atendrà el "
-           "veterinari de guàrdia."),
-    "en": ("This is an emergency: come straight to the clinic, or call the emergency number, "
-           "{phone}, to say you are on your way.",
-           "This is an emergency: please call the emergency number now, {phone}. The vet on "
-           "call will answer."),
-    "de": ("Das ist ein Notfall: Kommen Sie direkt in die Klinik oder rufen Sie die "
-           "Notfallnummer {phone} an, um Ihr Kommen anzukündigen.",
-           "Das ist ein Notfall: Rufen Sie bitte jetzt die Notfallnummer {phone} an. Dort "
-           "erreichen Sie den diensthabenden Tierarzt."),
-    "fr": ("C'est une urgence : venez directement à la clinique, ou appelez le numéro "
-           "d'urgence, le {phone}, pour prévenir de votre arrivée.",
-           "C'est une urgence : appelez tout de suite le numéro d'urgence, le {phone}. Le "
-           "vétérinaire de garde vous répondra."),
-    "it": ("È un'urgenza: venga direttamente in clinica, oppure chiami il numero di "
-           "emergenza, {phone}, per avvisare che sta arrivando.",
-           "È un'urgenza: chiami subito il numero di emergenza, {phone}. Le risponderà il "
-           "veterinario di turno."),
-    "ru": ("Это экстренный случай: приезжайте сразу в клинику или позвоните по номеру "
-           "экстренной помощи {phone}, чтобы предупредить о приезде.",
-           "Это экстренный случай: позвоните сейчас по номеру экстренной помощи {phone}. Вам "
-           "ответит дежурный ветеринар."),
+    "es": ("Puede venir directamente a la clínica, o llamar al teléfono de urgencias, "
+           "{phone}, para avisar de que viene.",
+           "El teléfono de urgencias es el {phone}. Le atenderá el veterinario de guardia."),
+    "ca": ("Pot venir directament a la clínica, o trucar al telèfon d'urgències, {phone}, "
+           "per avisar que ve.",
+           "El telèfon d'urgències és el {phone}. L'atendrà el veterinari de guàrdia."),
+    "en": ("You can come straight to the clinic, or call the emergency number, {phone}, to "
+           "say you are on your way.",
+           "The emergency number is {phone}. The vet on call will answer."),
+    "de": ("Sie können direkt in die Klinik kommen oder die Notfallnummer {phone} anrufen, "
+           "um Ihr Kommen anzukündigen.",
+           "Die Notfallnummer ist {phone}. Dort erreichen Sie den diensthabenden Tierarzt."),
+    "fr": ("Vous pouvez venir directement à la clinique, ou appeler le numéro d'urgence, le "
+           "{phone}, pour prévenir de votre arrivée.",
+           "Le numéro d'urgence est le {phone}. Le vétérinaire de garde vous répondra."),
+    "it": ("Può venire direttamente in clinica, oppure chiamare il numero di emergenza, "
+           "{phone}, per avvisare che sta arrivando.",
+           "Il numero di emergenza è il {phone}. Le risponderà il veterinario di turno."),
+    "ru": ("Вы можете приехать прямо в клинику или позвонить по номеру экстренной помощи "
+           "{phone}, чтобы предупредить о приезде.",
+           "Номер экстренной помощи: {phone}. Вам ответит дежурный ветеринар."),
+}
+
+# What a caller who says something is wrong with their animal, and asks for nothing, is
+# told. Decided on 2026-10-14, after the company's review: the agent was deciding whether
+# a case could wait, which is triage, and "when in doubt, an emergency" does not stop it
+# from being sure and wrong. It no longer decides. It says so, and offers both ways.
+CANNOT_JUDGE = {
+    "es": "No puedo valorar si es urgente. Si lo necesita, le doy el teléfono de urgencias; "
+          "si no, tomo nota para que el equipo le llame.",
+    "ca": "No puc valorar si és urgent. Si ho necessita, li dono el telèfon d'urgències; si "
+          "no, en prenc nota perquè l'equip li truqui.",
+    "en": "I can't judge whether it's urgent. If you need it, I'll give you the emergency "
+          "number; if not, I'll take a note so the team can call you.",
+    "de": "Ich kann nicht beurteilen, ob es dringend ist. Wenn Sie möchten, gebe ich Ihnen "
+          "die Notfallnummer; sonst notiere ich es, und das Team ruft Sie an.",
+    "fr": "Je ne peux pas juger si c'est urgent. Si vous en avez besoin, je vous donne le "
+          "numéro d'urgence ; sinon, je prends note pour que l'équipe vous rappelle.",
+    "it": "Non posso valutare se è urgente. Se ne ha bisogno, le do il numero di emergenza; "
+          "altrimenti prendo nota perché il team la richiami.",
+    "ru": "Я не могу оценить, срочно ли это. Если нужно, я дам вам номер экстренной помощи; "
+          "если нет, я запишу, и вам перезвонит команда клиники.",
 }
 
 
@@ -246,7 +262,8 @@ THROUGH = {
 
 
 def emergency_sentence(kb: KnowledgeBase, now: datetime, language: str) -> str:
-    """What to tell a caller with an emergency, right now, in their language."""
+    """What to tell a caller who asks for the emergency number, right now, in their
+    language."""
     when_open, when_closed = EMERGENCY[language]
     sentence = when_open if kb.is_open(now) else when_closed
     return sentence.format(phone=spoken_phone(kb.emergency.phone))
@@ -302,8 +319,9 @@ def call_context(kb: KnowledgeBase, now: datetime, caller_number: str | None, sa
     number = caller_number or "hidden (no caller ID)"
     is_open = kb.is_open(now)
     status = "open" if is_open else "closed"
-    # What to do in an emergency depends on the hour, and a model told both cases sent a
-    # caller to the closed clinic at three in the morning. It gets the one that applies.
+    # What to tell a caller who asks for the emergency number depends on the hour, and a
+    # model told both cases sent a caller to the closed clinic at three in the morning. It
+    # gets the one that applies.
     closed = "" if is_open else " The clinic is closed: do not tell them to come to it."
     through = ("A caller can be put through to a person right now: you have"
                if can_transfer else
@@ -337,6 +355,9 @@ def today_is(now: datetime, language: str) -> str:
 
 
 def in_an_emergency(kb: KnowledgeBase, now: datetime, language: str) -> str:
-    """The emergency sentence of one language, as the model is told it."""
-    return f'If the caller has an emergency, say: "{emergency_sentence(kb, now, language)}"'
+    """The emergency sentence of one language, and the one for a symptom the agent cannot
+    judge, as the model is told them."""
+    return (f"When the caller asks for the emergency number or says it is urgent, say: "
+            f'"{emergency_sentence(kb, now, language)}" When they tell you what is wrong '
+            f'with their animal and ask for nothing, say: "{CANNOT_JUDGE[language]}"')
 

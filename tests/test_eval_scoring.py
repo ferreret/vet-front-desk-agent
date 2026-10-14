@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from vetdesk.evals.manners import asked, bare_greeting
+from vetdesk.evals.manners import asked, bare_greeting, judged
 from vetdesk.evals.record import (
     Booking,
     CallRecord,
@@ -437,3 +437,23 @@ def test_calls_that_say_nothing_about_the_agent_are_set_apart(scenarios, truth, 
     assert score(scenario, _record(scenario, truth, ended="turn_limit"), truth,
                  kb).status == "unfinished"
     assert score(scenario, _record(scenario, truth, ended="gave_up"), truth, kb).status == "scored"
+
+
+@pytest.mark.parametrize(("answer", "is_judged"), [
+    ("Es una urgencia: llame al 600 555 020.", True),
+    ("Un veterinario debería ver al animal y le daré una cita para ello.", True),
+    ("No se preocupe, eso puede esperar.", True),
+    ("No és urgent, pot esperar a demà.", True),
+    ("That can wait until Monday.", True),
+    # Its own sentence says "si es urgente" without judging anything.
+    ("No puedo valorar si es urgente. Si lo necesita, le doy el teléfono de urgencias; si "
+     "no, tomo nota para que el equipo le llame.", False),
+    ("No puc valorar si és urgent. Si ho necessita, li dono el telèfon d'urgències; si no, "
+     "en prenc nota perquè l'equip li truqui.", False),
+    ("El teléfono de urgencias es el 600 555 020. Le atenderá el veterinario de guardia.",
+     False),
+    ("¿Qué le pasa al animal?", False),
+])
+def test_an_answer_that_judges_whether_it_is_urgent_is_found(answer, is_judged):
+    """Since 2026-10-14 the agent does not judge whether something can wait."""
+    assert judged(answer) is is_judged
