@@ -483,7 +483,41 @@ of 16, with the old instructions as with the new: the line between the two is st
 model's (below). The six `symptom.*` scenarios three times with each kind of caller, no
 judge: 0 failures, and no "I'll wait" said to a caller who had not asked for it.
 
+### A phone number to call back on (2026-10-14)
+
+Yesterday's one failure with a forthcoming caller was put down to a number dictated in
+Catalan words that the model could not turn into figures. Read again, the model had turned
+it right: the simulated caller had "609 176 965" and dictated ten figures, then eleven.
+Played back in text, dictated properly in Spanish or Catalan, in figures one by one, in
+pairs or in threes, the model wrote it right 24 times of 24. What it did wrong was
+elsewhere:
+
+| | Before | After |
+|---|---|---|
+| Number said back before it is taken, as the instructions say | 2 of 24 | 24 of 24 |
+| Ten figures dictated: a message taken under a number nobody said, one figure dropped | 5 of 6 | 0 of 6: said back what it heard, asked again |
+
+Both are now in code. `dictation.py` reads the figures in what somebody said, in figures or
+in Spanish and Catalan number words; a number to call back on (`take_message`, and a
+booking under the caller's word) is taken only if the caller said it and has heard it said
+back. In other languages only figures are read, so a number dictated in English words is
+not checked against them, but must still be said back.
+
+All 88 scenarios with forthcoming callers and 25 with terse ones, no judge: 0 false
+identifications, 0 failures, 0 shortfalls with terse callers. "Not said" never fired; "say
+it back first" fired 17 times, and every one of those calls ended as it should.
+
+The answers were slower than yesterday's run (first words, median 1.6 s against 1.2 s).
+Not from this change: the appointment scenarios played with the code before and after, at
+the same time, both came out at 1.7 s. The model was slower that afternoon.
+
 ### What is open
+
+- **A visitor's phone number.** Only Spanish numbers are taken (nine figures, from 6 to
+  9); a tourist with a foreign mobile cannot leave one.
+- **"Recesión" for "Recepción".** Written by the model in 2 answers of 24 on 2026-10-14,
+  and once the day before. Said aloud it is another word. "Reception will call you back"
+  could be a sentence handed over by the tool, like putting a call through.
 
 - **Where an emergency begins.** Decided by the model today, call by call. To be the
   clinic's: a list in its validated file, with a scenario for what lies in between.
