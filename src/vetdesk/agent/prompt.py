@@ -85,8 +85,8 @@ share phones, numbers change hands, and people call from someone else's phone.
   eats, moves or behaves, for how long) is what is happening: never ask for it again. Only
   when all they have said is that something is wrong, with no word of what, as in "I have
   a problem with my cat", ask what is happening to the animal first, and only that. Then
-  do what they choose: the emergency sentence, or a message for the team with
-  take_message. If they ask for an appointment, book it as any other.
+  do what they choose: the emergency sentence, a message for the team with take_message,
+  or an appointment, booked as any other.
 
 # What you can do
 Only what your tools do. When the caller wants a person, it depends on whether you have
@@ -227,22 +227,27 @@ EMERGENCY = {
 # What a caller who says something is wrong with their animal, and asks for nothing, is
 # told. Decided on 2026-10-14, after the company's review: the agent was deciding whether
 # a case could wait, which is triage, and "when in doubt, an emergency" does not stop it
-# from being sure and wrong. It no longer decides. It says so, and offers both ways.
+# from being sure and wrong. It no longer decides. It says so, and offers the three ways:
+# the emergency number, a note for the team, an appointment.
 CANNOT_JUDGE = {
-    "es": "No puedo valorar si es urgente. Si lo necesita, le doy el teléfono de urgencias; "
-          "si no, tomo nota para que el equipo le llame.",
-    "ca": "No puc valorar si és urgent. Si ho necessita, li dono el telèfon d'urgències; si "
-          "no, en prenc nota perquè l'equip li truqui.",
-    "en": "I can't judge whether it's urgent. If you need it, I'll give you the emergency "
-          "number; if not, I'll take a note so the team can call you.",
-    "de": "Ich kann nicht beurteilen, ob es dringend ist. Wenn Sie möchten, gebe ich Ihnen "
-          "die Notfallnummer; sonst notiere ich es, und das Team ruft Sie an.",
-    "fr": "Je ne peux pas juger si c'est urgent. Si vous en avez besoin, je vous donne le "
-          "numéro d'urgence ; sinon, je prends note pour que l'équipe vous rappelle.",
-    "it": "Non posso valutare se è urgente. Se ne ha bisogno, le do il numero di emergenza; "
-          "altrimenti prendo nota perché il team la richiami.",
-    "ru": "Я не могу оценить, срочно ли это. Если нужно, я дам вам номер экстренной помощи; "
-          "если нет, я запишу, и вам перезвонит команда клиники.",
+    "es": "No puedo valorar si es urgente. Puedo darle el teléfono de urgencias, tomar nota "
+          "para que el equipo le llame o darle una cita. ¿Qué prefiere?",
+    "ca": "No puc valorar si és urgent. Li puc donar el telèfon d'urgències, prendre nota "
+          "perquè l'equip li truqui o donar-li hora. Què prefereix?",
+    "en": "I can't judge whether it's urgent. I can give you the emergency number, take a "
+          "note so the team can call you, or book you an appointment. Which would you "
+          "prefer?",
+    "de": "Ich kann nicht beurteilen, ob es dringend ist. Ich kann Ihnen die Notfallnummer "
+          "geben, etwas für das Team notieren, damit es Sie anruft, oder einen Termin "
+          "vereinbaren. Was ist Ihnen lieber?",
+    "fr": "Je ne peux pas juger si c'est urgent. Je peux vous donner le numéro d'urgence, "
+          "prendre note pour que l'équipe vous rappelle, ou vous donner un rendez-vous. Que "
+          "préférez-vous ?",
+    "it": "Non posso valutare se è urgente. Posso darle il numero di emergenza, prendere "
+          "nota perché il team la richiami, oppure fissarle un appuntamento. Cosa preferisce?",
+    "ru": "Я не могу оценить, срочно ли это. Я могу дать вам номер экстренной помощи, "
+          "записать сообщение, чтобы вам перезвонили из клиники, или записать вас на приём. "
+          "Что вы предпочитаете?",
 }
 
 

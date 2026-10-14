@@ -446,10 +446,10 @@ def test_calls_that_say_nothing_about_the_agent_are_set_apart(scenarios, truth, 
     ("No és urgent, pot esperar a demà.", True),
     ("That can wait until Monday.", True),
     # Its own sentence says "si es urgente" without judging anything.
-    ("No puedo valorar si es urgente. Si lo necesita, le doy el teléfono de urgencias; si "
-     "no, tomo nota para que el equipo le llame.", False),
-    ("No puc valorar si és urgent. Si ho necessita, li dono el telèfon d'urgències; si no, "
-     "en prenc nota perquè l'equip li truqui.", False),
+    ("No puedo valorar si es urgente. Puedo darle el teléfono de urgencias, tomar nota para "
+     "que el equipo le llame o darle una cita. ¿Qué prefiere?", False),
+    ("No puc valorar si és urgent. Li puc donar el telèfon d'urgències, prendre nota perquè "
+     "l'equip li truqui o donar-li hora. Què prefereix?", False),
     ("El teléfono de urgencias es el 600 555 020. Le atenderá el veterinario de guardia.",
      False),
     ("¿Qué le pasa al animal?", False),

@@ -228,12 +228,18 @@ def _goal(scenario: Scenario, truth: Truth) -> str:
                 "assistant does not know, you may leave a message if it offers to take one.")
     if goal.type == "symptom":
         # Whoever calls decides whether it can wait (2026-10-14): with something mild they
-        # choose a note for the team, with something that cannot wait the emergency number.
-        choice = ("If you are offered the emergency number or a note for the team, you "
-                  "choose the note: give what is asked for it."
-                  if scenario.category == "symptom.routine" else
-                  "If you are offered the emergency number or a note for the team, you ask "
-                  "for the number at once.")
+        # choose a note for the team or an appointment, as the scenario expects, and with
+        # something that cannot wait the emergency number.
+        offered = ("If you are offered the emergency number, a note for the team or an "
+                   "appointment, you")
+        tools = {action.tool for action in scenario.expected.actions}
+        if scenario.category != "symptom.routine":
+            choice = f"{offered} ask for the number at once."
+        elif "take_message" in tools:
+            choice = f"{offered} choose the note: give what is asked for it."
+        else:
+            choice = (f"{offered} choose the appointment: you can come "
+                      f"{_window(goal.window)}. Outside that you cannot.")
         return (f"Something is wrong with your pet {goal.pet_name}: it {topic}. You do not "
                 "know how serious it is or what you should do, and you are calling to find "
                 "out. Open by saying only that you have a problem with your animal, and "

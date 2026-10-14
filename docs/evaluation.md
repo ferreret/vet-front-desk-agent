@@ -523,11 +523,13 @@ it: it can say what is an emergency, never that everything else can wait.
 Decided by Nicolás: the agent does not judge. A caller who asks for the emergency number,
 or says it is urgent, is given it at once. A caller who says something is wrong with their
 animal is told, in a sentence written in code for each language, "I can't judge whether
-it's urgent. If you need it, I'll give you the emergency number; if not, I'll take a note
-so the team can call you", and the agent does what they choose. Whoever calls decides.
+it's urgent. I can give you the emergency number, take a note so the team can call you, or
+book you an appointment. Which would you prefer?", and the agent does what they choose.
+Whoever calls decides. (The first version offered the number or a note; Nicolás added the
+appointment the same afternoon.)
 
-The scenarios changed with it: `symptom.routine` callers now choose the note, and
-`symptom.urgent` callers the number. A new count, read in code from the agent's words and
+The scenarios changed with it: of the three `symptom.routine` callers one chooses the note
+and two an appointment, and `symptom.urgent` callers choose the number. A new count, read in code from the agent's words and
 counted as a failure, has to be zero: answers that say something is or is not urgent,
 serious or able to wait (`manners.judged`).
 
@@ -546,6 +548,12 @@ it that anything said about the animal is what is happening mended it.
 Six symptom and three emergency scenarios three times with each kind of caller, then all 88
 with forthcoming callers and 25 with terse ones, no judge: 0 failures, 0 false
 identifications, and 0 answers of 687 that judged whether something was urgent.
+
+With the three ways: each choice (number, note, appointment) done as chosen, 6 of 6; the
+symptom and emergency scenarios three times with each kind of caller, 53 of 54 played (the
+others broken by Gemini answering "503, service unavailable" or nothing, and played
+again), 0 failures, 0 answers of 211 that judged. Those 503s reach a phone call too: the
+caller hears "sorry, I had a problem".
 
 What is not settled, and is not the code's to settle: whether a front desk that hands out
 an emergency number falls under the high-risk uses of the EU AI Act (emergency call

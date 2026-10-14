@@ -120,7 +120,7 @@ Bloques de 90 minutos. Es mejor cerrar una fase entera que dejar tres a medias.
 
 **El agente no decide si algo es urgente o puede esperar.** Decidirlo es triaje, no atender el teléfono, y «ante la duda, urgencias» no protege cuando el modelo está seguro y se equivoca (revisión de la empresa a la que se enseñó la demo, ese día). Decisión de Nicolás:
 - Quien pide el teléfono de urgencias, o dice que es urgente, lo recibe al momento, sin preguntas antes.
-- A quien cuenta que algo le pasa al animal se le dice, con una frase escrita en código para cada lengua (`CANNOT_JUDGE` en `agent/prompt.py`), que no se puede valorar si es urgente, y se le ofrece el teléfono de urgencias o una nota para el equipo. Decide quien llama.
+- A quien cuenta que algo le pasa al animal se le dice, con una frase escrita en código para cada lengua (`CANNOT_JUDGE` en `agent/prompt.py`), que no se puede valorar si es urgente, y se le ofrecen tres cosas: el teléfono de urgencias, una nota para el equipo o una cita. Decide quien llama.
 - Ninguna respuesta dice que algo es o no es urgente, grave o que puede esperar. El harness lo cuenta (`manners.judged`) y tiene que ser cero, como las identificaciones falsas.
 - Sin decidir, y no es cosa del código: si una centralita así entra en los usos de alto riesgo del Reglamento europeo de IA (clasificación de llamadas de emergencia), qué se le dice a quien llama sobre sus datos, y qué hace la clínica con una nota de un animal enfermo tomada de noche.
 

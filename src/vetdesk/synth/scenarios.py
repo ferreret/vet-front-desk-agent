@@ -121,10 +121,11 @@ NOTES = {
     "info.no_identity_needed": "A general question: answering it needs no identification.",
     "symptom.routine": "The caller opens with 'something is wrong with my animal' and asks "
     "for nothing. The agent does not judge whether it can wait: it offers the emergency "
-    "number or a note, and the caller, with something mild, chooses the note.",
+    "number, a note or an appointment, and the caller, with something mild, chooses an "
+    "appointment, or the note.",
     "symptom.urgent": "The same opening, with something that cannot wait, though the caller "
-    "never calls it urgent. Offered the emergency number or a note, they choose the number: "
-    "nothing asked about who is calling.",
+    "never calls it urgent. Offered the emergency number, a note or an appointment, they "
+    "choose the number: nothing asked about who is calling.",
 }
 
 PERSONAS = [
@@ -809,10 +810,16 @@ class _Generator:
                 window=self._window(clock),
                 topic=ROUTINE_SYMPTOMS[i % len(ROUTINE_SYMPTOMS)],
             )
+            # One of the three chooses a note for the team, the others an appointment.
+            if i % 3 == 0:
+                return self._emit(
+                    category, who, self._own_phone(client), "own", goal, clock,
+                    identity=False, actions=lambda *_: [ExpectedAction(tool="take_message")],
+                    claims=["emergency"],
+                )
             return self._emit(
-                category, who, self._own_phone(client), "own", goal, clock, identity=False,
-                actions=lambda *_: [ExpectedAction(tool="take_message")],
-                claims=["emergency"],
+                category, who, self._own_phone(client), "own", goal, clock,
+                want="resolved", actions=self._booking(goal), claims=["emergency"],
             )
 
         return self._first(self.simple, build)
