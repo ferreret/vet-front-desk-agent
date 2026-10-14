@@ -28,14 +28,25 @@ def kb():
     return load_kb()
 
 
+# The numbers the tests below give to call back on.
+PHONES = ("600112233", "973664209", "600000009")
+
+
 def _toolbox(clinic, kb, number=None, reason="Le toca la vacuna y una revisión: es la primera.",
-             accepted=(SLOT,)):
-    """A toolbox on a call where the caller has already said what the visit is for, and
-    has been offered SLOT and taken it."""
+             accepted=(SLOT,), dictated=PHONES):
+    """A toolbox on a call where the caller has already said what the visit is for, has
+    been offered SLOT and taken it, and has dictated these numbers and heard them back."""
     toolbox = Toolbox(clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW, number)
     if reason:
         toolbox.heard(reason)
-    return _accepted(toolbox, *accepted)
+    return _dictated(_accepted(toolbox, *accepted), *dictated)
+
+
+def _dictated(toolbox, *numbers):
+    """The caller has said these numbers, has heard them said back, and has spoken since."""
+    toolbox.session.dictated.append(list(numbers))
+    toolbox.session.read_back += [(number, -1) for number in numbers]
+    return toolbox
 
 
 def _told(toolbox, appointment_id):
@@ -597,6 +608,64 @@ def test_the_calling_number_is_not_taken_for_the_callers_until_they_are_asked(cl
     same = _toolbox(clinic, kb, number, accepted=("2026-11-09T16:30",))
     same.heard("Una revisión para Toby el lunes por la tarde, y me llaman a este mismo número.")
     assert not _call(same, "book_appointment", **booking)[1]
+
+
+def test_a_number_to_call_back_on_is_the_one_the_caller_said_and_heard_back(clinic, kb):
+    """Measured on 2026-10-14: dictated in ten figures, the model dropped one and took the
+    message under a number nobody had said, in 5 calls of 6; and dictated right, it said
+    the number back in 2 calls of 24."""
+    toolbox = _toolbox(clinic, kb, dictated=())  # a hidden number
+    message = {"message": "Que la llamen por una factura", "contact_name": "Pere Soler"}
+    toolbox.heard("El sis zero nou, setze, setanta-sis, nou seixanta-cinc.")
+    refused, failed = _call(toolbox, "take_message", **message, contact_phone="609167695")
+    assert failed and "has not said 609 167 695" in refused["error"]
+    assert "reads as 609 167 696 5: 10 figures" in refused["error"]
+    refused, failed = _call(toolbox, "take_message", **message, contact_phone="6091676965")
+    assert failed and "nine figures" in refused["error"] and "609 167 696 5" in refused["error"]
+
+    toolbox.said("He entendido 609 167 696 5, que son diez cifras. ¿Me lo repite?")
+    toolbox.heard("Perdone: sis zero nou, disset, seixanta-nou, seixanta-cinc.")
+    refused, failed = _call(toolbox, "take_message", **message, contact_phone="609176965")
+    assert failed and "say it back to the caller" in refused["error"]
+    toolbox.said("Le apunto el 609 176 965. ¿Es correcto?")
+    refused, failed = _call(toolbox, "take_message", **message, contact_phone="609176965")
+    assert failed and "say it back" in refused["error"]  # said, but not answered yet
+    toolbox.heard("Sí, correcte.")
+    taken, failed = _call(toolbox, "take_message", **message, contact_phone="609 176 965")
+    assert not failed and toolbox.session.messages[0].contact_phone == "+34609176965"
+
+    # The same holds for an appointment under the caller's word.
+    booking = {"start": SLOT, "reason": "vacuna", "pet_name": "Luna", "contact_name": "Ana"}
+    other = _toolbox(clinic, kb, dictated=())
+    refused, failed = _call(other, "book_appointment", **booking, contact_phone="600112233")
+    assert failed and "have not said a phone number yet" in refused["error"]
+    assert other.agenda.all() == []
+
+
+def test_a_number_said_back_in_an_answer_taken_back_was_not_heard(clinic, kb):
+    toolbox = _toolbox(clinic, kb, dictated=())
+    toolbox.heard("Mi teléfono es el 600 11 22 33.")
+    toolbox.said("Le apunto el 600 112 233, ¿es correcto?")
+    toolbox.unsaid()
+    toolbox.heard("Sí.")
+    refused, failed = _call(toolbox, "take_message", message="Que la llamen",
+                            contact_name="Ana", contact_phone="600112233")
+    assert failed and "say it back" in refused["error"]
+
+
+def test_in_a_language_whose_number_words_are_not_read_only_figures_are_checked(clinic, kb):
+    """An English caller dictates "six oh nine…": nothing to check it against, so it is
+    taken once said back; a number in figures is still checked."""
+    toolbox = _toolbox(clinic, kb, dictated=())
+    toolbox.session.language = "en"
+    toolbox.heard("It's six oh nine, one seven six, nine six five.")
+    toolbox.said("That's 609 176 965, is that right?")
+    toolbox.heard("Yes.")
+    message = {"message": "Call back", "contact_name": "Ann"}
+    assert not _call(toolbox, "take_message", **message, contact_phone="609176965")[1]
+    toolbox.heard("Actually, use 600 11 22 33.")
+    refused, failed = _call(toolbox, "take_message", **message, contact_phone="600112234")
+    assert failed and "has not said 600 112 234" in refused["error"]
 
 
 def test_the_clinics_own_number_is_not_where_to_reach_a_caller(clinic, kb):

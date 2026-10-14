@@ -87,7 +87,9 @@ def test_appointments_booked_moved_and_cancelled_are_told(clinic, kb):
 
 def test_an_unverified_booking_asks_reception_to_check(clinic, kb):
     toolbox = Toolbox(clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW, None)
-    toolbox.heard("Es para una revisión de mi perro Toby.")
+    toolbox.heard("Es para una revisión de mi perro Toby. Mi teléfono, el 600 11 22 33.")
+    toolbox.said("Le apunto el 600 112 233. ¿Es correcto?")
+    toolbox.heard("Sí.")
     toolbox.session.offered[SLOT] = -1  # offered, and taken
     _run(toolbox, "book_appointment", start=SLOT, reason="revisión", pet_name="Toby",
          contact_name="Marta Soler", contact_phone="600 11 22 33")
@@ -157,15 +159,18 @@ def test_notices_are_sent_when_the_turn_is_over(clinic, kb):
     book = ToolCall("b", "book_appointment", {
         "start": SLOT, "reason": "revisión", "pet_name": "Toby",
         "contact_name": "Marta Soler", "contact_phone": "600 11 22 33"})
-    model = ScriptedClient([Reply("", (look,), "tool_calls"), Reply("¿A las cuatro y media?"),
+    model = ScriptedClient([Reply("", (look,), "tool_calls"),
+                            Reply("¿A las cuatro y media, con el teléfono 600 112 233?"),
                             Reply("", (book,), "tool_calls"), Reply("Reservado."),
                             Reply("Adiós.")])
     agent = FrontDeskAgent(model, clinic, kb, SqliteAgenda(kb, lambda: NOW), lambda: NOW)
     told = []
     app = build_app(Switchboard(agent.start_call), "key", tell=told.append)
     system = {"role": "system", "content": "vetdesk-conversation: c1\nvetdesk-caller: "}
-    offer = [system, {"role": "user", "content": "Una revisión para mi perro Toby, el lunes."}]
-    first = [*offer, {"role": "assistant", "content": "¿A las cuatro y media?"},
+    offer = [system, {"role": "user", "content": "Una revisión para mi perro Toby, el lunes. "
+                                                  "Mi teléfono es el 600 11 22 33."}]
+    first = [*offer, {"role": "assistant",
+                      "content": "¿A las cuatro y media, con el teléfono 600 112 233?"},
              {"role": "user", "content": "Sí, a esa hora."}]
     second = [*first, {"role": "assistant", "content": "Reservado."},
               {"role": "user", "content": "Gracias, adiós."}]

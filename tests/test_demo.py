@@ -219,10 +219,11 @@ def test_a_demo_call_is_taken_as_from_that_callers_phone_and_touches_nothing_rea
         "date_from": SLOT[:10], "date_to": SLOT[:10], "part_of_day": "afternoon"})
     demo, told = Demo([MARTA], Clock()), []
     app, real, numbers = _front_desk(
-        clinic, [Reply("", (look,), "tool_calls"), Reply("¿A las cuatro y media?"),
+        clinic, [Reply("", (look,), "tool_calls"),
+                 Reply("¿A las cuatro y media, con el teléfono 600 112 233?"),
                  Reply("", (book,), "tool_calls"), Reply("Reservado.")], demo, told=told)
     token = demo.start("own", "a")
-    wants = "Una revisión para mi perro Toby, el lunes."
+    wants = "Una revisión para mi perro Toby, el lunes. Mi teléfono es el 600 11 22 33."
     (_, answer, after, nothing), _ = _post(
         app, _chat(token, wants), _chat(token, wants, "Sí, a esa hora."),
         f"/demo/result?pass={token}", "/demo/result?pass=made-up")

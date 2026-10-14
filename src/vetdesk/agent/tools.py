@@ -18,6 +18,7 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 
 from .. import notices
+from ..dictation import dictated, in_groups
 from ..identity import Evidence, IdentityResolver, Resolution
 from ..identity.matching import SOUNDS_SAME, pet_grade
 from ..identity.resolver import MISTYPED_ON_FILE
@@ -90,6 +91,11 @@ class CallSession:
     # At which of the caller's lines the calling number was first put forward as where to
     # reach them: it is taken only once they have been asked and have spoken again.
     asked_where_to_call: int | None = None
+    # The figures in each of the caller's lines, as they dictated them; and every run of
+    # figures the agent has said, with the caller's line it was said after. A phone number
+    # to call back on is taken once the caller has said it and has heard it said back.
+    dictated: list[list[str]] = field(default_factory=list)
+    read_back: list[tuple[str, int]] = field(default_factory=list)
     # What reception has to hear about this call: see `notices`. Whoever carries the call
     # takes them from here and sends them on.
     notices: list[notices.Notice] = field(default_factory=list)
@@ -201,6 +207,22 @@ THIS_NUMBER = (
 )
 # A caller saying that the number they call from is the one: "este mismo", "el mateix".
 SAME_NUMBER = {"mismo", "misma", "mateix", "mateixa", "same"}
+NUMBER_NOT_SAID = (
+    "The caller has not said {number}. {heard} Say back, in groups of three, the figures "
+    "you heard, and ask them to say their number again. Never fill in, drop or change a "
+    "figure yourself."
+)
+NOT_READ_BACK = (
+    "Before you take {number}, say it back to the caller in figures, in groups of three, "
+    "and ask whether it is right. Call again once they have said it is."
+)
+NOT_A_NUMBER = (
+    "contact_phone is not a valid phone number: a Spanish number has nine figures and "
+    "starts with 6, 7, 8 or 9. {heard} Say back, in groups of three, the figures you "
+    "heard, and ask them to say their number again."
+)
+# The languages whose number words are read in `dictation`. In the others only figures are.
+DICTATED_IN = {"es", "ca"}
 NOT_FROM_THEIR_PHONE = (
     "Appointments can only be cancelled or moved on a call from a phone on the caller's "
     'record, and this call is not. Say: "{say}" Then take the message so that reception '
@@ -375,6 +397,7 @@ class Toolbox:
         elif session.asked_to_cancel or any(word.startswith(_CANCELLING) for word in words):
             session.wants_it_moved = False
         session.asked_to_cancel = False
+        session.dictated.append(dictated(text))
 
     def said(self, answer: str) -> None:
         """Take note of what the agent has just told the caller.
@@ -386,6 +409,8 @@ class Toolbox:
         in the calls played that day, 33 of 102.
         """
         session, spoken = self.session, fold_any(answer)
+        runs = dictated(answer)
+        session.read_back += [(digits, session.lines) for digits in [*runs, "".join(runs)]]
         session.asked_to_cancel = "?" in answer and any(
             word.startswith(_CANCELLING) for word in spoken.split())
         for appointment_id in session.told:
@@ -398,6 +423,8 @@ class Toolbox:
         """The agent's last answer was taken back: nothing in it was heard."""
         session = self.session
         session.heard = {key: at for key, at in session.heard.items() if at < session.lines}
+        session.read_back = [(digits, at) for digits, at in session.read_back
+                             if at < session.lines]
 
     def _vouched_for(self, name: str | None, pet: str | None, town: str | None) -> None:
         """Refuse evidence the caller's own words do not back.
@@ -830,10 +857,46 @@ class Toolbox:
         Measured: a caller on a hidden number left a message, the model filled in the
         clinic's phone as theirs and told them reception would call back.
         """
-        phones, _ = parse_phones(contact_phone or "")
+        phones, unreadable = parse_phones(contact_phone or "")
         if phones and phones[0] in (self.kb.clinic.phone, self.kb.emergency.phone):
             raise ToolError(OWN_NUMBER)
-        return phones[0] if phones else None
+        if not phones:
+            if unreadable:
+                raise ToolError(NOT_A_NUMBER.format(heard=self._figures_heard()))
+            return None
+        phone = phones[0]
+        if phone != self.session.caller_number:
+            self._dictated(phone)
+        return phone
+
+    def _figures_heard(self) -> str:
+        """What the caller's last line with figures in it reads as, for the model."""
+        for runs in reversed(self.session.dictated):
+            longest = max(runs, key=len, default="")
+            if len(longest) >= 4:
+                return (f"What they said reads as {in_groups(longest)}: "
+                        f"{len(longest)} figures.")
+        return "They have not said a phone number yet."
+
+    def _dictated(self, phone: str) -> None:
+        """Refuse a number to call back on that the caller has not said, or not heard.
+
+        Measured on 2026-10-14: given a number dictated in ten figures, the model dropped
+        one and took a message under a number nobody had said, in 5 calls of 6, and told
+        the caller "reception will call you"; with a number dictated right, it repeated it
+        back in 2 calls of 24, though told to every time. Reception would ring a stranger.
+        """
+        session, national = self.session, phone.removeprefix("+34")
+        lines = session.dictated
+        said = [run for runs in lines for run in [*runs, "".join(runs)]]
+        said.append("".join("".join(runs) for runs in lines[-3:]))
+        if not any(national in run for run in said):
+            if session.language in DICTATED_IN or any(len(run) >= 6 for run in said):
+                raise ToolError(NUMBER_NOT_SAID.format(number=in_groups(national),
+                                                       heard=self._figures_heard()))
+        if not any(national in digits and at < session.lines
+                   for digits, at in session.read_back):
+            raise ToolError(NOT_READ_BACK.format(number=in_groups(national)))
 
     def _where_to_call(self, phone: str | None) -> str | None:
         """Refuse the calling number as where to reach a caller who is not confirmed, until
