@@ -461,6 +461,28 @@ scenarios it spoke Spanish throughout (the agent followed it, and the count of "
 the wrong language" is the caller's, 22 of 23), and in two calls it produced text that was
 no part of any conversation. Those calls are not scored.
 
+### "Wait, let me think" (2026-10-14)
+
+On a phone call, "tengo un problema con mi gato" was answered "what is wrong with the
+animal?", and "no, no, wait, let me think" (heard as "no esperar, me lo pienso") was taken
+as the end of it: "¿Necesita algo más?", 8 of 8 played back in text, and the cat was never
+asked about again. The agent is now told that a caller who asks it to wait has not
+finished.
+
+| Wording | What it did |
+|---|---|
+| Say you will wait and ask your question again | The cat stayed open, 16 of 16; but "De acuerdo, espero. ¿Qué le pasa al animal?" in one breath, and a caller looking for a paper was asked for their name in 7 of 8 |
+| Say only that you will wait, ask nothing, and go on from there when they speak | "De acuerdo, espero." and nothing else in 37 of 40 (Spanish and Catalan); the other 3 asked again |
+
+When the caller speaks again the call goes on as before: an itching ear, an appointment 8
+of 8; a name asked once a booking caller is back, 8 of 8. Where an emergency begins did not
+move: trembling, chocolate, an itching ear, a slight limp and a single vomit, 8 of 8 each on
+the same side as before, with the clinic open and closed; "thanks, I'll think about it"
+after a price still ends the call. Trembling said after a wait goes to an appointment in 1
+of 16, with the old instructions as with the new: the line between the two is still the
+model's (below). The six `symptom.*` scenarios three times with each kind of caller, no
+judge: 0 failures, and no "I'll wait" said to a caller who had not asked for it.
+
 ### What is open
 
 - **Where an emergency begins.** Decided by the model today, call by call. To be the
