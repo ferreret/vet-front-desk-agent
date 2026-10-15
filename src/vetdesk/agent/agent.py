@@ -13,12 +13,15 @@ from ..kb import KnowledgeBase
 from ..kb.model import spoken_phone
 from ..language import spoken_language
 from ..legacy.models import Clinic
+from ..legacy.normalize import fold_any as fold
 from ..llm import Conversation, LLMClient, LLMError, OnText, ToolResult, Usage
 from ..scheduling import Agenda
 from .prompt import (
+    CANNOT_JUDGE,
     LANGUAGE_NAMES,
     PHRASES,
     call_context,
+    emergency_sentences,
     greeting,
     in_an_emergency,
     set_phrases,
@@ -86,6 +89,14 @@ STILL_IN = {
     code: f"(Note from the phone system, not from the caller: the call is in {name}.)"
     for code, name in LANGUAGE_NAMES.items()
 }
+# Told to the model after the caller heard the sentence for a symptom where it had written
+# the emergency sentence: it would otherwise take the number for given.
+NOT_GIVEN = {
+    code: "(Note from the phone system, not from the caller: they had not asked for the "
+          "emergency number, so instead of the emergency sentence they heard: "
+          f'"{sentence}" Do what they choose.)'
+    for code, sentence in CANNOT_JUDGE.items()
+}
 LANGUAGE_NOTE = {
     code: f"(Note from the phone system, not from the caller: the caller is speaking {name}. "
           f"Answer in {name} from now on, every sentence, until they change language. "
@@ -113,42 +124,90 @@ class Turn:
         return sum(self.latencies)
 
 
-class Later:
-    """Says "anything else?" where a model wrote the phrase that opens a call.
+class Swap:
+    """Says one sentence where a model wrote another, as the words go by.
 
-    To "De acuerdo" in the middle of a call a model answered "¿En qué puedo ayudarle?",
-    the set phrase for asking what the caller wants. Given a set phrase for asking whether
-    they want anything else, it still reached for the first in 4 answers of 48. Once a
-    call has got going, the one is put in place of the other as the words go by.
-
-    The answer comes in pieces, and the phrase may come cut in two: the end of a piece
+    The answer comes in pieces, and the sentence may come cut in two: the end of a piece
     that could be its beginning is held until the next piece, or `rest`, settles it.
     """
 
-    def __init__(self, opening: str, later: str) -> None:
-        self._opening, self._later, self._held = opening.lower(), later, ""
+    def __init__(self, written: tuple[str, ...], instead: str) -> None:
+        self._written = tuple(sentence.lower() for sentence in written)
+        self._instead, self._held = instead, ""
+        self.swapped = 0  # how many times the sentence was put in place of another
 
     def _as_written(self, found: str) -> str:
-        """The phrase with a small letter where the model wrote it with one, mid-sentence."""
+        """The sentence with a small letter where the model wrote it with one, mid-sentence."""
         first = next((char for char in found if char.isalpha()), "")
         if not first.islower():
-            return self._later
-        at = next(i for i, char in enumerate(self._later) if char.isalpha())
-        return self._later[:at] + self._later[at].lower() + self._later[at + 1:]
+            return self._instead
+        at = next(i for i, char in enumerate(self._instead) if char.isalpha())
+        return self._instead[:at] + self._instead[at].lower() + self._instead[at + 1:]
+
+    def _first(self, text: str) -> tuple[int, int] | None:
+        """Where the first written sentence in `text` starts, and how long it is."""
+        found = [(at, len(sentence)) for sentence in self._written
+                 if (at := text.lower().find(sentence)) >= 0]
+        return min(found) if found else None
 
     def said(self, piece: str) -> str:
         text, out = self._held + piece, []
-        while (at := text.lower().find(self._opening)) >= 0:
-            out += [text[:at], self._as_written(text[at:at + len(self._opening)])]
-            text = text[at + len(self._opening):]
-        held = next((n for n in range(min(len(text), len(self._opening) - 1), 0, -1)
-                     if self._opening.startswith(text[-n:].lower())), 0)
+        while (found := self._first(text)) is not None:
+            at, length = found
+            out += [text[:at], self._as_written(text[at:at + length])]
+            text = text[at + length:]
+            self.swapped += 1
+        longest = max(len(sentence) for sentence in self._written) - 1
+        held = next((n for n in range(min(len(text), longest), 0, -1)
+                     if any(sentence.startswith(text[-n:].lower())
+                            for sentence in self._written)), 0)
         self._held = text[len(text) - held:]
         return "".join(out) + text[:len(text) - held]
 
     def rest(self) -> str:
         held, self._held = self._held, ""
         return held
+
+    def whole(self, text: str) -> str:
+        """A whole answer, as it is said."""
+        return self.said(text) + self.rest()
+
+
+class Later(Swap):
+    """Says "anything else?" where a model wrote the phrase that opens a call.
+
+    To "De acuerdo" in the middle of a call a model answered "¿En qué puedo ayudarle?",
+    the set phrase for asking what the caller wants. Given a set phrase for asking whether
+    they want anything else, it still reached for the first in 4 answers of 48. Once a
+    call has got going, the one is put in place of the other as the words go by.
+    """
+
+    def __init__(self, opening: str, later: str) -> None:
+        super().__init__((opening,), later)
+
+
+# What a caller says to ask for the emergency number, or to say it is urgent: whole words,
+# compared lowercase and without accents. Russian goes by stems, for its endings.
+_ASKS_FOR_THE_NUMBER = frozenset(fold("""telefono telefonos telefon telefons numero numeros
+    number numbers phone telephone nummer telefonnummer notfallnummer notruf numéro numéros
+    urgente urgentes urgencia urgencias urgent urgents urgencies urgència urgències
+    emergencia emergencias emergency emergencies urgence urgences urgenza emergenza
+    emergenze notfall dringend guardia guàrdia""").split())
+_ASKS_FOR_THE_NUMBER_STEMS = tuple(fold(stem) for stem in (
+    "номер", "телефон", "срочн", "экстренн", "неотложн"))
+
+
+def asks_for_the_number(line: str) -> bool:
+    """Whether a caller's line asks for the emergency number or says it is urgent.
+
+    Not what they tell of their animal, however serious: rat poison, said after the agent
+    had offered the number, a note or an appointment, got the number unasked 12 times in
+    12; a fall from a balcony, after the instructions had been told so, still 2 in 8
+    (2026-10-15). Whether it can wait is for whoever calls to decide.
+    """
+    words = fold(line).split()
+    return (any(word in _ASKS_FOR_THE_NUMBER for word in words)
+            or any(word.startswith(_ASKS_FOR_THE_NUMBER_STEMS) for word in words))
 
 
 class Call:
@@ -157,6 +216,7 @@ class Call:
         emergency: Callable[[str], str] = lambda language: "",
         languages: tuple[str, ...] = tuple(LANGUAGE_NAMES),
         emergency_phone: str = "",
+        emergency_sentences: Callable[[str], tuple[str, ...]] = lambda language: (),
     ) -> None:
         self._conversation = conversation
         self._toolbox = toolbox
@@ -178,6 +238,12 @@ class Call:
         # Whether the call has got going: an answer has been given that did more than ask
         # what the caller wants. From then on that question is not asked again: see `Later`.
         self._going = False
+        # The emergency sentences of each language, with this call's number. Until the
+        # caller asks for the number, or says it is urgent, they hear the sentence for a
+        # symptom in their place: see `asks_for_the_number`.
+        self._emergency_sentences = emergency_sentences
+        self._asked_for_the_number = False
+        self._not_given = False  # the caller heard that sentence in place of the number
 
     @property
     def session(self) -> CallSession:
@@ -205,9 +271,11 @@ class Call:
         is calling and tells nothing of their language.
         """
         self._before_last = None
-        before = (self._conversation.mark(), self.language, self._lines, self._going)
+        before = (self._conversation.mark(), self.language, self._lines, self._going,
+                  self._asked_for_the_number, self._not_given)
         asked = text
         if not note:
+            self._asked_for_the_number |= asks_for_the_number(text)
             self._toolbox.heard(text)
             language = self.hears(text)
             self._lines += 1
@@ -222,6 +290,9 @@ class Call:
                 # answered in Italian. It is reminded which language the call is in. Not
                 # in Spanish, the language the call starts in and the instructions say so.
                 asked = f"{text}\n\n{STILL_IN[language]}"
+        if self._not_given:
+            asked = f"{asked}\n\n{NOT_GIVEN[self.language]}"
+            self._not_given = False
         self.session.language = self.language  # what the tools hand over to be said
         events_before = len(self.session.events)
         latencies: list[float] = []
@@ -231,10 +302,14 @@ class Call:
         room = MAX_SPOKEN  # characters this turn may still say
         opening, anything_else = PHRASES[self.language][0], PHRASES[self.language][3]
         later = Later(opening, anything_else) if self._going else None
+        unasked = (None if self._asked_for_the_number else
+                   Swap(self._emergency_sentences(self.language), CANNOT_JUDGE[self.language]))
 
         def heard(piece: str) -> None:
             if later is not None:
                 piece = later.said(piece)
+            if unasked is not None:
+                piece = unasked.said(piece)
             if piece:
                 say(piece)
 
@@ -255,7 +330,10 @@ class Call:
             started = time.perf_counter()
             answer = send(payload, heard)
             latencies.append(time.perf_counter() - started)
-            if later is not None and (held := later.rest()):
+            held = later.rest() if later is not None else ""
+            if unasked is not None:
+                held = unasked.said(held) + unasked.rest()
+            if held:
                 say(held)
             return answer
 
@@ -304,10 +382,13 @@ class Call:
 
         answer = " ".join(kept(part) for part in spoken if part)
         if later is not None:  # as it was said, not as the model wrote it
-            whole = Later(opening, anything_else)
-            answer = whole.said(answer) + whole.rest()
+            answer = Later(opening, anything_else).whole(answer)
         elif answer and opening.lower() not in answer.lower():
             self._going = True
+        if unasked is not None:
+            answer = Swap(self._emergency_sentences(self.language),
+                          CANNOT_JUDGE[self.language]).whole(answer)
+            self._not_given = unasked.swapped > 0
         fallback = (CANNOT_HELP[self.language] if reply.stop == "refusal"
                     else "" if answer else DID_NOT_FOLLOW[self.language])
         if fallback:  # refused, cut off or empty: never go silent
@@ -335,7 +416,8 @@ class Call:
         """
         if self._before_last is None:
             return False
-        mark, self.language, self._lines, self._going = self._before_last
+        (mark, self.language, self._lines, self._going, self._asked_for_the_number,
+         self._not_given) = self._before_last
         self._conversation.rewind(mark)
         self._toolbox.unsaid()
         self._before_last = None
@@ -372,4 +454,5 @@ class FrontDeskAgent:
         return Call(self._llm.start(system, context, tools), toolbox, hello,
                     lambda language: f"{today_is(now, language)} "
                                      f"{in_an_emergency(self._kb, now, language)}",
-                    tuple(self._kb.clinic.languages), spoken_phone(self._kb.emergency.phone))
+                    tuple(self._kb.clinic.languages), spoken_phone(self._kb.emergency.phone),
+                    lambda language: emergency_sentences(self._kb, language))

@@ -75,10 +75,10 @@ share phones, numbers change hands, and people call from someone else's phone.
   can wait. Never say that something is or is not an emergency, serious or nothing to
   worry about, that it can wait, or that a vet should see the animal: whoever calls
   decides that, not you.
-- When the caller asks for the emergency number, or says it is urgent or an emergency,
-  ask nothing first, not even who is calling. Say at once the emergency sentence you were
-  given for the caller's language, word for word, with its phone number in figures as it
-  is written there.
+- When the caller asks for the emergency number, or says in their own words that it is
+  urgent or an emergency, ask nothing first, not even who is calling. Say at once the
+  emergency sentence you were given for the caller's language, word for word, with its
+  phone number in figures as it is written there.
 - When the caller tells you something is wrong with their animal, at any point of the
   call, say the sentence you were given for when you cannot judge it, word for word, and
   nothing else. Anything they have said about the animal (what it ate, how it breathes,
@@ -87,6 +87,10 @@ share phones, numbers change hands, and people call from someone else's phone.
   a problem with my cat", ask what is happening to the animal first, and only that. Then
   do what they choose: the emergency sentence, a message for the team with take_message,
   or an appointment, booked as any other.
+- Once you have said that sentence, and until the caller has chosen one of the three,
+  anything more they tell you about the animal, however serious or slight it sounds, gets
+  the same sentence again, word for word: never start a note or an appointment they have
+  not chosen.
 
 # What you can do
 Only what your tools do. When the caller wants a person, it depends on whether you have
@@ -274,6 +278,12 @@ def emergency_sentence(kb: KnowledgeBase, now: datetime, language: str) -> str:
     when_open, when_closed = EMERGENCY[language]
     sentence = when_open if kb.is_open(now) else when_closed
     return sentence.format(phone=spoken_phone(kb.emergency.phone))
+
+
+def emergency_sentences(kb: KnowledgeBase, language: str) -> tuple[str, str]:
+    """Both emergency sentences of one language, for when the clinic is open and closed."""
+    return tuple(sentence.format(phone=spoken_phone(kb.emergency.phone))
+                 for sentence in EMERGENCY[language])
 
 
 def set_phrases(language: str) -> str:

@@ -104,6 +104,54 @@ def test_the_emergency_sentence_is_written_in_code_in_every_language(clinic, kb)
     assert emergency_sentence(kb, night, "es") in model.transcript.context
 
 
+def test_the_emergency_number_is_heard_only_by_a_caller_who_asks_for_it(clinic, kb):
+    """Rat poison, told after the agent had offered the three ways, got the number unasked
+    12 times in 12 (2026-10-15): the model deciding it could not wait. The caller hears the
+    offer in its place, and the model is told so, until they ask for the number."""
+    from vetdesk.agent.prompt import CANNOT_JUDGE, emergency_sentence
+
+    number = emergency_sentence(kb, NOW, "es")
+    model = ScriptedClient([Reply(CANNOT_JUDGE["es"]), Reply(number),
+                            Reply(CANNOT_JUDGE["es"]), Reply(number)])
+    call = _call(model, clinic, kb)
+    heard: list[str] = []
+    call.say("Mi perro se ha comido algo raro.")
+    turn = call.say("No, perdone, creo que era veneno para ratas.", heard.append)
+    assert turn.text == CANNOT_JUDGE["es"] == "".join(heard)
+    assert "600 555 020" not in turn.text and not call.session.notices
+    # The model is told what the caller heard, once.
+    call.say("Pero respira bien, eh.")
+    assert "had not asked for the emergency number" in model.transcript.user_messages[2]
+    turn = call.say("Vale, deme el teléfono.")
+    assert turn.text == number and "had not asked" not in model.transcript.user_messages[3]
+    assert call.session.notices  # reception hears of an emergency number given
+
+
+@pytest.mark.parametrize("line", [
+    "Es urgente, se ha comido veneno para ratas.", "¿Me da el teléfono de urgencias?",
+    "It's an emergency, my dog ate rat poison.", "Мне срочно нужен номер!"])
+def test_a_caller_who_asks_for_the_number_or_says_it_is_urgent_hears_it_at_once(
+        clinic, kb, line):
+    from vetdesk.agent.prompt import emergency_sentence
+
+    number = emergency_sentence(kb, NOW, "es")
+    call = _call(ScriptedClient([Reply(number)]), clinic, kb)
+    assert call.say(line).text == number
+
+
+def test_a_sentence_is_swapped_as_the_words_go_by_however_they_are_cut():
+    from vetdesk.agent.agent import Swap
+
+    text = "Vale. El teléfono es el 600. Le atenderán. ¿Algo más?"
+    wanted = "Vale. No puedo valorarlo. ¿Algo más?"
+    for size in (1, 2, 3, 5, 8, 60):
+        swap = Swap(("Puede venir.", "El teléfono es el 600. Le atenderán."),
+                    "No puedo valorarlo.")
+        pieces = [text[i:i + size] for i in range(0, len(text), size)]
+        assert "".join(swap.said(piece) for piece in pieces) + swap.rest() == wanted, size
+        assert swap.swapped == 1
+
+
 def test_the_system_prompt_is_the_same_for_every_call_of_a_season(clinic, kb):
     first, second, summer = ScriptedClient([]), ScriptedClient([]), ScriptedClient([])
     _call(first, clinic, kb, "+34600111222")

@@ -164,6 +164,9 @@ class Verdict(_Model):
     # Turns where the agent said whether something was urgent, serious or could wait: it
     # does not judge that, whoever calls does.
     judged_urgency: list[int] = []
+    # Turns where a caller with a symptom, who had chosen nothing, was given the emergency
+    # number or asked who they were: the agent choosing for them. None when not a symptom.
+    chose_for_caller: list[int] | None = None
     # Read by the judge; None when the call was not judged.
     identity_questions: int | None = None
     over_asked: bool | None = None
@@ -187,6 +190,7 @@ class Verdict(_Model):
         if self.needless_emergency:
             found.append("sent to the emergency number a caller with nothing urgent")
         found += [f"judged whether it was urgent, turn {turn}" for turn in self.judged_urgency]
+        found += [f"chose for the caller, turn {turn}" for turn in self.chose_for_caller or []]
         found += self.forbidden_claims + self.said_wrong
         return found
 

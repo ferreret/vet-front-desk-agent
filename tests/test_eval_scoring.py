@@ -457,3 +457,22 @@ def test_calls_that_say_nothing_about_the_agent_are_set_apart(scenarios, truth, 
 def test_an_answer_that_judges_whether_it_is_urgent_is_found(answer, is_judged):
     """Since 2026-10-14 the agent does not judge whether something can wait."""
     assert judged(answer) is is_judged
+
+
+@pytest.mark.parametrize(("line", "chooses"), [
+    ("El teléfono, por favor.", True),
+    ("Prefiero que me llamen.", True),
+    ("Una cita, sí.", True),
+    ("Prefereixo una hora.", True),  # an appointment, in Catalan
+    ("Prefereixo hora.", True),
+    ("Please call me back.", True),
+    ("No, perdone, creo que era veneno para ratas.", False),
+    ("Crec que era verí, fa mitja hora.", False),  # when it happened
+    ("Se ha caído hace una hora.", False),
+    ("He notado que cojea.", False),  # "notado" is no note
+])
+def test_a_caller_choosing_a_way_is_read_in_their_words(line, chooses):
+    """Until they choose, the agent neither gives the number nor starts a booking."""
+    from vetdesk.evals.manners import chose
+
+    assert chose(line) is chooses

@@ -195,6 +195,7 @@ def format_report(
     answers = sum(len(verdict.words) for verdict in played)
     hello = [verdict for verdict in played if verdict.asked_who_first is not None]
     own = [verdict for verdict in played if verdict.asked_before_who is not None]
+    symptom = [verdict for verdict in played if verdict.chose_for_caller is not None]
     lines += [
         "",
         f"HOW IT TALKED  [read in code from its words, by keyword; {answers} answers]",
@@ -206,6 +207,8 @@ def format_report(
         f"{_share(sum(bool(verdict.asked_before_who) for verdict in own), len(own))}",
         f"  said whether something was urgent or could wait  "
         f"{_share(sum(len(verdict.judged_urgency) for verdict in played), answers)}",
+        f"  a symptom answered by choosing for the caller        "
+        f"{_share(sum(bool(verdict.chose_for_caller) for verdict in symptom), len(symptom))}",
         f"  answers in the language the caller was not speaking  "
         f"{_share(sum(len(verdict.wrong_language) for verdict in played), answers)}",
     ]

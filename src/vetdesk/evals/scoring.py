@@ -368,5 +368,6 @@ def score(
         wrong_language=talk.wrong_language,
         asked_who_unexplained=talk.who_unexplained,
         judged_urgency=talk.judged,
+        chose_for_caller=talk.chose_for_them,
         **judged,
     )

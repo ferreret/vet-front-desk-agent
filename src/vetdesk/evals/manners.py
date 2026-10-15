@@ -14,7 +14,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from ..agent.prompt import CANNOT_JUDGE
+from ..agent.agent import asks_for_the_number
+from ..agent.prompt import CANNOT_JUDGE, EMERGENCY
 from ..language import spoken_language
 from ..legacy.normalize import fold_any as fold
 from ..scenario import Scenario
@@ -106,6 +107,35 @@ def judged(answer: str) -> bool:
     return any(f" {phrase} " in plain for phrase in _JUDGED)
 
 
+# What a caller who has been offered the three ways says to choose a note or an
+# appointment; asking for the number is read as the agent reads it. "Hora" is an
+# appointment in Catalan ("prefereixo una hora") but not when it says when something
+# happened ("fa mitja hora", "hace una hora").
+_CHOSE = frozenset(fold("""nota recado missatge note message llamen llame truqui truquin
+    notiz zuruckrufen rappelle rappeler richiami richiamare cita visita appointment termin
+    rendez appuntamento""").split()) | {fold(w) for w in (
+    "перезвоните", "перезвонить", "запись", "записаться", "запишите", "приём", "прием")}
+_NOT_AN_APPOINTMENT = frozenset(fold("fa hace mitja media cada quarts quart desde des").split())
+# The emergency sentences without their number: the agent saying one is the number given.
+_EMERGENCY = tuple(fold(piece) for pair in EMERGENCY.values() for sentence in pair
+                   for piece in sentence.split("{phone}") if len(piece.strip(" ,.")) > 12)
+
+
+def chose(line: str) -> bool:
+    """Whether a caller's line chooses a way, or asks for the emergency number."""
+    words = fold(line).split()
+    hora = any(word == "hora" and not _NOT_AN_APPOINTMENT & set(words[max(at - 2, 0):at])
+               for at, word in enumerate(words))
+    return asks_for_the_number(line) or hora or any(word in _CHOSE for word in words) \
+        or "call me" in " ".join(words) or "call back" in " ".join(words)
+
+
+def gave_the_number(answer: str) -> bool:
+    """Whether an answer is the emergency sentence."""
+    plain = fold(answer)
+    return any(piece.strip(" ,.") in plain for piece in _EMERGENCY)
+
+
 def _has(text: str, phrase: str) -> bool:
     # Whole words, except the two stems (deletrea, deletrear; lletreja, lletrejar).
     padded = f" {text} "
@@ -149,6 +179,26 @@ class Manners:
     # another, or they were never asked.
     who_unexplained: bool | None
     judged: list[int]  # turns whose answer said whether something was urgent or could wait
+    # Turns where a caller who had said what was wrong with their animal, and had chosen
+    # nothing, was given the emergency number or asked who they were: the agent choosing
+    # for them. None when the caller's goal is another.
+    chose_for_them: list[int] | None
+
+
+def chose_for_them(record: CallRecord) -> list[int]:
+    """The turns where the agent chose a way for a caller with a symptom.
+
+    Rat poison named after the offer got the number unasked, 12 of 12, and bread or an
+    itching ear told after it got "your name and two surnames?", 6 of 8 (2026-10-15):
+    deciding by how serious it sounds, which is what the agent no longer does.
+    """
+    found = []
+    for turn, exchange in enumerate(record.exchanges, start=1):
+        if chose(exchange.said):
+            break
+        if gave_the_number(exchange.answer) or "name" in asked(exchange.answer):
+            found.append(turn)
+    return found
 
 
 def manners(scenario: Scenario, record: CallRecord) -> Manners:
@@ -179,4 +229,6 @@ def manners(scenario: Scenario, record: CallRecord) -> Manners:
         who_unexplained=who_unexplained,
         judged=[turn for turn, exchange in enumerate(record.exchanges, start=1)
                 if judged(exchange.answer)],
+        chose_for_them=(chose_for_them(record) if scenario.caller.goal.type == "symptom"
+                        else None),
     )
