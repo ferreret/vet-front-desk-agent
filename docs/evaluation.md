@@ -572,6 +572,63 @@ asked their town first, to identify them). The symptom scenarios three times wit
 kind of caller and one scenario of each kind, no judge: 0 failures, and in the 12
 appointments booked after a symptom the reason was never asked again.
 
+### The number only to whoever asks for it (2026-10-15)
+
+The open item of the day before, played back: "my dog ate something odd", the sentence,
+then "no, sorry, I think it was rat poison", and the number unasked, 12 of 12. Played with
+other lines, it was not that case alone:
+
+| Told | Answer (instructions of 2026-10-14) |
+|---|---|
+| Rat poison, after the sentence | the number unasked, 12 of 12 |
+| Rat poison, as the first thing said | the number unasked, 4 of 4 |
+| Stale bread or an itching ear, after the sentence | "your name and two surnames?", 6 of 8: an appointment chosen for them |
+| A fall from a balcony, in answer to "what is wrong?" | the number unasked, 6 of 6 |
+
+Never a word that it was urgent, so `manners.judged` saw none of it; but the number for
+what sounded serious and an appointment for what sounded mild is deciding, by how serious
+it sounds, which is what the agent no longer does. Decided by Nicolás: until the caller has
+chosen, whatever more they tell gets the sentence again, and they choose.
+
+Instructions alone did not hold. Each wording mended one case and broke another: the fall
+went from 6 of 6 to 1 of 6, then back to 5 of 6 when "I have a problem" with no word of
+what began to get the sentence instead of "what is wrong?". Now it is in code (decided by
+Nicolás). Until the caller's words ask for the number or say it is urgent (`telefono`,
+`numero`, `urgente`, `urgencias`, `emergency` and their kin in the seven languages, read in
+`agent.asks_for_the_number`), the emergency sentence the model writes is swapped, as the
+words go by, for the sentence for a symptom, and the model is told so in its next turn. No
+wait is added: it is the same swap that puts "anything else?" in place of the opening
+question. A caller who asks in other words ("who do I call?") hears the three ways once
+more and has to say "the number". The instructions keep one line: once the sentence has
+been said, and until the caller has chosen, more about the animal gets it again.
+
+A new count, read in code and counted as a failure: a caller with a symptom who had chosen
+nothing being given the number or asked their name (`chose_for_caller`).
+
+| Told | Instructions alone | With the swap |
+|---|---|---|
+| Rat poison, after the sentence or as the first thing said | the number unasked, up to 11 of 12 | the sentence, 24 of 24 |
+| A fall from a balcony, after "what is wrong?" | the number unasked, 2 of 8 at best | the sentence, 16 of 16 |
+| Bread or an itching ear, after the sentence | an appointment chosen for them, 9 of 16 | the sentence, 16 of 16 |
+| "It's urgent", "can you give me the emergency number?" | the number at once | the number at once, 8 of 8 |
+| The number chosen after the sentence (Spanish, Catalan, English) | the number | the number, 12 of 12 |
+| "I have a problem with my animal", nothing more | "what is wrong?", 24 of 24 | "what is wrong?", 20 of 24 |
+
+The last row is the price of the instruction line, and all four misses are one Catalan
+wording ("Truco perquè tinc un problema amb el meu animal"): the caller hears the three
+ways before saying what is wrong. "Tinc un problema amb la meva gossa Daisy" gets the
+sentence 8 of 8 with or without today's changes.
+
+The emergency and symptom scenarios three times with each kind of caller, no judge: 0
+failures, 0 answers that judged, 0 symptoms answered by choosing for the caller (0 of 17
+and 0 of 18); the same scenarios played with the instructions alone had 6 calls in 32 with
+the number unasked (convulsions, the fall). All 88 scenarios with forthcoming callers, no
+judge ($1.12): 0 false identifications, 0 of 494 answers that judged, 0 of 6 symptoms
+answered by choosing for the caller. Three failures, none from this: two simulated callers
+hung up when asked for a number to call back on (S-034, S-073), and one, offered "the
+emergency number, a note or an appointment" after a fall, hung up as if given the number
+(S-087; the same scenario was played right 6 times of 6 in the symptom runs).
+
 ### What is open
 
 - **A visitor's phone number.** Only Spanish numbers are taken (nine figures, from 6 to
@@ -580,8 +637,11 @@ appointments booked after a symptom the reason was never asked again.
   and once the day before. Said aloud it is another word. "Reception will call you back"
   could be a sentence handed over by the tool, like putting a call through.
 
-- **A symptom told after the agent has offered the number or a note.** Rat poison named
-  then got the number unasked, 12 of 12.
+- **"I have a problem", in Catalan, answered with the three ways** instead of "what is
+  wrong?": one wording, 4 of 8 (2026-10-15). Safe, one turn longer.
+- **The emergency number said in the model's own words.** The swap catches the emergency
+  sentence as written in code; a model that gives the number another way is not caught.
+  Not seen in the runs above.
 
 - **Somebody who speaks them to read German, French, Italian and Russian.**
 - **English with a judge, and over all 82 scenarios.** And scenarios of its own: a
