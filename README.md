@@ -4,7 +4,7 @@
 
 ### A voice AI front desk for veterinary clinics<br/>that knows when it does **not** know who is calling.
 
-[![Call the demo](https://img.shields.io/badge/📞_Call_the_demo-from_your_browser-0f6e5c?style=for-the-badge)](DEMO_URL)
+[![Call the demo](https://img.shields.io/badge/📞_Call_the_demo-from_your_browser-0f6e5c?style=for-the-badge)](https://demos.nicolasbarcelo.dev/clinica-veterinaria/)
 
 ![False identifications](https://img.shields.io/badge/false_identifications-0-0f6e5c)
 ![Tests](https://img.shields.io/badge/tests-684_passing-0f6e5c)
