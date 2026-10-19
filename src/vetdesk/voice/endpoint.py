@@ -86,7 +86,7 @@ from .demo import (
     slot_ahead,
     with_an_appointment,
 )
-from .demo_page import PAGE as DEMO_PAGE
+from .demo_page import page as demo_page
 from .desk_client import DESK_URL
 from .desk_client import PLATFORM as LIVEKIT
 from .livekit_demo import KEY as LIVEKIT_KEY
@@ -1046,7 +1046,9 @@ def main() -> None:
              else "not written down: no file is set for them")
     app = build_app(switchboard, key, getattr(llm, "model", ""), desk,
                     os.environ.get(ADMIN_KEY, ""), reception.send if reception else None,
-                    numbers[0] if numbers else "", calls, demo, sign, DEMO_PAGE,
+                    numbers[0] if numbers else "", calls, demo, sign,
+                    demo_page(*(os.environ.get(name, "") for name in (
+                        "VETDESK_DEMO_AUTHOR", "VETDESK_DEMO_AUTHOR_URL", "VETDESK_DEMO_SOURCE"))),
                     _vapi() if demo is not None else None, say_and_hang_up,
                     livekit_join)
     log.info("the demo %s", "can also be carried by LiveKit: its voice program is started"

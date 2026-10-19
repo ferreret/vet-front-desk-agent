@@ -720,3 +720,14 @@ def test_what_the_agent_took_a_demo_caller_for_is_put_in_words_the_page_can_show
     assert after_saying(people["stranger"]) == {"level": "none", "why": "not_a_client"}
     assert after_saying(people["hidden"], everything=False) == {"level": "none",
                                                                "why": "not_enough"}
+
+
+def test_a_deployment_may_say_whose_project_it_is_and_where_its_code_is():
+    from vetdesk.voice.demo_page import PAGE, page
+
+    assert page() == PAGE  # without the settings, the page as it always was
+    shown = page("Ana <Pérez>", "https://example.test/ana", "https://example.test/code")
+    assert '<a href="https://example.test/ana">Ana &lt;Pérez&gt;</a>' in shown
+    assert '<a href="https://example.test/code" data-t="source"></a>' in shown
+    assert '<p id="thesis" data-t="thesis"></p>' in shown and 'property="og:title"' in shown
+    assert "<!--ABOUT" not in shown

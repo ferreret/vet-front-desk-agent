@@ -46,6 +46,7 @@ anything of the other's. A setting left out keeps the behaviour it had before it
 | `VETDESK_GOOGLE_LOCATION` | Optional. `eu` by default |
 | `VETDESK_STT_MODEL` | Optional. `chirp_3` by default with Google |
 | `VETDESK_DEMO_MINUTES_A_DAY`, `VETDESK_DEMO_MINUTES_A_CALL` | Optional. 60 and 3 by default: set the day's minutes to what the budget allows |
+| `VETDESK_DEMO_AUTHOR`, `VETDESK_DEMO_AUTHOR_URL`, `VETDESK_DEMO_SOURCE` | Optional: the page says whose project it is, links to the code, and says in a line what the demo sets out to show |
 | `VETDESK_CALLS`, `VETDESK_ADMIN_KEY` | Optional: write every call down in `/app/state/calls.db`, and the key to read them at `/calls/view` |
 
 Not set, on purpose: `ELEVEN_API_KEY` and `VETDESK_ELEVENLABS_DEMO_AGENT_ID` (with no

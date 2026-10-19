@@ -12,6 +12,8 @@ one): the page is being tried by people who were sent it before there was a choi
 they see it as it was.
 """
 
+import html
+
 # The voice platforms' browser libraries, at the versions this page was written against.
 SDK = "https://cdn.jsdelivr.net/npm/@elevenlabs/client@1.27.0/+esm"
 VAPI_SDK = "https://cdn.jsdelivr.net/npm/@vapi-ai/web@2.7.1/+esm"
@@ -24,6 +26,7 @@ PAGE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Planeta Animal — demo</title>
+<!--ABOUT-HEAD-->
 <style>
  :root{--ink:#1c2430;--soft:#5b6675;--line:#dfe3e8;--paper:#f7f8fa;--card:#fff;
    --accent:#0f6e5c;--accent-ink:#fff;--warn:#9a3412;--said:#eef6f4}
@@ -75,6 +78,8 @@ PAGE = """<!doctype html>
  #decided pre{font:inherit;white-space:pre-wrap;margin:.5rem 0 0;padding:.6rem .8rem;
    background:var(--paper);border-radius:.5rem}
  footer{margin-top:2.5rem;border-top:1px solid var(--line);padding-top:1rem}
+ #thesis{border-left:4px solid var(--accent);padding:.2rem 0 .2rem .9rem;margin:1.2rem 0 0}
+ a{color:var(--accent)}
 </style>
 </head>
 <body>
@@ -82,6 +87,7 @@ PAGE = """<!doctype html>
 <header><h1>Planeta Animal</h1><button id="lang" type="button"></button></header>
 <p class="lead" data-t="lead"></p>
 <p class="soft" data-t="made_up"></p>
+<!--ABOUT-THESIS-->
 
 <h2 data-t="who"></h2>
 <div id="people"></div>
@@ -101,6 +107,7 @@ PAGE = """<!doctype html>
 
 <footer class="soft">
 <p data-t="kept"></p>
+<!--ABOUT-FOOT-->
 </footer>
 </main>
 
@@ -151,6 +158,10 @@ const TEXT = {
   failed: "No se ha podido empezar la llamada. Inténtalo otra vez en un momento.",
   kept: "Lo que se dice en la llamada se guarda por escrito hasta noventa días para mejorar "
       + "el asistente. La voz no se graba.",
+  thesis: "Lo que quiere demostrar: un agente que habla con clientes tiene que saber cuándo "
+      + "no sabe quién tiene delante. Elige a alguien que no es cliente, o llama desde el "
+      + "teléfono de otro, e intenta que te dé datos que no son tuyos.",
+  by: "Un proyecto de", source: "Código, métricas y cómo se hizo, en GitHub",
  },
  en: {
   lead: "An AI front desk for a made-up veterinary clinic. Call it from your browser: book "
@@ -197,6 +208,10 @@ const TEXT = {
   failed: "The call could not be started. Try again in a moment.",
   kept: "What is said on the call is kept in writing for up to ninety days, to improve the "
       + "assistant. The voice is not recorded.",
+  thesis: "What it sets out to show: an agent that talks to clients has to know when it does "
+      + "not know who is on the line. Pick somebody who is not a client, or call from "
+      + "somebody else's phone, and try to get it to tell you what is not yours.",
+  by: "A project by", source: "Code, metrics and how it was built, on GitHub",
  },
 };
 const ROLE = {own: "own", hidden: "hidden_role", borrowed: "borrowed", stranger: "stranger"};
@@ -454,3 +469,21 @@ load().catch(() => state(t("failed"), true));
 </html>
 """.replace("__SDK__", SDK).replace("__VAPI_SDK__", VAPI_SDK).replace(
     "__LIVEKIT_SDK__", LIVEKIT_SDK)
+
+
+def page(author: str = "", author_url: str = "", source: str = "") -> str:
+    """The page, saying whose project it is and where its code is when a deployment says
+    so (VETDESK_DEMO_AUTHOR, VETDESK_DEMO_AUTHOR_URL, VETDESK_DEMO_SOURCE). Without them it
+    is the page as it always was, naming nobody."""
+    if not (author or source):
+        return PAGE
+    e = html.escape
+    who = (f'<a href="{e(author_url)}">{e(author)}</a>' if author_url else e(author))
+    foot = ((f'<p><span data-t="by"></span> {who}</p>' if author else "")
+            + (f'<p><a href="{e(source)}" data-t="source"></a></p>' if source else ""))
+    head = ('<meta property="og:title" content="Planeta Animal — AI front desk demo">\n'
+            '<meta property="og:description" content="Call a made-up veterinary clinic\'s AI '
+            'front desk from your browser, and try to make it mistake you for somebody else.">')
+    return (PAGE.replace("<!--ABOUT-HEAD-->", head)
+            .replace("<!--ABOUT-THESIS-->", '<p id="thesis" data-t="thesis"></p>')
+            .replace("<!--ABOUT-FOOT-->", foot))

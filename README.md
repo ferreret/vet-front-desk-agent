@@ -1,252 +1,183 @@
 # vet-front-desk-agent
 
-An AI phone front desk for veterinary clinics. It answers client calls by voice, works out
-who is calling and which pet they have by querying the clinic's practice-management system,
-answers with the clinic's own information, and books the appointment.
+**A voice AI front desk for veterinary clinics that knows when it does not know who is
+calling.**
 
-> **An agent that talks to real clients has to know when it does NOT know who is on the line.**
+It answers the phone, works out who the caller is and which animals they have from the
+clinic's old practice-management database, answers questions from the clinic's own
+information, and books, moves or cancels appointments. Spanish, Catalan and English by
+voice; German, French, Italian and Russian measured by text.
 
-Veterinary practice-management systems are old. In the kind this project models, animals
-are linked to their owner by the owner's **name**, not by a key. There are homonyms, phone
-numbers that changed hands years ago, and clients with no animals at all. A naive agent
-takes the first match, greets the wrong person, and tells them about someone else's dog.
+**[▶ Call the demo from your browser](DEMO_URL)**: pick who you are, press *Call*, and try
+to get it to tell you something that is not yours.
 
-So identification here is a resolution with a confidence level, not a `SELECT`; below the
-threshold the agent asks instead of guessing; and the metric that matters most is the
-**false identification rate**, which has to be zero.
+---
 
-## Status
+## The problem
 
-| Phase | What | State |
-|---|---|---|
-| F1 | Synthetic generator: legacy-style database + call scenarios with ground truth | **Done** (2026-10-01) |
-| F2 | Legacy adapter + identity resolution, with tests | **Done** (2026-10-01): 0 false identifications in 174,567 simulated calls |
-| F3 | Agent with tools, knowledge base and mock agenda, over text | **Done** (2026-10-01): tested on a scripted model, and a first real call works end to end |
-| F4 | Evaluation harness with simulated callers | **Done** (2026-10-02): three full runs of 82 whole calls, 0 false identifications, and every defect found moved from the prompt into code. On 2026-10-05 the same scenarios chose the model: Gemini 3.5 Flash Lite, out of ten from four providers |
-| F5 | Voice layer: real-time STT/TTS, latency budget, barge-in, Spanish and Catalan | In progress: a first whole booking by voice, with ElevenLabs carrying the call and this agent answering as its "custom LLM". See [docs/voice.md](docs/voice.md) |
-| F6 | Public demo: a call from the browser | 🚧 Built, not published: passes and a daily budget, an agent of its own, and the page. First call made from the page on 2026-10-07 |
-| F7 | Metrics and case study | |
+Veterinary practice-management systems are old. In the kind this project models, an
+animal is linked to its owner by the owner's **name**, not by a key. There are namesakes,
+phone numbers that changed hands years ago, families sharing one phone, and names that
+speech recognition gets wrong, all the more in Catalan.
 
-The evaluation harness (F4) came before the voice interface on purpose.
+A naive agent takes the first database match, greets the wrong person and tells them
+about someone else's dog. So this project treats identification as **identity resolution
+with a confidence level**, not a `SELECT`, and measures one number above all others:
 
-## Try it
+> **False identifications: zero.** Below that comes everything else, including how often
+> it identifies the caller at all.
+
+## Results
+
+| What was measured | Result |
+|---|---|
+| Identity resolver, 174,567 simulated calls over eleven generated clinics | **0 false identifications**, 97.7% identified |
+| Whole calls played by simulated callers (text, with simulated speech-recognition errors), every full run | **0 false identifications**, 0 other clients' data revealed |
+| Bookings, moves and cancellations done as asked (Gemini 3.5 Flash Lite, 82 calls) | 60 of 63 |
+| Time to the agent's first words (same run) | median **1.2 s**, 94% under 1.5 s |
+| Model cost per call | about **$0.01** |
+| Calls about a symptom: emergency number given unasked, or the agent choosing for the caller | **0** of 35 |
+| Voice, from the caller falling silent to hearing the answer (LiveKit, ElevenLabs speech) | 1.7 to 2.2 s |
+| Tests | 683, none of them needing a model or a network |
+
+The model was chosen with these scenarios: ten models from four providers, the same
+eighty-two calls, and the decision made on speed once identity was equal. Methods, full
+tables and caveats in [docs/evaluation.md](docs/evaluation.md) and
+[docs/identity-resolution.md](docs/identity-resolution.md).
+
+## How it works
+
+```mermaid
+flowchart LR
+    G[Synthetic generator] --> DB[(Legacy-style<br/>clinic database)]
+    G --> S[Scenarios with<br/>ground truth]
+    DB --> A[Legacy adapter] --> R[Identity resolver<br/>confidence + evidence]
+    R --> AG[Agent<br/>LLM + tools]
+    KB[Clinic knowledge base<br/>one validated file] --> AG
+    AG --> AGD[(Agenda)]
+    S --> H[Evaluation harness<br/>simulated callers, judge]
+    H <--> AG
+    V[Voice: LiveKit<br/>speech to text, text to speech] <--> AG
+```
+
+| Piece | What it does |
+|---|---|
+| **Synthetic generator** | Builds a clinic database *with the defects of a real one* (link by name, namesakes, stale phones, typos, Catalan names in their Castilian form) and, from the same seed, call scenarios with their correct outcome |
+| **Legacy adapter** | Reads the old schema and translates it into a clean model. Another practice-management system would be another adapter |
+| **Identity resolver** | Plain code, no LLM. Given a number, a name, a pet and a town, returns `resolved`, `ask` (and what to ask) or `not_found`, with the evidence for every candidate |
+| **Agent** | An LLM with tools (identify, pets, availability, book, list, cancel, reschedule, take a message, transfer). Provider-agnostic: Gemini, Claude and anything with OpenAI's chat format |
+| **Evaluation harness** | Plays every scenario as a whole call: an LLM plays the caller, names are garbled as speech recognition would, code checks what code can, a judge model reads the rest |
+| **Voice** | LiveKit carries the call; a program of ours handles turns, interruptions and hanging up, and asks the same agent the harness measures |
+
+## Decisions that came from measuring
+
+Each of these started as something left to the model, failed in a measured run, and was
+moved into code.
+
+- **The privacy barrier is code, not prompt.** Tools that touch a client's data fail until
+  the resolver has confirmed the caller. The model decides what to say, not what it may
+  know.
+- **A phone number alone never confirms anybody.** A name has to match, *and* something
+  corroborate it: the calling number on that record, or a pet name together with the town.
+  The first policy passed every scenario and still confirmed the wrong person in the
+  10,800-call sweep; four rules exist only because measuring found them.
+- **Evidence counts only in the caller's own words.** The tool rejects a name, a pet or a
+  town the caller never said, and a reason for the visit the caller never gave.
+- **Cancelling or moving needs a call from a phone on the record.** A model once passed a
+  friend's name, pet and town as the caller's own and cancelled the friend's appointment.
+  The words were the caller's, so no check on the evidence could catch it; the phone can.
+- **Whatever the caller will act on is computed by code.** Times, phone numbers and
+  spellings come out of the tools already in words. Told how to say half hours in Catalan,
+  the model turned 16:30 into "les cinc i mitja" (17:30) in six calls.
+- **A prompt fix is measured before it is trusted.** That instruction turned one failure
+  into six.
+- **A weaker model is a better test.** A faster, less obedient model showed where the
+  guarantee still rested on the model; those were fixed in code, not by switching back.
+- **The agent does not triage.** It never says whether something is urgent. Whoever asks
+  for the emergency number gets it at once; whoever describes a symptom is offered the
+  number, a note for the vets or an appointment, and chooses. Left to the model, it gave
+  the number unasked to what sounded serious (12 of 12) and booked what sounded mild.
+- **No promise without a tool.** "I'll put you through" exists only when a transfer tool
+  does, and the sentence itself comes from the tool's response.
+- **Language is decided by code** from the caller's words. Left to the model, it answered
+  Catalan speakers in Spanish a third of the time.
+
+## Voice
+
+The same agent was put behind three voice stacks and compared on the same calls:
+
+| | ElevenLabs Agents | Vapi | LiveKit + our own program |
+|---|---|---|---|
+| Caller silent → agent's voice | 2.1 s | 2.5 s | **1.7 to 2.2 s** |
+| Voice cost per minute | $0.033 | $0.065 | **≈ $0.011** (estimated) |
+| "Diego Esteve Planas" heard right | No, asked to spell | No, asked to spell | **Yes, three times out of three** |
+| Who handles turn-taking | The platform | The platform | Our program |
+
+None of them gets the platform's own model or prompt: the platform asks our server, and
+what answers is the agent with the privacy barrier in code. The public demo runs on
+LiveKit Cloud with Google's speech services instead of ElevenLabs'; its latency is not in
+this table. Details in [docs/voice.md](docs/voice.md).
+
+## Run it locally
 
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.12.
 
 ```bash
 uv sync
-uv run vetdesk generate --seed 42
-uv run vetdesk scenarios list --category identity
-uv run vetdesk scenarios explain S-031   # the call told as a story
-uv run vetdesk scenarios show S-031      # the same call as JSON
-uv run vetdesk legacy inspect            # what the adapter had to work around
-uv run vetdesk identity resolve --number +34618065507 --name "Lucía Bibiloni Bosch" --pet Koko
-uv run vetdesk identity eval             # the measurement
+uv run vetdesk generate --seed 42        # the synthetic clinic and its scenarios
+uv run vetdesk scenarios explain S-031   # one call, told as a story
+uv run vetdesk legacy inspect            # what the adapter has to work around
+uv run vetdesk identity eval             # the resolver, measured (no model, no cost)
 uv run pytest
 ```
 
-To talk to the agent you need an API key for a language model: Gemini's by default, or
-any other provider's with `--model`. Evaluating it also needs an Anthropic key, for the
-simulated callers and the judge:
+To talk to the agent you need a Gemini API key in `.env` (see `.env.example`); the harness
+also uses Claude as its judge.
 
 ```bash
-cp .env.example .env                     # then put your key in it
-uv run vetdesk chat --number +34618065507 --now 2026-11-06T12:30 --verbose
-uv run vetdesk eval run --per-category 1 # one call of each kind, played and judged
-uv run vetdesk eval show data/runs/<run> S-031   # read one of them
+uv run vetdesk chat --number +34618065507 --verbose
+uv run vetdesk eval run --per-category 1 --no-judge
 ```
 
-`generate` writes three files into `data/` (git-ignored, always rebuilt from the seed):
+Deploying the voice server and the browser demo: [docs/deploy.md](docs/deploy.md).
 
-| File | What it is | Who reads it |
-|---|---|---|
-| `clinic.db` | The clinic as an old practice-management database would hold it | The agent side |
-| `truth.json` | Who everybody really is, and which defect each record carries | Tests and the harness only |
-| `scenarios.jsonl` | Phone calls with their expected outcome | Tests and the harness only |
+## Repository
 
-## The synthetic clinic
+| Path | |
+|---|---|
+| `src/vetdesk/synth` | Synthetic clinic and scenario generator |
+| `src/vetdesk/legacy` | Adapter for the legacy database |
+| `src/vetdesk/identity` | Identity resolver |
+| `src/vetdesk/agent`, `kb`, `scheduling`, `llm` | Agent, knowledge base, agenda, model adapters |
+| `src/vetdesk/evals` | Evaluation harness |
+| `src/vetdesk/voice` | Voice server, LiveKit program, browser demo |
+| `docs/` | How each part works, what was measured, and a log of every session |
 
-The generator first builds a clean world (households, people, pets, who really answers
-which phone), then degrades it into the legacy schema and labels every degradation:
+About 15,000 lines of Python and 8,000 of tests, built in three weeks.
 
-- **Link by name**: `Animales.Cliente` holds the owner's name as text. No foreign key.
-- **Homonyms**: clients with the same full name; parent and child stored with one surname.
-- **Phones**: shared by a household, stale and now answered by a stranger, missing, typed
-  in seven formats, two numbers in one field, notes mixed in.
-- **Names**: upper case without accents, missing second surname, given name first, typos,
-  Catalan names stored in their Castilian form.
-- **`Nani`** (the client's animal count): zero for clients without animals, and sometimes
-  out of step with the animals actually on file.
-- **Animals**: owner name spelled differently from the client record, orphans whose owner
-  no longer exists, species written five different ways, deceased animals.
+## What is not solved
 
-## Call scenarios
-
-Each scenario is one phone call with its ground truth: the calling number (or none), who
-the caller really is, what speech recognition makes of the names they say, what a correct
-identification looks like step by step, and which appointment should end up booked,
-cancelled or moved. The format is documented in [docs/scenario-format.md](docs/scenario-format.md).
-
-The reference answer comes from an oracle that hears every name perfectly and holds a
-perfectly cleaned copy of the file, but is still limited to what is on file.
-
-## Identity resolution
-
-No LLM decides who is calling. A resolver, in plain code, reads the legacy database through
-an adapter and returns `resolved`, `ask` (with what to ask next) or `not_found`, plus the
-reasons behind every candidate.
-
-**A caller is confirmed when their name matches a record and something more corroborates
-it, leaving a single candidate**: the calling number is on that record, or a pet name and
-the town both match it. A phone number alone never confirms anybody. A name that only
-resembles a record, as speech recognition often delivers it, counts for nothing until the
-caller has confirmed or spelled it; the one exception is a single surname a sound away,
-with the phone or the pet and town backing it. Cancelling or moving an appointment also needs the
-call to come from a phone on the record.
-
-Measured with `uv run vetdesk identity eval`, on the default clinic:
-
-| | 88 scenarios (73 need identification) | Sweep: 10,800 calls |
-|---|---|---|
-| False identifications | **0** | **0** |
-| Confirmed without enough evidence | 0 | 0 |
-| Identified, of those who could be | 51 / 52 | 97.6% |
-| Asked more than a perfect listener would | 1 | 0.3% |
-
-Across eleven generated clinics: 174,567 calls, 0 false identifications, 97.7% identified.
-
-Two things worth knowing before trusting those numbers. The first version of the policy
-passed every scenario and still confirmed the wrong person in the sweep; four rules exist
-only because measuring found them. And one risk is reduced, not closed: two different
-people can share a full name and a pet name. Of 220,000 simulated non-client callers, 8
-did; asking for the town left 3. Details, the cost in extra questions, and what is not
-solved, in [docs/identity-resolution.md](docs/identity-resolution.md).
-
-## The agent
-
-A language model with eight tools, talking in text for now (`vetdesk chat`).
-
-- **The privacy barrier is code, not prompt.** Tools that touch a client's data fail until
-  the resolver has confirmed the caller, and until then no tool answer contains a name, a
-  pet or an appointment from the records. The model decides what to say; it does not
-  decide what it may know.
-- **No tool transfers a call**, so the agent cannot promise to. It takes a message.
-- **One validated source for clinic facts.** Opening hours, the emergency number, services
-  and prices live in a single file that refuses to load with a placeholder, a malformed
-  phone number or a gap in the opening hours. The prompt and the agenda are built from it.
-- **Any provider.** The agent talks to a small interface; each provider is one adapter.
-  There are three: Claude, Gemini, and one for anything that speaks OpenAI's chat format
-  (OpenAI itself, and other models through a router).
-
-Tools, barrier, agenda, knowledge base and the agent loop are tested without a model.
-More in [docs/agent.md](docs/agent.md).
-
-## The whole agent, measured
-
-The resolver was measured on its own. The harness measures everything around it: each
-scenario is played as a whole phone call, in text, against the same agent that answers a
-real one. A language model plays the caller from a brief; what it says passes through
-simulated speech recognition, which garbles names the way the scenario recorded; and a
-third model reads the transcript for what code cannot check.
-
-Two full runs of `uv run vetdesk eval run`, with Claude Sonnet 5.5 as the agent: the first
-on the agent as it was, the second after fixing what the first found.
-
-| 82 calls, each scenario once | Run 1 | Run 2 |
-|---|---|---|
-| **False identifications** | **0** | **0** |
-| Another client's data said to the caller | 0 | 0 |
-| Somebody else's appointment touched | 0 | 0 |
-| Transfers promised | 0 | 0 |
-| Another client's data handed to the model by a tool | 2 calls | 0 |
-| Identified, of the callers who could be and needed to be | 47 of 48 | 48 of 49 |
-| Booked, cancelled or moved as asked | 63 of 64 | 63 of 64 |
-| Bookings that needed a single look at the agenda | 18 of 58 | 58 of 58 |
-| Told the caller a time or a fact that was wrong | 5 calls | 8 calls |
-| First words: median; within the 1.5 s target | 1.6 s; 39% | 1.6 s; 40% |
-
-The zeros are the expected part: the barrier is code. What the runs were for is the rest.
-
-**Run 1** found seven defects that the one call tried by hand had not shown. Three are the
-kind this project exists to prevent:
-
-- Given the emergency number as `+34600555020`, the model said it right and then repeated
-  it wrong ("más seis cuatro...") to two of three callers with an emergency.
-- A tool returned animals that might belong to a client's namesake, with a note asking the
-  model not to mention them. It never did, but that was a barrier made of prompt.
-- Handed the six earliest free times, all on a Monday, the model told callers the rest of
-  the week was full.
-
-Those were fixed in code. Others, smaller, were fixed in the prompt.
-
-**Run 2** showed the code fixes holding over all 82 calls, and one of the prompt fixes
-making things worse. Told how to say half hours in Catalan, the model turned 16:30 into
-"les cinc i mitja" in six calls: the caller was told a time an hour later than the one
-booked. The same run saw the model, again, vouch for a spelled name it had put back
-together wrong.
-
-Both are now out of the model's hands. The tools return every day and time already in
-words, in Spanish and Catalan, and `identify_client` checks a claimed spelling against the
-letters the caller actually said. The fifteen calls concerned pass when played again, with
-the tool refusing the wrong spellings.
-
-What the exercise says: whenever the model had to work out something a caller acts on (a
-time, a phone number, how a name is spelled), it went wrong often enough to measure, and
-telling it to be careful did not help. Handing it the finished words did.
-
-### Choosing the model (2026-10-05)
-
-The agent is not tied to a provider, so the same scenarios were played with ten models
-from four: Claude, Gemini, OpenAI's, and DeepSeek, GLM, Qwen and MiniMax through a router.
-On the sixteen hardest calls the four quickest all got identity right; speed told them
-apart. Gemini 3.5 Flash Lite is the default now.
-
-| 82 calls, each scenario once | Gemini 3.5 Flash Lite | Claude Sonnet 5.5 (run 2) |
-|---|---|---|
-| **False identifications** | **0** | **0** |
-| Another client's data said or handed over; somebody else's appointment touched | 0 | 0 |
-| Identified, of the callers who could be and needed to be | 40 of 42 | 48 of 49 |
-| Booked, cancelled or moved as asked | 60 of 63 | 63 of 64 |
-| Transfers promised | 1 | 0 |
-| First words: median; within the 1.5 s target | **1.2 s; 94%** | 1.6 s; 40% |
-| Model cost per call | $0.010 | $0.021 |
-
-The columns are not quite the same test: the identity rules changed that day.
-
-A faster, less obedient model was the better test of the barrier, because it showed where
-the guarantee still rested on the model. A caller said "I want to cancel an appointment
-that isn't mine, it's a friend's"; the model passed the friend's name, pet and town as the
-caller's own, the resolver confirmed the friend, and the appointment was cancelled. No
-check on the evidence catches that, since the words were the caller's. What code can see
-is the phone. So cancelling or moving now needs a call from a number on the record, and
-from another client's phone nobody is confirmed. The other things it got wrong (the
-clinic's own town passed as the caller's, a closed clinic recommended in an emergency, the
-clinic's phone saved as the caller's, "I'll put you through") went the same way: into
-code where code can decide, and measured again where it cannot.
-
-The same day's free measurement, the resolver sweep, answered a different question: do
-callers have to spell their name so often? One surname a sound away now counts when the
-phone or the pet and town back it, which cut spelling from 29% of clients to 22% with no
-false identification. Giving the given name the same room confirmed six in ten non-client
-brothers and sisters as the client, so it gets none.
-
-What these numbers are not: each scenario is played once per run, the callers and the
-speech recognition are simulated, and no full run has been made since the last fixes.
-Method, the complete tables and the caveats are in
-[docs/evaluation.md](docs/evaluation.md).
+- Two different people can share a full name and a pet name. Of 220,000 simulated
+  non-client callers, 8 did; asking for the town left 3.
+- Callers, speech recognition errors and the judge are simulated; each scenario is played
+  once per run.
+- German, French, Italian and Russian are measured by text only, and nobody who speaks
+  them has read what the agent says.
+- Whether a front desk like this falls under the EU AI Act's high-risk uses (emergency
+  call triage) is a question for a lawyer, not for code. The design avoids triage on
+  purpose.
 
 ## Rules of the house
 
-- **All data is synthetic.** Names are random combinations from word lists and phone numbers
-  are random digits; any resemblance to a real person or number is accidental. No real
-  clinic data is used, ever. The generator refuses to overwrite a database it did not create.
-- The clinic in the demo, "Planeta Animal", is fictional.
+- **All data is synthetic.** Names are random combinations from word lists and phone
+  numbers are random digits; any resemblance to a real person or number is accidental.
+  The clinic, "Planeta Animal", is fictional.
 - Written from scratch, with no code carried over from earlier projects.
 
 ## Built with AI assistance
 
-This project is developed with the help of an AI coding assistant (Claude Code). Design
-decisions, review and direction are the author's.
+Developed with an AI coding assistant (Claude Code). Design decisions, review and
+direction are the author's: [Nicolás Barceló](https://github.com/ferreret).
 
 ## License
 
