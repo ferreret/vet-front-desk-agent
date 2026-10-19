@@ -317,6 +317,9 @@ async function load() {
   info = await (await fetch("demo/people")).json();
   people = info.people;
   if (first && (info.platforms || []).includes(via)) platform = via;
+  // A server with no ElevenLabs account carries the demo by what it has: its first.
+  else if (first && info.platforms && info.platforms.length
+           && !info.platforms.includes(platform)) platform = info.platforms[0];
   chosen = chosen || (people[0] && people[0].key);
   draw();
 }

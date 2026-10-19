@@ -554,6 +554,43 @@ def test_the_program_that_listens_and_speaks_asks_the_front_desk_like_a_platform
     assert shown["identity"] == {"level": "none", "why": "not_asked"} and real.all() == []
 
 
+def test_a_server_with_only_a_livekit_project_carries_the_demo_by_it(clinic):
+    """A deployment with no ElevenLabs account: LiveKit is the only way, and a page that
+    asks for no platform is given it."""
+    from vetdesk.voice.demo_page import PAGE
+    from vetdesk.voice.livekit_demo import way_in
+
+    demo = Demo([MARTA, NOBODY], Clock(), minutes_a_day=9, minutes_a_call=3)
+    app, _, _ = _front_desk(clinic, [], demo, sign=None,
+                            livekit_join=way_in("wss://rooms.example", "the-key", "the-secret"))
+
+    async def run():
+        async with TestClient(TestServer(app)) as client:
+            people = await (await client.get("/demo/people")).json()
+            given = await (await client.post("/demo/call", json={"as": "own"})).json()
+            other = await client.post("/demo/call", json={"as": "own", "platform": "elevenlabs"})
+            return people, given, other.status
+
+    people, given, other = asyncio.run(run())
+    assert people["platforms"] == ["livekit"] and other == 404
+    assert given["platform"] == "livekit" and given["url"] == "wss://rooms.example"
+    assert "else if (first && info.platforms && info.platforms.length" in PAGE
+
+
+def test_without_any_way_to_carry_a_call_there_is_no_demo(clinic, tmp_path, monkeypatch):
+    from vetdesk.voice.endpoint import _demo
+
+    (tmp_path / "scenarios.jsonl").write_text("", encoding="utf-8")
+    for name in ("VETDESK_ELEVENLABS_DEMO_AGENT_ID", "ELEVEN_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    assert _demo(tmp_path, clinic) == (None, None)
+    demo, sign = _demo(tmp_path, clinic, by_livekit=True)
+    assert demo is not None and sign is None
+    monkeypatch.setenv("VETDESK_ELEVENLABS_DEMO_AGENT_ID", "agent")
+    monkeypatch.setenv("ELEVEN_API_KEY", "key")
+    assert _demo(tmp_path, clinic)[1] is not None  # as before: ElevenLabs alone is enough
+
+
 # --- the demo's own agent on the voice platform ---------------------------------------------
 
 def test_the_demos_agent_needs_a_pass_has_limits_and_nobody_to_put_a_call_through_to(monkeypatch):

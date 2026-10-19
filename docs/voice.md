@@ -459,6 +459,8 @@ The third way, begun on 2026-10-09 after the second came out at twice the price.
 else's platform holds the call: LiveKit moves the sound (their cloud, free for this much
 use, or a server of one's own), ElevenLabs hears and speaks, and the program in between
 is ours (`voice/livekit_app.py`, the one that had only ever run in a terminal).
+Since 2026-10-19 Google's speech services can hear and speak instead, for a deployment
+with no ElevenLabs account (`VETDESK_VOICE_SERVICE=google`): see [deploy.md](deploy.md).
 **Written and tested without a call; not heard from a browser yet.**
 
 - **That program asks our server what to say** (`voice/desk_client.py`), at an address

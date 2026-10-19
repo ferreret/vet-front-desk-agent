@@ -692,7 +692,8 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
                 "minutes_left": int(demo.left().total_seconds() // 60),
                 "seconds_a_call": int(demo.limit.total_seconds()),
                 # The voice platforms a call can be carried by, for the page to offer.
-                "platforms": ["elevenlabs"] + (["vapi"] if vapi_call else [])
+                # The first is the one the page starts on.
+                "platforms": (["elevenlabs"] if sign else []) + (["vapi"] if vapi_call else [])
                 + ([LIVEKIT] if livekit_join else [])}
 
     async def demo_people(request: web.Request) -> web.Response:
@@ -701,7 +702,8 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
     async def demo_call(request: web.Request) -> web.Response:
         try:
             asked = await request.json()
-            wanted, platform = str(asked["as"]), str(asked.get("platform") or "elevenlabs")
+            wanted = str(asked["as"])
+            platform = str(asked.get("platform") or people()["platforms"][0])
         except (ValueError, KeyError, TypeError, AttributeError):
             return web.json_response({"error": "expected who to call as"}, status=400)
         if platform not in people()["platforms"]:
@@ -854,7 +856,7 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
     app.router.add_post(f"/{LIVEKIT}/chat/completions", livekit)
     if admin_key:
         app.router.add_get("/vapi/seen", vapi_seen)
-    if demo is not None and sign is not None:
+    if demo is not None and (sign or vapi_call or livekit_join):
         app.router.add_get("/demo/people", demo_people)
         app.router.add_post("/demo/call", demo_call)
         if vapi_call:
@@ -901,18 +903,25 @@ def _key(host: str, path: Path = Path(".env")) -> str:
     return os.environ[KEY_NAME]
 
 
-def _demo(data: Path, clinic) -> tuple[Demo | None, Callable[[], str] | None]:
-    """The public demo, when it is set up: its agent on the voice platform, a key to ask
-    that platform for the address of each call, and the clinic's test callers to call as."""
+def _demo(data: Path, clinic, by_livekit: bool = False
+          ) -> tuple[Demo | None, Callable[[], str] | None]:
+    """The public demo, when it is set up: the clinic's test callers to call as, and a way
+    to carry the call. The first platform's is its agent there and a key to ask it for the
+    address of each call (`sign`); a LiveKit project (`by_livekit`) is enough on its own,
+    and then no ElevenLabs account is needed at all."""
     agent, key = os.environ.get(DEMO_AGENT), os.environ.get(VOICE_KEY)
     scenarios = data / "scenarios.jsonl"
-    if not (agent and key and scenarios.exists()):
-        log.info("the public demo is off: it needs %s, %s and the test callers",
-                 DEMO_AGENT, VOICE_KEY)
+    if not ((agent and key) or by_livekit) or not scenarios.exists():
+        log.info("the public demo is off: it needs %s and %s, or a LiveKit project, and "
+                 "the test callers", DEMO_AGENT, VOICE_KEY)
         return None, None
     demo = Demo(personas(load_jsonl(scenarios.read_text(encoding="utf-8")), clinic),
                 minutes_a_day=float(os.environ.get(DEMO_MINUTES_A_DAY, "60")),
                 minutes_a_call=float(os.environ.get(DEMO_MINUTES_A_CALL, "3")))
+    log.info("the public demo is on: %d callers to call as, %.0f minutes a day",
+             len(demo.people), demo.left().total_seconds() / 60)
+    if not (agent and key):
+        return demo, None
     url = ("https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?"
            + urllib.parse.urlencode({"agent_id": agent}))
 
@@ -921,8 +930,6 @@ def _demo(data: Path, clinic) -> tuple[Demo | None, Callable[[], str] | None]:
         with urllib.request.urlopen(request, timeout=10) as response:
             return json.loads(response.read())["signed_url"]
 
-    log.info("the public demo is on: %d callers to call as, %.0f minutes a day",
-             len(demo.people), demo.left().total_seconds() / 60)
     return demo, sign
 
 
@@ -1014,8 +1021,11 @@ def main() -> None:
 
     desk = Desk(lambda kb: FrontDeskAgent(llm, clinic, kb, agenda), agenda, kb, file,
                 for_the_demo)
-    demo, sign = _demo(args.data, clinic)
-    if demo is not None:
+    livekit_join = _livekit()
+    demo, sign = _demo(args.data, clinic, by_livekit=livekit_join is not None)
+    if demo is None:
+        livekit_join = None
+    else:
         demo.booked = lambda persona: slot_ahead(
             SqliteAgenda(desk.kb, datetime.now), datetime.now()) \
             if persona.client_code is not None and persona.pets else None
@@ -1038,7 +1048,7 @@ def main() -> None:
                     os.environ.get(ADMIN_KEY, ""), reception.send if reception else None,
                     numbers[0] if numbers else "", calls, demo, sign, DEMO_PAGE,
                     _vapi() if demo is not None else None, say_and_hang_up,
-                    livekit_join := _livekit() if demo is not None else None)
+                    livekit_join)
     log.info("the demo %s", "can also be carried by LiveKit: its voice program is started"
              if livekit_join else "is not carried by LiveKit: no project of it is set")
     if livekit_join:

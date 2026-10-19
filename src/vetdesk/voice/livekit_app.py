@@ -1,9 +1,10 @@
 """The front desk on a voice line, through LiveKit Agents.
 
 LiveKit does the hard real-time part: listening, deciding when the caller has finished,
-letting them interrupt, playing the answer. ElevenLabs hears (Scribe) and speaks. The
-thinking is not theirs: every answer comes from `FrontDeskAgent`, the same one the
-evaluation harness measures, reached through LiveKit's `llm_node`.
+letting them interrupt, playing the answer. ElevenLabs hears (Scribe) and speaks, or
+Google's speech services do (`VETDESK_VOICE_SERVICE=google`). The thinking is not theirs:
+every answer comes from `FrontDeskAgent`, the same one the evaluation harness measures,
+reached through LiveKit's `llm_node`.
 
 Two ways to run it:
 
@@ -20,6 +21,7 @@ LIVEKIT_API_KEY, LIVEKIT_API_SECRET) and the voice server running on this machin
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -41,7 +43,7 @@ from livekit.agents import (
     inference,
     llm,
 )
-from livekit.plugins import elevenlabs, silero
+from livekit.plugins import elevenlabs, google, silero
 
 from ..agent import FrontDeskAgent
 from ..agent.agent import Turn
@@ -67,11 +69,26 @@ def _load_env(path: Path = Path(".env")) -> None:
 _load_env()  # before the settings below are read, in whichever process imports this
 
 DATA = Path(os.environ.get("VETDESK_DATA", "data"))
+# Who hears and speaks: "elevenlabs", or "google" for a deployment with no ElevenLabs
+# account, signed with a Google service account's key (VETDESK_GOOGLE_KEY, as for the
+# calendar: the JSON as it is or in base64).
+VOICE_SERVICE = os.environ.get("VETDESK_VOICE_SERVICE", "elevenlabs")
+GOOGLE_KEY = "VETDESK_GOOGLE_KEY"
 # Catalan rules out the fastest ElevenLabs model (Flash v2.5 does not speak it). Of the two
 # that do and can stream, v4 Turbo is the quicker.
 TTS_MODEL = os.environ.get("VETDESK_TTS_MODEL", "eleven_v4_turbo")
 TTS_VOICE = os.environ.get("VETDESK_TTS_VOICE")  # an ElevenLabs voice id; theirs by default
-STT_MODEL = os.environ.get("VETDESK_STT_MODEL", "scribe_v2_realtime")
+STT_MODEL = os.environ.get("VETDESK_STT_MODEL",
+                           "chirp_3" if VOICE_SERVICE == "google" else "scribe_v2_realtime")
+# Google's voice for each language the agent speaks, "es=es-ES-Chirp3-HD-...,ca=ca-ES-...".
+# The voice is changed when the caller's language is, since a Google voice speaks one.
+GOOGLE_VOICES = dict(pair.split("=", 1) for pair in
+                     os.environ.get("VETDESK_GOOGLE_VOICES", "").split(",") if "=" in pair)
+# Where Google hears: not every model is in every region, and the clinic is in Europe.
+GOOGLE_LOCATION = os.environ.get("VETDESK_GOOGLE_LOCATION", "eu")
+# The region each of the agent's languages is spoken in, as Google names a language.
+_GOOGLE_REGION = {"es": "es-ES", "ca": "ca-ES", "en": "en-GB", "de": "de-DE", "fr": "fr-FR",
+                  "it": "it-IT", "ru": "ru-RU"}
 # The first is the clinic's language; the others are what callers may speak instead.
 # Only Catalan by default. With English, French, German, Dutch and Italian added, the
 # recogniser turned a Spanish sentence said into a real microphone into Dutch, and the
@@ -97,6 +114,42 @@ PHONE_MAX_SECONDS = float(os.environ.get("VETDESK_CALL_MAX_SECONDS", "900"))
 # Seconds of nobody speaking before the caller is asked whether they are still there, and
 # again before the line is given up: the voice server has the words for both.
 QUIET_SECONDS = 15.0
+
+
+def google_voice(voice: str) -> dict:
+    """What Google's speaking is told for one voice: its name, and the language the name
+    begins with."""
+    return {"voice_name": voice, "language": "-".join(voice.split("-")[:2])}
+
+
+def _ears_and_mouth() -> tuple[object, object, Callable[[str], None]]:
+    """The recogniser, the voice, and what to do when the caller's language changes."""
+    if VOICE_SERVICE == "google":
+        text = os.environ[GOOGLE_KEY].strip()
+        key = json.loads(text if text.startswith("{") else base64.b64decode(text).decode())
+        voices = {language: google_voice(voice) for language, voice in GOOGLE_VOICES.items()}
+        first = voices[STT_LANGUAGES[0]]
+        stt = google.STT(model=STT_MODEL, location=GOOGLE_LOCATION, credentials_info=key,
+                         languages=[_GOOGLE_REGION.get(code, code) for code in STT_LANGUAGES],
+                         detect_language=True)
+        # Only the Chirp 3 HD voices can be streamed, sentence by sentence, and the voice
+        # is changed on the same one: streamed only when every voice can be.
+        tts = google.TTS(credentials_info=key, **first, use_streaming=all(
+            "Chirp3-HD" in voice["voice_name"] for voice in voices.values()))
+
+        def speak_in(language: str) -> None:
+            # A language with no voice of its own is said in the clinic's.
+            tts.update_options(**voices.get(language, first))
+
+        return stt, tts, speak_in
+    # With a primary language set, the recogniser stops saying which language it heard
+    # unless asked to: it then called a Catalan sentence Spanish.
+    stt = elevenlabs.STT(model=STT_MODEL, language_code=STT_LANGUAGES[0],
+                         secondary_languages=STT_LANGUAGES[1:],
+                         include_language_detection=True,
+                         server_vad={"vad_silence_threshold_secs": STT_PAUSE})
+    tts = elevenlabs.TTS(model=TTS_MODEL, **({"voice_id": TTS_VOICE} if TTS_VOICE else {}))
+    return stt, tts, lambda language: None  # one voice speaks every language
 
 
 class _ElsewhereLLM(llm.LLM):
@@ -241,16 +294,12 @@ async def entrypoint(ctx: JobContext) -> None:
         log.info("call %s", "over the phone line" if by_phone else f"in room {ctx.room.name}")
         answer = _at_the_voice_server(http, ctx.room.name, asked, phone)
     agent = VoiceFrontDesk(answer, asked, close)
+    stt, tts, speak_in = _ears_and_mouth()
 
     session = AgentSession(
-        # With a primary language set, the recogniser stops saying which language it
-        # heard unless asked to: it then called a Catalan sentence Spanish.
-        stt=elevenlabs.STT(model=STT_MODEL, language_code=STT_LANGUAGES[0],
-                           secondary_languages=STT_LANGUAGES[1:],
-                           include_language_detection=True,
-                           server_vad={"vad_silence_threshold_secs": STT_PAUSE}),
+        stt=stt,
         llm=_ElsewhereLLM(),
-        tts=elevenlabs.TTS(model=TTS_MODEL, **({"voice_id": TTS_VOICE} if TTS_VOICE else {})),
+        tts=tts,
         vad=ready["vad"],
         turn_handling={
             # The small model that runs here, said by name. Left to choose, the library
@@ -279,6 +328,7 @@ async def entrypoint(ctx: JobContext) -> None:
         heard_at[0] = time.monotonic()
         if event.is_final:
             language[0] = language_of(event.language)
+            speak_in(language[0])
             log.info("caller (%s): %s", event.language, event.transcript)
 
     @session.on("conversation_item_added")
@@ -336,9 +386,15 @@ async def entrypoint(ctx: JobContext) -> None:
 
 def main() -> None:
     _load_env()
-    if not os.environ.get("ELEVEN_API_KEY") and "--list-devices" not in sys.argv:
-        raise SystemExit("Set ELEVEN_API_KEY in .env: ElevenLabs does the listening and the "
-                         "speaking.")
+    if "--list-devices" not in sys.argv:
+        if VOICE_SERVICE == "google":
+            if not (os.environ.get(GOOGLE_KEY) and STT_LANGUAGES[0] in GOOGLE_VOICES):
+                raise SystemExit(f"Set {GOOGLE_KEY} and a voice for '{STT_LANGUAGES[0]}' in "
+                                 "VETDESK_GOOGLE_VOICES: Google does the listening and the "
+                                 "speaking.")
+        elif not os.environ.get("ELEVEN_API_KEY"):
+            raise SystemExit("Set ELEVEN_API_KEY in .env: ElevenLabs does the listening and "
+                             "the speaking.")
     if "console" in sys.argv and not (DATA / "clinic.db").exists():
         raise SystemExit(f"{DATA / 'clinic.db'} not found; run `vetdesk generate` first.")
     # What the caller said, what the agent said and how long it took. Not every packet.
