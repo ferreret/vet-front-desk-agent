@@ -7,28 +7,38 @@ key or real phone number is written in this repository.
 | | Phone line | Browser demo, no ElevenLabs |
 |---|---|---|
 | Calls come in | By a phone number, through ElevenLabs Agents | From `/demo` in a browser, through LiveKit Cloud |
-| Hears and speaks | ElevenLabs | Google Cloud Speech-to-Text and Text-to-Speech |
-| The model | Gemini | Gemini |
-| Accounts | ElevenLabs, Gemini, a SIP provider | LiveKit Cloud, one Google Cloud project |
+| Hears and speaks | ElevenLabs | LiveKit's own hosted models (or Google Cloud's) |
+| The model | Gemini | Gemini, on its free tier |
+| Accounts | ElevenLabs, Gemini, a SIP provider | LiveKit Cloud and a Gemini key; no card in either |
 
 Both can run at once from the same commit, each with its own accounts: neither uses
 anything of the other's. A setting left out keeps the behaviour it had before it existed.
 
-## The browser demo, with LiveKit and Google
+## The browser demo, with LiveKit and no card
 
 ### Accounts
 
-1. **LiveKit Cloud.** A project in Europe, with recording and transcripts off. From its
-   settings: the project's address (`wss://...`), an API key and its secret. The free plan
-   is enough: the program that listens and speaks runs on our server, and nothing of
-   LiveKit's paid by use is switched on (see `livekit_app.py`).
-2. **Google Cloud**, one project for everything:
+1. **LiveKit Cloud.** A project in Europe, with agent observability off. From its
+   settings: the project's address (`wss://...`), an API key and its secret. On the free
+   plan, hearing and speaking come out of the project's monthly inference credit (about
+   2.50 $): when it is spent, calls stop being answered until the next month, and nothing
+   is ever charged.
+2. **Gemini**: an API key from Google AI Studio on a project with no billing, so on the
+   free tier, with its rate limits. Everything the model is told is made up.
+3. **A voice** of the provider in `VETDESK_TTS_MODEL` (Cartesia by default) that speaks
+   Spanish from Spain, by its id, from that provider's voice library.
+
+### Or Google Cloud for hearing and speaking
+
+With a card on file and no monthly stop, but a larger free allowance. Instead of 3:
+
+1. **Google Cloud**, one project for everything:
    - A Gemini API key (from Google AI Studio, on that project).
    - The *Cloud Speech-to-Text API* and the *Cloud Text-to-Speech API* enabled.
    - Billing enabled, which both speech APIs require even within their free allowance,
      and **a budget with an alert** on the project.
    - A service account with the *Cloud Speech Client* role, and a JSON key for it.
-3. **The voices.** Google's voices are per language. Listen to them in the Text-to-Speech
+2. **The voices.** Google's voices are per language. Listen to them in the Text-to-Speech
    page of the Google Cloud console and pick one for Spanish (Spain) and one for Catalan.
    Chirp 3 HD voices are streamed sentence by sentence; a voice of another kind is
    spoken whole, and if one language has such a voice, they all are.
@@ -40,12 +50,14 @@ anything of the other's. A setting left out keeps the behaviour it had before it
 | `GEMINI_API_KEY` | The Gemini key |
 | `VETDESK_ENDPOINT_KEY` | Any long random string; the server refuses to start without it |
 | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | The LiveKit project's |
-| `VETDESK_VOICE_SERVICE` | `google` |
-| `VETDESK_GOOGLE_KEY` | The service account's JSON key, in base64 (`base64 -w0 key.json`) |
-| `VETDESK_GOOGLE_VOICES` | `es=<Spanish voice>,ca=<Catalan voice>` |
-| `VETDESK_GOOGLE_LOCATION` | Optional. `eu` by default |
-| `VETDESK_STT_MODEL` | Optional. `chirp_3` by default with Google |
-| `VETDESK_DEMO_MINUTES_A_DAY`, `VETDESK_DEMO_MINUTES_A_CALL` | Optional. 60 and 3 by default: set the day's minutes to what the budget allows |
+| `VETDESK_VOICE_SERVICE` | `livekit` (or `google`) |
+| `VETDESK_TTS_VOICE` | With `livekit`: the voice's id |
+| `VETDESK_TTS_MODEL` | Optional with `livekit`: `cartesia/sonic-3` by default |
+| `VETDESK_STT_MODEL` | Optional: `google/gemini-3.5-transcribe-live` with `livekit` (told to listen for Spanish and Catalan), `chirp_3` with `google` |
+| `VETDESK_GOOGLE_KEY` | With `google`: the service account's JSON key, in base64 (`base64 -w0 key.json`) |
+| `VETDESK_GOOGLE_VOICES` | With `google`: `es=<Spanish voice>,ca=<Catalan voice>` |
+| `VETDESK_GOOGLE_LOCATION` | Optional with `google`: `eu` by default |
+| `VETDESK_DEMO_MINUTES_A_DAY`, `VETDESK_DEMO_MINUTES_A_CALL` | Optional. 60 and 3 by default: set the day's minutes to what the credit or the budget allows |
 | `VETDESK_DEMO_AUTHOR`, `VETDESK_DEMO_AUTHOR_URL`, `VETDESK_DEMO_SOURCE` | Optional: the page says whose project it is, links to the code, and says in a line what the demo sets out to show |
 | `VETDESK_CALLS`, `VETDESK_ADMIN_KEY` | Optional: write every call down in `/app/state/calls.db`, and the key to read them at `/calls/view` |
 
@@ -76,13 +88,15 @@ The server's log says, at start:
 
 and then the voice program registering with LiveKit. Open `/demo`: there is no choice of
 platform on the page, and a call goes by LiveKit. A voice program that cannot start says
-why in the log (`Set VETDESK_GOOGLE_KEY and a voice for 'es' ...`), and is started again.
+why in the log (`Set VETDESK_TTS_VOICE ...`), and is started again.
 
 ### Not verified yet
 
-Written and tested without a call, on 2026-10-19. Not yet heard: whether `chirp_3` in `eu`
+Written and tested without a call, on 2026-10-19. Not yet heard: whether the recogniser
 tells Spanish from Catalan as Scribe did, how long a turn takes (1.7 to 2.2 s with
-ElevenLabs), and how the chosen voices sound. The first calls will say.
+ElevenLabs), how the chosen voice sounds, and how many minutes a month the free credit
+lasts. With `livekit`, an answer in Catalan is said by the Spanish voice. The first calls
+will say.
 
 ## The phone line, as it is
 

@@ -197,8 +197,8 @@ what answers is the agent with the privacy barrier in code.
 
 > [!NOTE]
 > The table was measured with ElevenLabs' speech recognition and voice. The public demo
-> runs on LiveKit Cloud with Google's speech services instead, so its timings are not in
-> it. Details in [docs/voice.md](docs/voice.md).
+> runs on LiveKit Cloud with LiveKit's own hosted speech models instead, so its timings
+> are not in it. Details in [docs/voice.md](docs/voice.md).
 
 ## 🚀 Run it locally
 

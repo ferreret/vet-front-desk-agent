@@ -19,7 +19,7 @@ Son **dos despliegues separados del mismo repo**, sin compartir ninguna cuenta:
 |---|---|---|
 | Servidor | El VPS de la empresa (Dokploy), tal como está | El Dokploy personal de Nicolás (en su Proxmox) |
 | Canal | Número de teléfono (Zadarma) y ElevenLabs Agents | Llamada desde el navegador por LiveKit Cloud |
-| Cuentas | Gemini y ElevenLabs de la empresa | Todas de Nicolás: LiveKit Cloud y Google (Gemini, y oír y hablar con Google Cloud) |
+| Cuentas | Gemini y ElevenLabs de la empresa | Todas de Nicolás y **sin tarjeta** (decisión suya): LiveKit Cloud gratuito, que también oye y habla con su crédito mensual (`VETDESK_VOICE_SERVICE=livekit`; si se acaba, la demo calla hasta el mes siguiente), y Gemini en su capa gratuita. Google Cloud para oír y hablar queda escrito como alternativa con tarjeta |
 
 Todo lo que se añada para el portfolio se enciende con ajustes de configuración; sin ellos el código hace lo mismo que antes, para que volver a desplegar la demo de la empresa no cambie nada. La lista de «Qué sigue» de las sesiones anteriores queda cerrada salvo lo que sirva a uno de estos dos usos.
 

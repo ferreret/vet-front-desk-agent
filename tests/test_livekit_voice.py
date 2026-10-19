@@ -54,3 +54,20 @@ def test_the_google_key_may_come_in_base64(by_google):
     by_google.setattr(livekit_app, "GOOGLE_VOICES", {"es": "es-ES-Chirp3-HD-Aoede"})
     stt, _, _ = livekit_app._ears_and_mouth()
     assert stt._credentials_info["project_id"] == "a-project"
+
+
+def test_livekit_s_own_models_listen_for_catalan_too_and_speak_with_the_chosen_voice(
+        monkeypatch):
+    monkeypatch.setattr(livekit_app, "VOICE_SERVICE", "livekit")
+    monkeypatch.setattr(livekit_app, "STT_LANGUAGES", ["es", "ca"])
+    monkeypatch.setattr(livekit_app, "STT_MODEL", "google/gemini-3.5-transcribe-live")
+    monkeypatch.setattr(livekit_app, "TTS_MODEL", "cartesia/sonic-3")
+    monkeypatch.setattr(livekit_app, "TTS_VOICE", "a-voice")
+    for name in ("LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"):
+        monkeypatch.setenv(name, "x")
+    stt, tts, speak_in = livekit_app._ears_and_mouth()
+    assert type(stt).__module__.startswith("livekit.agents.inference")
+    assert stt._opts.extra_kwargs["language_codes"] == ["es-ES", "ca-ES"]
+    assert (tts._opts.model, tts._opts.voice, tts._opts.language) == (
+        "cartesia/sonic-3", "a-voice", "es")
+    assert speak_in("ca") is None  # one voice, in the clinic's language

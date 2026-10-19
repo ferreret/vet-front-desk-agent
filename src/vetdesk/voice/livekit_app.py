@@ -2,7 +2,9 @@
 
 LiveKit does the hard real-time part: listening, deciding when the caller has finished,
 letting them interrupt, playing the answer. ElevenLabs hears (Scribe) and speaks, or
-Google's speech services do (`VETDESK_VOICE_SERVICE=google`). The thinking is not theirs:
+Google's speech services do (`VETDESK_VOICE_SERVICE=google`), or the models LiveKit hosts
+itself, paid from the project's own credit (`VETDESK_VOICE_SERVICE=livekit`). The thinking
+is not theirs:
 every answer comes from `FrontDeskAgent`, the same one the evaluation harness measures,
 reached through LiveKit's `llm_node`.
 
@@ -69,17 +71,22 @@ def _load_env(path: Path = Path(".env")) -> None:
 _load_env()  # before the settings below are read, in whichever process imports this
 
 DATA = Path(os.environ.get("VETDESK_DATA", "data"))
-# Who hears and speaks: "elevenlabs", or "google" for a deployment with no ElevenLabs
-# account, signed with a Google service account's key (VETDESK_GOOGLE_KEY, as for the
-# calendar: the JSON as it is or in base64).
+# Who hears and speaks: "elevenlabs"; "google", signed with a Google service account's key
+# (VETDESK_GOOGLE_KEY, as for the calendar: the JSON as it is or in base64); or "livekit",
+# the models LiveKit hosts, paid from the project's monthly credit with no other account
+# and no card: when the credit is spent, calls stop being answered until the next month.
 VOICE_SERVICE = os.environ.get("VETDESK_VOICE_SERVICE", "elevenlabs")
 GOOGLE_KEY = "VETDESK_GOOGLE_KEY"
 # Catalan rules out the fastest ElevenLabs model (Flash v2.5 does not speak it). Of the two
 # that do and can stream, v4 Turbo is the quicker.
-TTS_MODEL = os.environ.get("VETDESK_TTS_MODEL", "eleven_v4_turbo")
+# On LiveKit's own models, "provider/model", and a voice of that provider's.
+TTS_MODEL = os.environ.get("VETDESK_TTS_MODEL", "cartesia/sonic-3" if VOICE_SERVICE == "livekit"
+                           else "eleven_v4_turbo")
 TTS_VOICE = os.environ.get("VETDESK_TTS_VOICE")  # an ElevenLabs voice id; theirs by default
-STT_MODEL = os.environ.get("VETDESK_STT_MODEL",
-                           "chirp_3" if VOICE_SERVICE == "google" else "scribe_v2_realtime")
+STT_MODEL = os.environ.get("VETDESK_STT_MODEL", {
+    "google": "chirp_3",
+    # Of LiveKit's recognisers, the one that can be told to listen for Catalan as well.
+    "livekit": "google/gemini-3.5-transcribe-live"}.get(VOICE_SERVICE, "scribe_v2_realtime"))
 # Google's voice for each language the agent speaks, "es=es-ES-Chirp3-HD-...,ca=ca-ES-...".
 # The voice is changed when the caller's language is, since a Google voice speaks one.
 GOOGLE_VOICES = dict(pair.split("=", 1) for pair in
@@ -142,6 +149,16 @@ def _ears_and_mouth() -> tuple[object, object, Callable[[str], None]]:
             tts.update_options(**voices.get(language, first))
 
         return stt, tts, speak_in
+    if VOICE_SERVICE == "livekit":
+        regions = [_GOOGLE_REGION.get(code, code) for code in STT_LANGUAGES]
+        # LiveKit's Gemini recogniser is told the languages; the others, the clinic's.
+        stt = (inference.STT(STT_MODEL, extra_kwargs={"language_codes": regions})
+               if STT_MODEL.startswith("google/")
+               else inference.STT(STT_MODEL, language=STT_LANGUAGES[0]))
+        # One voice, in the clinic's language: what each provider can say in Catalan is
+        # not known, and a language a voice does not speak may fail the whole answer.
+        tts = inference.TTS(TTS_MODEL, voice=TTS_VOICE, language=STT_LANGUAGES[0])
+        return stt, tts, lambda language: None
     # With a primary language set, the recogniser stops saying which language it heard
     # unless asked to: it then called a Catalan sentence Spanish.
     stt = elevenlabs.STT(model=STT_MODEL, language_code=STT_LANGUAGES[0],
@@ -387,7 +404,12 @@ async def entrypoint(ctx: JobContext) -> None:
 def main() -> None:
     _load_env()
     if "--list-devices" not in sys.argv:
-        if VOICE_SERVICE == "google":
+        if VOICE_SERVICE == "livekit":
+            if not TTS_VOICE:
+                raise SystemExit("Set VETDESK_TTS_VOICE to a voice of the provider in "
+                                 f"VETDESK_TTS_MODEL ({TTS_MODEL}): LiveKit's models do the "
+                                 "listening and the speaking.")
+        elif VOICE_SERVICE == "google":
             if not (os.environ.get(GOOGLE_KEY) and STT_LANGUAGES[0] in GOOGLE_VOICES):
                 raise SystemExit(f"Set {GOOGLE_KEY} and a voice for '{STT_LANGUAGES[0]}' in "
                                  "VETDESK_GOOGLE_VOICES: Google does the listening and the "
