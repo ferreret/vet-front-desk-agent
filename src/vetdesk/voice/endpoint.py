@@ -1052,7 +1052,8 @@ def main() -> None:
                     os.environ.get(ADMIN_KEY, ""), reception.send if reception else None,
                     numbers[0] if numbers else "", calls, demo, sign,
                     demo_page(*(os.environ.get(name, "") for name in (
-                        "VETDESK_DEMO_AUTHOR", "VETDESK_DEMO_AUTHOR_URL", "VETDESK_DEMO_SOURCE"))),
+                        "VETDESK_DEMO_AUTHOR", "VETDESK_DEMO_AUTHOR_URL", "VETDESK_DEMO_SOURCE",
+                        "VETDESK_DEMO_CONTACT"))),
                     _vapi() if demo is not None else None, say_and_hang_up,
                     livekit_join)
     log.info("the demo %s", "can also be carried by LiveKit: its voice program is started"

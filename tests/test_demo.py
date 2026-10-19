@@ -730,7 +730,11 @@ def test_a_deployment_may_say_whose_project_it_is_and_where_its_code_is():
     assert '<a href="https://example.test/ana">Ana &lt;Pérez&gt;</a>' in shown
     assert '<a href="https://example.test/code" data-t="source"></a>' in shown
     assert '<p id="thesis" data-t="thesis"></p>' in shown and 'property="og:title"' in shown
-    assert "<!--ABOUT" not in shown
+    assert "<!--ABOUT" not in shown and 'id="free"' not in shown
+    # Running on free use that may be spent for the month, and how to ask for it then.
+    free = page(contact="mailto:ana@example.test")
+    assert '<a href="mailto:ana@example.test" data-t="contact"></a>' in free
+    assert 'if (warn && $("free"))' in free
 
 
 def test_the_page_is_also_at_the_root_for_a_server_under_a_shared_address(clinic):

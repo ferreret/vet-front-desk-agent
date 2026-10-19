@@ -59,6 +59,7 @@ With a card on file and no monthly stop, but a larger free allowance. Instead of
 | `VETDESK_GOOGLE_LOCATION` | Optional with `google`: `eu` by default |
 | `VETDESK_DEMO_MINUTES_A_DAY`, `VETDESK_DEMO_MINUTES_A_CALL` | Optional. 60 and 3 by default: set the day's minutes to what the credit or the budget allows |
 | `VETDESK_DEMO_AUTHOR`, `VETDESK_DEMO_AUTHOR_URL`, `VETDESK_DEMO_SOURCE` | Optional: the page says whose project it is, links to the code, and says in a line what the demo sets out to show |
+| `VETDESK_DEMO_CONTACT` | Optional: a web address or a `mailto:`. The page then says it runs on free use that may be spent for the month, and links to it to ask for the demo |
 | `VETDESK_CALLS`, `VETDESK_ADMIN_KEY` | Optional: write every call down in `/app/state/calls.db`, and the key to read them at `/calls/view` |
 
 Not set, on purpose: `ELEVEN_API_KEY` and `VETDESK_ELEVENLABS_DEMO_AGENT_ID` (with no

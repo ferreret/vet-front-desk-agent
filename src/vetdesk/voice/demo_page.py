@@ -85,6 +85,9 @@ if (!location.pathname.endsWith("/") && !location.pathname.endsWith("/demo"))
    background:var(--paper);border-radius:.5rem}
  footer{margin-top:2.5rem;border-top:1px solid var(--line);padding-top:1rem}
  #thesis{border-left:4px solid var(--accent);padding:.2rem 0 .2rem .9rem;margin:1.2rem 0 0}
+ #free{background:var(--card);border:1px dashed var(--line);border-radius:.6rem;
+   padding:.6rem .9rem}
+ #free.warn{border-color:var(--warn)}
  a{color:var(--accent)}
 </style>
 </head>
@@ -102,6 +105,7 @@ if (!location.pathname.endsWith("/") && !location.pathname.endsWith("/demo"))
 
 <p><button id="call" type="button" disabled></button><span id="state" role="status"></span></p>
 <p class="soft" id="left"></p>
+<!--ABOUT-FREE-->
 
 <h2 data-t="said_title"></h2>
 <ul id="said" aria-live="polite"></ul>
@@ -168,6 +172,9 @@ const TEXT = {
       + "no sabe quién tiene delante. Elige a alguien que no es cliente, o llama desde el "
       + "teléfono de otro, e intenta que te dé datos que no son tuyos.",
   by: "Un proyecto de", source: "Código, métricas y cómo se hizo, en GitHub",
+  free: "Esta demo funciona con el uso gratuito de LiveKit y de Gemini. Si no contesta, "
+      + "puede que se haya acabado el de este mes.",
+  contact: "Escríbeme y te la enseño.",
  },
  en: {
   lead: "An AI front desk for a made-up veterinary clinic. Call it from your browser: book "
@@ -218,6 +225,9 @@ const TEXT = {
       + "not know who is on the line. Pick somebody who is not a client, or call from "
       + "somebody else's phone, and try to get it to tell you what is not yours.",
   by: "A project by", source: "Code, metrics and how it was built, on GitHub",
+  free: "This demo runs on LiveKit's and Gemini's free use. If it does not answer, this "
+      + "month's may be spent.",
+  contact: "Get in touch and I will show it to you.",
  },
 };
 const ROLE = {own: "own", hidden: "hidden_role", borrowed: "borrowed", stranger: "stranger"};
@@ -234,6 +244,8 @@ const t = key => TEXT[lang][key];
 function state(text, warn = false) {
   $("state").textContent = text;
   $("state").className = warn ? "warn" : "";
+  // A call that fails may be the month's free use spent: the note that says so stands out.
+  if (warn && $("free")) $("free").classList.add("warn");
 }
 
 function line(who, text) {
@@ -477,11 +489,13 @@ load().catch(() => state(t("failed"), true));
     "__LIVEKIT_SDK__", LIVEKIT_SDK)
 
 
-def page(author: str = "", author_url: str = "", source: str = "") -> str:
+def page(author: str = "", author_url: str = "", source: str = "", contact: str = "") -> str:
     """The page, saying whose project it is and where its code is when a deployment says
-    so (VETDESK_DEMO_AUTHOR, VETDESK_DEMO_AUTHOR_URL, VETDESK_DEMO_SOURCE). Without them it
-    is the page as it always was, naming nobody."""
-    if not (author or source):
+    so (VETDESK_DEMO_AUTHOR, VETDESK_DEMO_AUTHOR_URL, VETDESK_DEMO_SOURCE), and, with
+    VETDESK_DEMO_CONTACT (a web address or a mailto:), that it runs on free use that may be
+    spent for the month, and how to ask for it. Without them it is the page as it always
+    was, naming nobody."""
+    if not (author or source or contact):
         return PAGE
     e = html.escape
     who = (f'<a href="{e(author_url)}">{e(author)}</a>' if author_url else e(author))
@@ -492,4 +506,7 @@ def page(author: str = "", author_url: str = "", source: str = "") -> str:
             'front desk from your browser, and try to make it mistake you for somebody else.">')
     return (PAGE.replace("<!--ABOUT-HEAD-->", head)
             .replace("<!--ABOUT-THESIS-->", '<p id="thesis" data-t="thesis"></p>')
-            .replace("<!--ABOUT-FOOT-->", foot))
+            .replace("<!--ABOUT-FOOT-->", foot)
+            .replace("<!--ABOUT-FREE-->", f'<p class="soft" id="free"><span data-t="free">'
+                     f'</span> <a href="{e(contact)}" data-t="contact"></a></p>'
+                     if contact else ""))
