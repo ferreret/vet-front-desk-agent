@@ -57,6 +57,11 @@ stand-in settings (a demo call tells reception nothing and has its own appointme
 
 - An application from the GitHub repository, built with the `Dockerfile`, port 8013.
 - A volume mounted at `/app/state` if calls are written down.
+- It can have an address of its own, or a path of an address several demos share
+  (`https://demos.example.dev/clinica-veterinaria/`), with the path taken off before the
+  request reaches the server (Dokploy's *Strip path*, Traefik's `StripPrefix`). The page
+  is served at the root as well as at `/demo`, asks for everything by relative address,
+  and adds the final slash if it is missing, so it stays under its path.
 - A domain with HTTPS in front of it. The page and its passes must be reachable from the
   internet; the sound is not, since the program that listens and speaks connects out to
   LiveKit Cloud. On a server at home that means a tunnel or a forwarded port to the

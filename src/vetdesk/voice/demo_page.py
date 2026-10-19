@@ -26,6 +26,12 @@ PAGE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Planeta Animal — demo</title>
+<script>
+// Reached at ".../some-path" with no slash, the page's relative addresses would leave
+// the path it is served under: it adds the slash. ".../demo" is the page's own name.
+if (!location.pathname.endsWith("/") && !location.pathname.endsWith("/demo"))
+  location.replace(location.pathname + "/" + location.search);
+</script>
 <!--ABOUT-HEAD-->
 <style>
  :root{--ink:#1c2430;--soft:#5b6675;--line:#dfe3e8;--paper:#f7f8fa;--card:#fff;

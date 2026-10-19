@@ -864,6 +864,10 @@ def build_app(switchboard: Switchboard, key: str, model: str = "", desk: Desk | 
         app.router.add_get("/demo/result", demo_result)
         if demo_page:
             app.router.add_get("/demo", demo_view)
+            # Also at the root, for a server reached under a path of a shared address
+            # (".../clinica-veterinaria/", the prefix taken off before it gets here): the
+            # page asks for everything by relative address, so it works under any path.
+            app.router.add_get("/", demo_view)
     app.router.add_post("/v1/chat/completions", chat_completions)
     app.router.add_post("/chat/completions", chat_completions)
     app.router.add_get("/health", health)

@@ -731,3 +731,22 @@ def test_a_deployment_may_say_whose_project_it_is_and_where_its_code_is():
     assert '<a href="https://example.test/code" data-t="source"></a>' in shown
     assert '<p id="thesis" data-t="thesis"></p>' in shown and 'property="og:title"' in shown
     assert "<!--ABOUT" not in shown
+
+
+def test_the_page_is_also_at_the_root_for_a_server_under_a_shared_address(clinic):
+    """Served under a path of an address other demos share (the prefix is taken off before
+    the request gets here), the page is what that path shows, and it asks for everything
+    by relative address so that it stays under the path."""
+    from vetdesk.voice.demo_page import PAGE
+
+    demo = Demo([MARTA, NOBODY], Clock(), minutes_a_day=9, minutes_a_call=3)
+    app, _, _ = _front_desk(clinic, [], demo)
+
+    async def run():
+        async with TestClient(TestServer(app)) as client:
+            return [await (await client.get(path)).text() for path in ("/", "/demo")]
+
+    root, page = asyncio.run(run())
+    assert root == page == "<p>demo</p>"
+    assert 'fetch("/' not in PAGE and 'fetch("demo/people")' in PAGE
+    assert 'location.replace(location.pathname + "/"' in PAGE
