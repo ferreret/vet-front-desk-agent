@@ -28,6 +28,12 @@ information, and **books, moves or cancels appointments**.
 > phone, from a hidden number, from somebody else's phone, or somebody who is not a client
 > at all. Then try to get it to tell you something that is not yours.
 
+> [!NOTE]
+> **The demo runs on free tiers**: LiveKit Cloud's free plan carries the call, hears and
+> speaks, and Gemini answers on its free API tier. If the demo does not answer, this
+> month's free use has probably run out. [Get in touch](https://portfolio.nicolasbarcelo.dev/contact) and I will show it to
+> you live.
+
 ## 🤔 The problem
 
 Veterinary practice-management systems are old. In the kind this project models, an
@@ -262,6 +268,6 @@ About 15,000 lines of Python and 8,000 of tests, built in three weeks.
 
 <div align="center">
 
-Made by **[Nicolás Barceló](https://github.com/ferreret)** · MIT licensed, see [LICENSE](LICENSE)
+Made by **[Nicolás Barceló](https://portfolio.nicolasbarcelo.dev)** · MIT licensed, see [LICENSE](LICENSE)
 
 </div>
