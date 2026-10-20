@@ -268,6 +268,7 @@ const el = (tag, text, cls) => {
   if (cls) made.className = cls;
   return made;
 };
+// Relative, so that it also works under a path of a shared address.
 const ask = path => fetch(path, {headers: {"Authorization": "Bearer " + $("key").value}});
 const money = dollars => "$" + (dollars || 0).toFixed(4);
 const length = seconds => Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
@@ -284,7 +285,7 @@ const note = what => what.startsWith("language:")
   ? "la plataforma pasa a escuchar en " + what.slice(9) : (NOTE[what] || what);
 
 const show = async (id, row) => {
-  const answer = await ask("/calls/" + encodeURIComponent(id));
+  const answer = await ask("../calls/" + encodeURIComponent(id));
   if (!answer.ok) return;
   const call = await answer.json(), box = $("call");
   document.querySelectorAll("tr.open").forEach(open => open.className = "");
@@ -314,7 +315,7 @@ const show = async (id, row) => {
 };
 
 $("open").onclick = async () => {
-  const answer = await ask("/calls");
+  const answer = await ask("../calls");
   if (!answer.ok) {
     $("said").textContent = answer.status === 401 ? "La clave no es correcta."
                                                   : "No se ha podido abrir.";

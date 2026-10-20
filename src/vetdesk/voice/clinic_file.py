@@ -75,7 +75,8 @@ const $ = id => document.getElementById(id);
 const say = (text, good) => {
   $("said").textContent = text; $("said").className = good ? "ok" : "bad";
 };
-const ask = (method, body) => fetch("/clinic", {method, body,
+// Relative, so that it also works under a path of a shared address.
+const ask = (method, body) => fetch("../clinic", {method, body,
   headers: {"Authorization": "Bearer " + $("key").value}});
 $("open").onclick = async () => {
   const answer = await ask("GET");
