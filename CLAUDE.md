@@ -21,6 +21,8 @@ Son **dos despliegues separados del mismo repo**, sin compartir ninguna cuenta:
 | Canal | Número de teléfono (Zadarma) y ElevenLabs Agents | Llamada desde el navegador por LiveKit Cloud |
 | Cuentas | Gemini y ElevenLabs de la empresa | Todas de Nicolás y **sin tarjeta** (decisión suya): LiveKit Cloud gratuito, que también oye y habla con su crédito mensual (`VETDESK_VOICE_SERVICE=livekit`; si se acaba, la demo calla hasta el mes siguiente), y Gemini en su capa gratuita. Google Cloud para oír y hablar queda escrito como alternativa con tarjeta |
 
+**La demo del portfolio es una demo reducida del proyecto completo** (Nicolás, 2026-10-20), y tiene que quedar dicho en el README (sección «The demo and the full project») y en el artículo del portfolio: mismo agente y misma barrera de privacidad, pero solo castellano (el catalán con la voz castellana gratuita sonó fatal), más lenta (2,9–4,4 s por turno), sin número de teléfono, sin avisos a recepción, sin traspaso a una persona y con una agenda que se borra al colgar.
+
 Todo lo que se añada para el portfolio se enciende con ajustes de configuración; sin ellos el código hace lo mismo que antes, para que volver a desplegar la demo de la empresa no cambie nada. La lista de «Qué sigue» de las sesiones anteriores queda cerrada salvo lo que sirva a uno de estos dos usos.
 
 ## La tesis
