@@ -7,7 +7,7 @@
 [![Call the demo](https://img.shields.io/badge/📞_Call_the_demo-from_your_browser-0f6e5c?style=for-the-badge)](https://demos.nicolasbarcelo.dev/clinica-veterinaria/)
 
 ![False identifications](https://img.shields.io/badge/false_identifications-0-0f6e5c)
-![Tests](https://img.shields.io/badge/tests-684_passing-0f6e5c)
+![Tests](https://img.shields.io/badge/tests-685_passing-0f6e5c)
 ![Python](https://img.shields.io/badge/python-3.12-3776ab?logo=python&logoColor=white)
 ![Voice](https://img.shields.io/badge/voice-LiveKit-1f2937)
 ![Model](https://img.shields.io/badge/model-Gemini_3.5_Flash_Lite-4285f4?logo=googlegemini&logoColor=white)
@@ -29,12 +29,13 @@ information, and **books, moves or cancels appointments**.
 > at all. Then try to get it to tell you something that is not yours.
 
 > [!NOTE]
-> **The demo runs on free tiers**: LiveKit Cloud's free plan carries the call, hears and
-> speaks, and Gemini answers on its free API tier. If the demo does not answer, this
-> month's free use has probably run out. [Get in touch](https://portfolio.nicolasbarcelo.dev/contact) and I will show it to
-> you live. It **speaks Spanish only**: its free voice is a Spanish one, and Catalan said
-> through it did not hold up. Catalan and English were heard on a phone line with
-> ElevenLabs' voice.
+> **The demo is a reduced version of the project.** It runs on free tiers (LiveKit Cloud's
+> free plan hears and speaks, Gemini answers on its free API tier), so it is slower, it
+> speaks Spanish only, and it leaves out what a clinic would use behind the calls: a phone
+> number, notes to reception, transfers to a person. What it keeps whole is the agent and
+> its privacy barrier. [What the demo leaves out](#-the-demo-and-the-full-project). If it
+> does not answer, this month's free use has probably run out: [get in touch](https://portfolio.nicolasbarcelo.dev/contact)
+> and I will show it to you live.
 
 ## 🤔 The problem
 
@@ -72,7 +73,7 @@ level**, not a `SELECT`, and one number matters above all others:
 | ⚡ Time to the agent's first words (same run) | median **1.2 s**, 94% under 1.5 s |
 | 🚑 Calls about a symptom: emergency number given unasked, or the agent choosing for the caller | **0** of 35 |
 | 🎙️ Voice, from the caller falling silent to hearing the answer | 1.7 to 2.2 s |
-| ✅ Tests | 684, none of them needing a model or a network |
+| ✅ Tests | 685, none of them needing a model or a network |
 
 The model was **chosen with these same scenarios**: ten models from four providers, and
 the decision made on speed once identity was equal. Methods, full tables and caveats in
@@ -205,8 +206,26 @@ what answers is the agent with the privacy barrier in code.
 
 > [!NOTE]
 > The table was measured with ElevenLabs' speech recognition and voice. The public demo
-> runs on LiveKit Cloud with LiveKit's own hosted speech models instead, so its timings
-> are not in it. Details in [docs/voice.md](docs/voice.md).
+> runs on LiveKit Cloud with LiveKit's own hosted speech models instead, and takes 2.9 to
+> 4.4 s a turn. Details in [docs/voice.md](docs/voice.md).
+
+## 📞 The demo and the full project
+
+The public demo is **a reduced version** of the project, set up to cost nothing to run.
+The agent behind it is the same, with the same identity resolver and privacy barrier;
+what is around it is smaller.
+
+| | 🌐 Public demo | 🏥 Full project |
+|---|---|---|
+| How calls come in | From a browser, three minutes a call, with a daily cap | A real phone number (SIP), and the browser |
+| Who is calling | You pick one of four test callers | Whoever rings, with the number they ring from |
+| Languages by voice | Spanish only | Spanish, Catalan and English heard by voice; four more by text |
+| Speech recognition and voice | LiveKit's hosted models, free credit | ElevenLabs |
+| Caller silent → agent's voice | 2.9 to 4.4 s | 1.7 to 2.2 s |
+| Appointment book | Its own for each call, gone when it ends | Kept on the server, and shown in a Google Calendar |
+| Reception | Told nothing | Messages, bookings, changes and emergencies sent to a Telegram chat |
+| Putting the call through to a person | No | Yes, while the clinic is open |
+| Call log and costs | Kept | Kept, with the cost of a call, a minute and a month |
 
 ## 🚀 Run it locally
 
