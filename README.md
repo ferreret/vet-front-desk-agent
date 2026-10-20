@@ -32,7 +32,9 @@ information, and **books, moves or cancels appointments**.
 > **The demo runs on free tiers**: LiveKit Cloud's free plan carries the call, hears and
 > speaks, and Gemini answers on its free API tier. If the demo does not answer, this
 > month's free use has probably run out. [Get in touch](https://portfolio.nicolasbarcelo.dev/contact) and I will show it to
-> you live.
+> you live. It **speaks Spanish only**: its free voice is a Spanish one, and Catalan said
+> through it did not hold up. Catalan and English were heard on a phone line with
+> ElevenLabs' voice.
 
 ## 🤔 The problem
 

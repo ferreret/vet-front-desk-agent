@@ -61,6 +61,8 @@ With a card on file and no monthly stop, but a larger free allowance. Instead of
 | `VETDESK_DEMO_AUTHOR`, `VETDESK_DEMO_AUTHOR_URL`, `VETDESK_DEMO_SOURCE` | Optional: the page says whose project it is, links to the code, and says in a line what the demo sets out to show |
 | `VETDESK_DEMO_CONTACT` | Optional: a web address or a `mailto:`. The page then says it runs on free use that may be spent for the month, and links to it to ask for the demo |
 | `VETDESK_CALLS`, `VETDESK_ADMIN_KEY` | Optional: write every call down in `/app/state/calls.db`, and the key to read them at `/calls/view` |
+| `VETDESK_STT_LANGUAGES` | With `livekit`: `es`, so that the recogniser listens for Spanish only (see below) |
+| `VETDESK_CLINIC` | `/app/state/clinic.toml`: the clinic's information on the volume, to change at `/clinic/edit` with the admin key |
 
 Not set, on purpose: `ELEVEN_API_KEY` and `VETDESK_ELEVENLABS_DEMO_AGENT_ID` (with no
 ElevenLabs account the page goes straight to LiveKit), the Telegram, calendar, transfer and
@@ -91,13 +93,14 @@ and then the voice program registering with LiveKit. Open `/demo`: there is no c
 platform on the page, and a call goes by LiveKit. A voice program that cannot start says
 why in the log (`Set VETDESK_TTS_VOICE ...`), and is started again.
 
-### Not verified yet
+### Spanish only
 
-Written and tested without a call, on 2026-10-19. Not yet heard: whether the recogniser
-tells Spanish from Catalan as Scribe did, how long a turn takes (1.7 to 2.2 s with
-ElevenLabs), how the chosen voice sounds, and how many minutes a month the free credit
-lasts. With `livekit`, an answer in Catalan is said by the Spanish voice. The first calls
-will say.
+Heard on the first calls, on 2026-10-19 and 2026-10-20: Spanish works, at 2.9 to 4.4 s a
+turn (1.7 to 2.2 s with ElevenLabs). Catalan went badly: with `livekit` it is said by the
+Spanish voice. So the portfolio's demo speaks Spanish only: `VETDESK_STT_LANGUAGES=es`, and
+`languages = ["es"]` in the clinic's information at `/clinic/edit`, so that the agent does
+not change to another language. English would need a voice that changes with the language;
+it was left out. Not measured yet: how many minutes a month the free credit lasts.
 
 ## The phone line, as it is
 
